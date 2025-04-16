@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react"
+import Link from "next/link"
 
 export function DashboardContent() {
   return (
@@ -58,10 +59,10 @@ export function DashboardContent() {
         }}
       >
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-sm font-medium">Top 3 Active vesting Schedules per Level</h2>
-          <button className="text-gray-400">
+          <h2 className="text-2xl font-bold">Top 3 Active vesting Schedules per Level</h2>
+          <Link href="/dashboard/vesting" className="text-gray-400 hover:text-white">
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Link>
         </div>
 
         <div className="space-y-4">
@@ -111,10 +112,10 @@ export function DashboardContent() {
         }}
       >
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-sm font-medium">Recent Transactions</h2>
-          <button className="text-gray-400">
+          <h2 className="text-2xl font-bold">Recent Transactions</h2>
+          <Link href="/dashboard/transactions" className="text-gray-400 hover:text-white">
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Link>
         </div>
 
         <div className="overflow-x-auto">

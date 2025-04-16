@@ -48,6 +48,24 @@ body {
   display: none; /* Chrome, Safari and Opera */
 }
 
+/* Custom scrollbar styling */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #4a4d5a;
+  border-radius: 10px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #5a5d6a;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
