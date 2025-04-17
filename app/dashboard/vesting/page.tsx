@@ -23,7 +23,7 @@ export default function Vesting() {
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title - adjusted to match other pages */}
-      <div className="px-6 pt-4 pb-2">
+      <div className="px-6 mb-2">
         <h1 className="text-2xl font-bold">Vesting Schedules</h1>
         <p className="text-gray-400 text-sm">Manage your investment schedules</p>
       </div>
@@ -36,7 +36,7 @@ export default function Vesting() {
           {/* Tabs */}
           <div className="flex mb-px">
             <button
-              className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
                 activeTab === "LEVEL 1" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
               }`}
               onClick={() => setActiveTab("LEVEL 1")}
@@ -44,7 +44,7 @@ export default function Vesting() {
               LEVEL 1
             </button>
             <button
-              className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
                 activeTab === "LEVEL 2" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
               }`}
               onClick={() => setActiveTab("LEVEL 2")}
@@ -52,7 +52,7 @@ export default function Vesting() {
               LEVEL 2
             </button>
             <button
-              className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
                 activeTab === "LEVEL 3" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
               }`}
               onClick={() => setActiveTab("LEVEL 3")}
