@@ -1,7 +1,12 @@
 import { ChevronRight } from "lucide-react"
 import Link from "next/link"
+import { useTransactions } from "@/contexts/transaction-context"
+import { TransactionTable } from "@/components/transaction-table"
 
 export function DashboardContent() {
+  const { getRecentTransactions } = useTransactions()
+  const recentTransactions = getRecentTransactions(4)
+
   return (
     <div className="p-3 h-full overflow-hidden bg-[#1c1e26]" style={{ marginTop: "-1%" }}>
       <h1 className="text-2xl font-bold mb-3" style={{ marginTop: "1%" }}>
@@ -111,7 +116,7 @@ export function DashboardContent() {
         style={{
           transform: "scale(0.9)",
           transformOrigin: "top left",
-          margin: "-2px auto 0", // Reduced from 5px to -2px to move upward by another 1.5%
+          margin: "-2px auto 0",
           width: "111.11%",
         }}
       >
@@ -122,55 +127,7 @@ export function DashboardContent() {
           </Link>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left py-2 px-3">Description</th>
-                <th className="text-left py-2 px-3">Account</th>
-                <th className="text-left py-2 px-3">Date</th>
-                <th className="text-left py-2 px-3">Reference</th>
-                <th className="text-left py-2 px-3">Amount (PWT)</th>
-                <th className="text-left py-2 px-3">Amount (USD)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Most recent transaction */}
-              <tr className="border-b border-gray-700">
-                <td className="py-2 px-3">
-                  <span className="text-green-400">+</span> IN-PWT RECEIPT
-                </td>
-                <td className="py-2 px-3">PWT Invest</td>
-                <td className="py-2 px-3">15 May, 2:40pm</td>
-                <td className="py-2 px-3">TRX-87690</td>
-                <td className="py-2 px-3">80 PWT</td>
-                <td className="py-2 px-3">800 USD</td>
-              </tr>
-              {/* Second most recent transaction */}
-              <tr className="border-b border-gray-700">
-                <td className="py-2 px-3">
-                  <span className="text-red-400">-</span> OUT-TRANSFER
-                </td>
-                <td className="py-2 px-3">PWT Cashout</td>
-                <td className="py-2 px-3">14 May, 11:20am</td>
-                <td className="py-2 px-3">TRX-87689</td>
-                <td className="py-2 px-3">50 PWT</td>
-                <td className="py-2 px-3">500 USD</td>
-              </tr>
-              {/* Third most recent transaction */}
-              <tr className="border-b border-gray-700">
-                <td className="py-2 px-3">
-                  <span className="text-green-400">+</span> CLAIM - LEVEL 2B
-                </td>
-                <td className="py-2 px-3">PWT Cashout</td>
-                <td className="py-2 px-3">13 May, 9:15am</td>
-                <td className="py-2 px-3">TRX-87688</td>
-                <td className="py-2 px-3">10 PWT</td>
-                <td className="py-2 px-3">100 USD</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <TransactionTable transactions={recentTransactions} showRecipient={false} showReference={false} />
       </div>
     </div>
   )

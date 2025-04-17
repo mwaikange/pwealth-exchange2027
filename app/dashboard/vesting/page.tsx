@@ -2,9 +2,14 @@
 
 import { useState } from "react"
 import { Check } from "lucide-react"
+import { useWallet } from "@/contexts/wallet-context"
+import { useTransactions } from "@/contexts/transaction-context"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
+  const { claimToPwtCashout } = useWallet()
+  const { addTransaction } = useTransactions()
+  const [claimSuccess, setClaimSuccess] = useState("")
 
   // Function to get the circle number based on active tab
   const getCircleNumber = () => {
@@ -20,6 +25,47 @@ export default function Vesting() {
     }
   }
 
+  // Function to get the yield amount based on active tab
+  const getYieldAmount = () => {
+    switch (activeTab) {
+      case "LEVEL 1":
+        return 10
+      case "LEVEL 2":
+        return 20
+      case "LEVEL 3":
+        return 40
+      default:
+        return 10
+    }
+  }
+
+  // Handle claim button click
+  const handleClaim = (scheduleId: string) => {
+    const yieldAmount = getYieldAmount()
+
+    // Update the global wallet state
+    claimToPwtCashout(yieldAmount)
+
+    // Log the transaction
+    addTransaction({
+      type: "CLAIM",
+      account: "PWT Cashout",
+      amount: yieldAmount,
+      amountUsd: yieldAmount * 10,
+      description: `CLAIM - ${scheduleId}`,
+    })
+
+    // Show success message
+    setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
+
+    // Clear success message after 3 seconds
+    setTimeout(() => {
+      setClaimSuccess("")
+    }, 3000)
+
+    console.log(`Claimed ${yieldAmount} PWT from ${scheduleId}`)
+  }
+
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title - adjusted to match other pages */}
@@ -27,6 +73,9 @@ export default function Vesting() {
         <h1 className="text-2xl font-bold">Vesting Schedules</h1>
         <p className="text-gray-400 text-sm">Manage your investment schedules</p>
       </div>
+
+      {/* Success message */}
+      {claimSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{claimSuccess}</div>}
 
       <div className="px-6 mt-2">
         <div
@@ -233,7 +282,12 @@ export default function Vesting() {
                   </div>
                   <div className="flex items-center">
                     <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-white text-black">Claim</button>
+                    <button
+                      className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
+                      onClick={() => handleClaim(`${activeTab.replace(" ", "")}-C`)}
+                    >
+                      Claim
+                    </button>
                   </div>
                 </div>
               </div>
@@ -341,11 +395,39 @@ export default function Vesting() {
                 <div className="ml-4 flex flex-col justify-between items-end">
                   <div className="flex items-center mb-1">
                     <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-white text-black">Activate</button>
+                    <button
+                      className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
+                      onClick={() => {
+                        // Log activation fee transaction
+                        addTransaction({
+                          type: "ACTIVATE FEE",
+                          account: "AFT Wallet",
+                          amount: 2,
+                          amountUsd: 2,
+                          description: `ACTIVATE FEE -${activeTab.replace(" ", "")}-E`,
+                        })
+                      }}
+                    >
+                      Activate
+                    </button>
                   </div>
                   <div className="flex items-center mb-1">
                     <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-600 text-white">Invest</button>
+                    <button
+                      className="w-20 py-0.5 rounded text-[10px] bg-gray-600 text-white"
+                      onClick={() => {
+                        // Log vesting transaction
+                        addTransaction({
+                          type: "VESTING",
+                          account: "PWT Invest",
+                          amount: getYieldAmount(),
+                          amountUsd: getYieldAmount() * 10,
+                          description: `VESTING - ${activeTab.replace(" ", "")}-E`,
+                        })
+                      }}
+                    >
+                      Invest
+                    </button>
                   </div>
                   <div className="flex items-center">
                     <div className="w-4 mr-1.5"></div>

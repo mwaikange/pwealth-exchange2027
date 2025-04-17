@@ -1,8 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { ChevronRight } from "lucide-react"
 import Link from "next/link"
+import { useWallet } from "@/contexts/wallet-context"
+import { useTransactions } from "@/contexts/transaction-context"
+import { TransactionTable } from "@/components/transaction-table"
 
 export default function Cashout() {
   const [emailTransfer, setEmailTransfer] = useState("")
@@ -10,15 +13,163 @@ export default function Cashout() {
   const [usdValueTransfer, setUsdValueTransfer] = useState("")
   const [emailGift, setEmailGift] = useState("")
   const [usdValueGift, setUsdValueGift] = useState("")
+  // Add error states for validation messages
+  const [transferError, setTransferError] = useState("")
+  const [giftError, setGiftError] = useState("")
+  // Add success message states
+  const [transferSuccess, setTransferSuccess] = useState("")
+  const [giftSuccess, setGiftSuccess] = useState("")
+
+  // Add useEffect for auto-clearing transfer messages
+  useEffect(() => {
+    let transferTimer: NodeJS.Timeout | null = null
+
+    if (transferError || transferSuccess) {
+      transferTimer = setTimeout(() => {
+        setTransferError("")
+        setTransferSuccess("")
+      }, 5000) // 5 seconds
+    }
+
+    // Cleanup function
+    return () => {
+      if (transferTimer) clearTimeout(transferTimer)
+    }
+  }, [transferError, transferSuccess])
+
+  // Add useEffect for auto-clearing gift messages
+  useEffect(() => {
+    let giftTimer: NodeJS.Timeout | null = null
+
+    if (giftError || giftSuccess) {
+      giftTimer = setTimeout(() => {
+        setGiftError("")
+        setGiftSuccess("")
+      }, 5000) // 5 seconds
+    }
+
+    // Cleanup function
+    return () => {
+      if (giftTimer) clearTimeout(giftTimer)
+    }
+  }, [giftError, giftSuccess])
+
+  // Get wallet balances and update functions from context
+  const { pwtCashoutBalance, aftBalance, transferFromPwtCashout, transferFromAft } = useWallet()
+
+  // Get transaction functions from context
+  const { addTransaction, getCashoutTransactions } = useTransactions()
+
+  // Get cashout transactions
+  const cashoutTransactions = getCashoutTransactions()
+
+  const currentUserEmail = "mwaikange@gmail.com" // Keep this for email validation
 
   const handleTransfer = () => {
-    // Handle transfer logic
-    console.log("Transfer initiated")
+    // Reset messages
+    setTransferError("")
+    setTransferSuccess("")
+
+    // Validate email is not the user's own email
+    if (emailTransfer.toLowerCase() === currentUserEmail.toLowerCase()) {
+      setTransferError("You cannot transfer to your own account")
+      return
+    }
+
+    // Validate token amount is positive
+    const tokenAmount = Number(pwtTokens)
+    if (isNaN(tokenAmount) || tokenAmount <= 0) {
+      setTransferError("Please enter a positive token amount")
+      return
+    }
+
+    // Validate sufficient balance in PWT Cashout wallet
+    if (tokenAmount > pwtCashoutBalance) {
+      setTransferError("Insufficient PWT Cashout balance for this transfer")
+      return
+    }
+
+    // If all validations pass, proceed with transfer and update balance
+    try {
+      // Update the global wallet state
+      transferFromPwtCashout(tokenAmount)
+
+      // Log the transaction
+      addTransaction({
+        type: "OUT-TRANSFER",
+        account: "PWT Cashout",
+        amount: tokenAmount,
+        amountUsd: tokenAmount * 10,
+        recipient: emailTransfer,
+        description: "OUT-TRANSFER",
+      })
+
+      // Show success message
+      setTransferSuccess(`Successfully transferred ${tokenAmount} PWT to ${emailTransfer}`)
+
+      // Clear form after successful transfer
+      setPwtTokens("")
+      setUsdValueTransfer("")
+      setEmailTransfer("")
+
+      console.log("Transfer completed successfully")
+    } catch (error) {
+      setTransferError("Transfer failed. Please try again.")
+      console.error("Transfer error:", error)
+    }
   }
 
   const handleGift = () => {
-    // Handle gift logic
-    console.log("Gift initiated")
+    // Reset messages
+    setGiftError("")
+    setGiftSuccess("")
+
+    // Validate email is not the user's own email
+    if (emailGift.toLowerCase() === currentUserEmail.toLowerCase()) {
+      setGiftError("You cannot gift to your own account")
+      return
+    }
+
+    // Validate USD amount is positive
+    const usdAmount = Number(usdValueGift)
+    if (isNaN(usdAmount) || usdAmount <= 0) {
+      setGiftError("Please enter a positive USD amount")
+      return
+    }
+
+    // Validate sufficient balance in AFT wallet (1 AFT = 1 USD)
+    if (usdAmount > aftBalance) {
+      setGiftError("Insufficient AFT balance for this gift")
+      return
+    }
+
+    // If all validations pass, proceed with gift and update balance
+    try {
+      // Update the global wallet state
+      transferFromAft(usdAmount)
+
+      // Log the transaction
+      addTransaction({
+        type: "OUT-AFT GIFT",
+        account: "AFT Wallet",
+        amount: usdAmount,
+        amountUsd: usdAmount,
+        recipient: emailGift,
+        description: "OUT-AFT GIFT",
+      })
+
+      // Show success message
+      setGiftSuccess(`Successfully gifted ${usdAmount} AFT to ${emailGift}`)
+
+      // Clear form after successful transfer
+      setUsdValueGift("")
+      setEmailGift("")
+
+      console.log("Gift completed successfully")
+    } catch (error) {
+      setGiftError("Gift failed. Please try again.")
+      console.error("Gift error:", error)
+    }
   }
 
   return (
@@ -46,7 +197,12 @@ export default function Cashout() {
               <input
                 type="text"
                 value={emailTransfer}
-                onChange={(e) => setEmailTransfer(e.target.value)}
+                onChange={(e) => {
+                  setEmailTransfer(e.target.value)
+                  // Clear messages when user starts typing
+                  if (transferError) setTransferError("")
+                  if (transferSuccess) setTransferSuccess("")
+                }}
                 placeholder="enter the email of receiving party"
                 className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
               />
@@ -55,20 +211,39 @@ export default function Cashout() {
                 <input
                   type="text"
                   value={pwtTokens}
-                  onChange={(e) => setPwtTokens(e.target.value)}
+                  onChange={(e) => {
+                    // Only allow positive numbers
+                    const value = e.target.value
+                    if (value === "" || (/^\d*\.?\d*$/.test(value) && !value.startsWith("."))) {
+                      setPwtTokens(value)
+                      // Auto-calculate USD value based on token amount
+                      const tokens = Number.parseFloat(value) || 0
+                      setUsdValueTransfer(Math.floor(tokens * 10).toString())
+                      // Clear messages when user starts typing
+                      if (transferError) setTransferError("")
+                      if (transferSuccess) setTransferSuccess("")
+                    }
+                  }}
                   placeholder="#Pwt Tokens"
                   className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
                 />
                 <input
                   type="text"
                   value={usdValueTransfer}
-                  onChange={(e) => setUsdValueTransfer(e.target.value)}
+                  readOnly
                   placeholder="USD Value"
-                  className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
+                  className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0 bg-gray-100"
                 />
               </div>
 
-              <div className="flex justify-end">
+              {/* Display error message if any */}
+              {transferError && <p className="text-red-500 text-xs">{transferError}</p>}
+
+              {/* Display success message if any */}
+              {transferSuccess && <p className="text-green-500 text-xs">{transferSuccess}</p>}
+
+              <div className="flex justify-between items-center">
+                <div className="text-xs text-gray-400">Available: {pwtCashoutBalance} PWT-Cashout</div>
                 <button
                   onClick={handleTransfer}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
@@ -84,13 +259,21 @@ export default function Cashout() {
             <h2 className="text-xl font-bold text-yellow-300 mb-1">GIFT ACTIVATION FEE TOKENS</h2>
             <p className="text-green-500 text-xs mb-2">These transactions are irreversible please read T&C's</p>
 
-            <p className="text-xs mb-2">Sell or Gift Fee Tokens to your referrals or any member in your community.</p>
+            <p className="text-xs mb-2">
+              Sell or Gift Fee Tokens to your referrals or any member in your community. User email must be verified on
+              database. 1 AFT token = 1 USD.
+            </p>
 
             <div className="space-y-2">
               <input
                 type="text"
                 value={emailGift}
-                onChange={(e) => setEmailGift(e.target.value)}
+                onChange={(e) => {
+                  setEmailGift(e.target.value)
+                  // Clear messages when user starts typing
+                  if (giftError) setGiftError("")
+                  if (giftSuccess) setGiftSuccess("")
+                }}
                 placeholder="enter the email of the recieving party"
                 className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
               />
@@ -98,12 +281,28 @@ export default function Cashout() {
               <input
                 type="text"
                 value={usdValueGift}
-                onChange={(e) => setUsdValueGift(e.target.value)}
-                placeholder="USD Value"
+                onChange={(e) => {
+                  // Only allow positive numbers
+                  const value = e.target.value
+                  if (value === "" || (/^\d*\.?\d*$/.test(value) && !value.startsWith("."))) {
+                    setUsdValueGift(value)
+                    // Clear messages when user starts typing
+                    if (giftError) setGiftError("")
+                    if (giftSuccess) setGiftSuccess("")
+                  }
+                }}
+                placeholder="USD Value (1 AFT = 1 USD)"
                 className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
               />
 
-              <div className="flex justify-end mt-[34px]">
+              {/* Display error message if any */}
+              {giftError && <p className="text-red-500 text-xs">{giftError}</p>}
+
+              {/* Display success message if any */}
+              {giftSuccess && <p className="text-green-500 text-xs">{giftSuccess}</p>}
+
+              <div className="flex justify-between items-center mt-[34px]">
+                <div className="text-xs text-gray-400">Available: {aftBalance} AFT</div>
                 <button
                   onClick={handleGift}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
@@ -124,78 +323,7 @@ export default function Cashout() {
             </Link>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-700 bg-[#1c1e26]">
-                  <th className="text-left py-1 px-4 font-medium">Transaction</th>
-                  <th className="text-left py-1 px-4 font-medium">Account</th>
-                  <th className="text-left py-1 px-4 font-medium">Date</th>
-                  <th className="text-left py-1 px-4 font-medium">Amount (PWT)</th>
-                  <th className="text-left py-1 px-4 font-medium">Recipient</th>
-                  <th className="text-left py-1 px-4 font-medium">Reference</th>
-                  <th className="text-left py-1 px-4 font-medium">Amount (USD)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  {
-                    type: "OUT-TRANSFER",
-                    account: "PWT Cashout",
-                    date: "12 May, 5:40pm",
-                    amount: "80 PWT",
-                    email: "mwaikange@gmail.com",
-                    ref: "TRX-8656",
-                    usd: "800 USD",
-                  },
-                  {
-                    type: "OUT-AFT GIFT",
-                    account: "AFT Wallet",
-                    date: "11 May, 3:22pm",
-                    amount: "40 PWT",
-                    email: "john@example.com",
-                    ref: "TRX-8655",
-                    usd: "400 USD",
-                  },
-                  {
-                    type: "OUT-TRANSFER",
-                    account: "PWT Cashout",
-                    date: "10 May, 1:15pm",
-                    amount: "60 PWT",
-                    email: "sarah@example.com",
-                    ref: "TRX-8654",
-                    usd: "600 USD",
-                  },
-                  {
-                    type: "OUT-AFT GIFT",
-                    account: "AFT Wallet",
-                    date: "09 May, 11:30am",
-                    amount: "20 PWT",
-                    email: "david@example.com",
-                    ref: "TRX-8653",
-                    usd: "200 USD",
-                  },
-                  {
-                    type: "OUT-TRANSFER",
-                    account: "PWT Cashout",
-                    date: "08 May, 9:45am",
-                    amount: "100 PWT",
-                    email: "emma@example.com",
-                    ref: "TRX-8652",
-                    usd: "1000 USD",
-                  },
-                ].map((item, index) => (
-                  <tr key={index} className="border-b border-gray-700">
-                    <td className="py-1 px-4 text-[10px]">{item.type}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.account}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.date}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.amount}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.email}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.ref}</td>
-                    <td className="py-1 px-4 text-[10px]">{item.usd}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TransactionTable transactions={cashoutTransactions} showAccount={true} compact={true} />
           </div>
         </div>
       </div>

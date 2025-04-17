@@ -3,11 +3,16 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
+import { useWallet } from "@/contexts/wallet-context"
+import { useTransactions } from "@/contexts/transaction-context"
 
 export default function Referrals() {
   const [activeFilter, setActiveFilter] = useState("All")
   const [searchQuery, setSearchQuery] = useState("")
+  const [claimSuccess, setClaimSuccess] = useState("")
   const router = useRouter()
+  const { claimToPwtCashout } = useWallet()
+  const { addTransaction } = useTransactions()
 
   // Sample countries for randomization
   const countries = [
@@ -81,6 +86,29 @@ export default function Referrals() {
     return true
   })
 
+  // Handle claim button click
+  const handleClaim = (referralId: string) => {
+    // Add 1 PWT to cashout balance
+    claimToPwtCashout(1)
+
+    // Log the transaction
+    addTransaction({
+      type: "REFERRAL CLAIM",
+      account: "PWT Cashout",
+      amount: 1,
+      amountUsd: 10,
+      description: `REFERRAL CLAIM - ${referralId}`,
+    })
+
+    // Show success message
+    setClaimSuccess(`Successfully claimed 1 PWT from referral ${referralId}`)
+
+    // Clear success message after 3 seconds
+    setTimeout(() => {
+      setClaimSuccess("")
+    }, 3000)
+  }
+
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title */}
@@ -108,6 +136,9 @@ export default function Referrals() {
           </button>
         </div>
       </div>
+
+      {/* Success message */}
+      {claimSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{claimSuccess}</div>}
 
       {/* Referrals Table */}
       <div className="px-6 mt-2">
@@ -198,10 +229,7 @@ export default function Referrals() {
                         )}
                         {referral.claimStatus === "eligible" && (
                           <button
-                            onClick={() => {
-                              // In a real app, this would call an API to claim the reward
-                              alert("Claimed 1 PWT token! Added to your PWT Cashout balance.")
-                            }}
+                            onClick={() => handleClaim(referral.referralId)}
                             className="bg-white text-black px-4 py-1 rounded text-[10px] w-16 hover:bg-gray-100"
                           >
                             claim
