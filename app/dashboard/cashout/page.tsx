@@ -118,7 +118,7 @@ export default function Cashout() {
         {/* Transactions Table */}
         <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
           <div className="flex justify-between items-center px-4 py-2">
-            <h3 className="text-xs font-medium">Recent Transactions</h3>
+            <h3 className="text-xs font-medium">Recent Cashout Transactions</h3>
             <Link href="/dashboard/transactions">
               <ChevronRight className="h-4 w-4 text-gray-400 hover:text-white cursor-pointer" />
             </Link>
@@ -138,22 +138,60 @@ export default function Cashout() {
               </thead>
               <tbody>
                 {[
-                  { type: "OUT-AFT GIFT", date: "12 May, 5:40pm", amount: "80 PWT", email: "mwaikange@gmail.com" },
-                  { type: "OUT-TRANSFER", date: "12 May, 5:40pm", amount: "80 PWT", email: "mwaikange@gmail.com" },
-                  { type: "OUT-TRANSFER", date: "12 May, 5:40pm", amount: "80 PWT", email: "mwaikange@gmail.com" },
-                  { type: "OUT-AFT GIFT", date: "12 May, 5:40pm", amount: "80 PWT", email: "mwaikange@gmail.com" },
-                  { type: "OUT-TRANSFER", date: "12 May, 5:40pm", amount: "80 PWT", email: "mwaikange@gmail.com" },
+                  {
+                    type: "OUT-TRANSFER",
+                    account: "PWT Cashout",
+                    date: "12 May, 5:40pm",
+                    amount: "80 PWT",
+                    email: "mwaikange@gmail.com",
+                    ref: "TRX-8656",
+                    usd: "800 USD",
+                  },
+                  {
+                    type: "OUT-AFT GIFT",
+                    account: "AFT Wallet",
+                    date: "11 May, 3:22pm",
+                    amount: "40 PWT",
+                    email: "john@example.com",
+                    ref: "TRX-8655",
+                    usd: "400 USD",
+                  },
+                  {
+                    type: "OUT-TRANSFER",
+                    account: "PWT Cashout",
+                    date: "10 May, 1:15pm",
+                    amount: "60 PWT",
+                    email: "sarah@example.com",
+                    ref: "TRX-8654",
+                    usd: "600 USD",
+                  },
+                  {
+                    type: "OUT-AFT GIFT",
+                    account: "AFT Wallet",
+                    date: "09 May, 11:30am",
+                    amount: "20 PWT",
+                    email: "david@example.com",
+                    ref: "TRX-8653",
+                    usd: "200 USD",
+                  },
+                  {
+                    type: "OUT-TRANSFER",
+                    account: "PWT Cashout",
+                    date: "08 May, 9:45am",
+                    amount: "100 PWT",
+                    email: "emma@example.com",
+                    ref: "TRX-8652",
+                    usd: "1000 USD",
+                  },
                 ].map((item, index) => (
                   <tr key={index} className="border-b border-gray-700">
                     <td className="py-1 px-4 text-[10px]">{item.type}</td>
-                    <td className="py-1 px-4 text-[10px]">
-                      {item.type.includes("GIFT") ? "AFT Wallet" : "PWT Cashout"}
-                    </td>
+                    <td className="py-1 px-4 text-[10px]">{item.account}</td>
                     <td className="py-1 px-4 text-[10px]">{item.date}</td>
                     <td className="py-1 px-4 text-[10px]">{item.amount}</td>
                     <td className="py-1 px-4 text-[10px]">{item.email}</td>
-                    <td className="py-1 px-4 text-[10px]">{`TRX-${8656 + index}`}</td>
-                    <td className="py-1 px-4 text-[10px]">800 USD</td>
+                    <td className="py-1 px-4 text-[10px]">{item.ref}</td>
+                    <td className="py-1 px-4 text-[10px]">{item.usd}</td>
                   </tr>
                 ))}
               </tbody>

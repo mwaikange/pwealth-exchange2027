@@ -78,7 +78,10 @@ export default function Vesting() {
 
                 <div className="ml-20 flex-1">
                   <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">Maturity Date -15/04/2025 | 5:55:50 pm</div>
+                    <div className="text-xs text-gray-300">
+                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
+                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    </div>
                     <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-A</div>
                   </div>
 
@@ -137,7 +140,10 @@ export default function Vesting() {
 
                 <div className="ml-20 flex-1">
                   <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">Maturity Date -Not set | Not Set</div>
+                    <div className="text-xs text-gray-300">
+                      Maturity Date -Not set | Not Set | Expected Yield{" "}
+                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    </div>
                     <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-B</div>
                   </div>
 
@@ -190,7 +196,10 @@ export default function Vesting() {
 
                 <div className="ml-20 flex-1">
                   <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">Maturity Date -16/04/2025 | 9:55:50 pm</div>
+                    <div className="text-xs text-gray-300">
+                      Maturity Date -16/04/2025 | 9:55:50 pm | Expected Yield{" "}
+                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    </div>
                     <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-C</div>
                   </div>
 
@@ -245,7 +254,10 @@ export default function Vesting() {
 
                 <div className="ml-20 flex-1">
                   <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">Maturity Date -15/04/2025 | 5:55:50 pm</div>
+                    <div className="text-xs text-gray-300">
+                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
+                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    </div>
                     <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-D</div>
                   </div>
 
@@ -304,7 +316,10 @@ export default function Vesting() {
 
                 <div className="ml-20 flex-1">
                   <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">Maturity Date -15/04/2025 | 5:55:50 pm</div>
+                    <div className="text-xs text-gray-300">
+                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
+                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    </div>
                     <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-E</div>
                   </div>
 

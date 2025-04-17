@@ -41,7 +41,7 @@ export default function Settings() {
           }}
         >
           {/* Block 1 (Left): Setup MFA + Change Password */}
-          <div className="bg-[#2b2b31] rounded-lg p-5 flex flex-col">
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
             {/* Setup MFA Section */}
             <div className="mb-6">
               <h2 className="text-xl font-bold mb-4 text-center">SETUP MFA</h2>
@@ -94,7 +94,7 @@ export default function Settings() {
           </div>
 
           {/* Block 2 (Center): Referral Email Input + Customer Service Agents */}
-          <div className="bg-[#2b2b31] rounded-lg p-5 flex flex-col">
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
             {/* Referral Email Input Section */}
             <div className="mb-6">
               <input
@@ -186,7 +186,7 @@ export default function Settings() {
           </div>
 
           {/* Block 3 (Right): Referral Programme (unchanged) */}
-          <div className="bg-[#2b2b31] rounded-lg p-5 flex flex-col">
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
             <h2 className="text-xl font-bold mb-4 text-center underline">REFERRAL PROGRAMME</h2>
 
             <div className="space-y-4 flex-1">

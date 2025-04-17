@@ -1,9 +1,86 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Search } from "lucide-react"
 
 export default function Referrals() {
   const [activeFilter, setActiveFilter] = useState("All")
+  const [searchQuery, setSearchQuery] = useState("")
+  const router = useRouter()
+
+  // Sample countries for randomization
+  const countries = [
+    "South Africa",
+    "Namibia",
+    "Botswana",
+    "Zimbabwe",
+    "Kenya",
+    "Nigeria",
+    "Ghana",
+    "Egypt",
+    "Morocco",
+    "Tanzania",
+  ]
+
+  // Generate referral data
+  const generateReferralData = () => {
+    return Array.from({ length: 50 }).map((_, index) => {
+      // Determine progress based on index
+      let progress
+      if (index % 7 === 0) {
+        progress = "0/5" // Inactive
+      } else if (index % 7 === 6) {
+        progress = "5/5" // Completed
+      } else {
+        progress = `${(index % 5) + 1}/5` // In progress
+      }
+
+      // Determine claim status based on progress
+      let claimStatus
+      if (progress === "0/5") {
+        claimStatus = "pending" // Gray button - inactive
+      } else if (progress === "5/5") {
+        claimStatus = index % 4 === 0 ? "claimed" : "eligible" // Green or white button
+      } else {
+        claimStatus = "pending" // Gray button - in progress
+      }
+
+      // Determine status based on progress
+      const status = progress === "0/5" ? "Inactive" : "Active"
+
+      return {
+        referralId: `RFRL-${3000288 + index}`,
+        country: countries[index % countries.length],
+        status,
+        progress,
+        claimStatus,
+        registerDate: "12 May, 5:40pm",
+      }
+    })
+  }
+
+  const referralData = generateReferralData()
+
+  // Filter referrals based on active filter and search query
+  const filteredReferrals = referralData.filter((referral) => {
+    // Filter by claim status
+    if (
+      (activeFilter === "Claimed" && referral.claimStatus !== "claimed") ||
+      (activeFilter === "Not Claimed" && referral.claimStatus === "claimed")
+    ) {
+      return false
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      return referral.referralId.toLowerCase().includes(query) || referral.country.toLowerCase().includes(query)
+    }
+
+    return true
+  })
+
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title */}
@@ -12,7 +89,24 @@ export default function Referrals() {
           <h1 className="text-2xl font-bold">Referrals</h1>
           <p className="text-gray-400 text-sm">Claim your referral earnings once your referral has completed Level 1</p>
         </div>
-        <button className="bg-white text-black px-4 py-2 rounded-md text-sm font-medium">Copy Referral Code</button>
+        <div className="flex items-center space-x-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by ID or country..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-[#2a2d3a] border border-gray-700 rounded-md py-1 px-3 pr-8 text-sm w-48"
+            />
+            <Search className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          </div>
+          <button
+            onClick={() => router.push("/dashboard/settings")}
+            className="bg-white text-black px-4 py-2 rounded-md text-sm font-medium"
+          >
+            Copy Referral Code
+          </button>
+        </div>
       </div>
 
       {/* Referrals Table */}
@@ -54,10 +148,11 @@ export default function Referrals() {
             <table className="w-full table-fixed">
               <thead>
                 <tr className="border-b border-gray-700 bg-[#1c1e26]">
-                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[30%]">Email</th>
-                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[20%]">Status</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[25%]">Referral Code</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Country</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Status</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Progress</th>
-                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[20%]">Register Date</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Register Date</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Claim</th>
                 </tr>
               </thead>
@@ -67,50 +162,54 @@ export default function Referrals() {
             <div className="max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
               <table className="w-full table-fixed">
                 <tbody>
-                  {Array.from({ length: 50 })
-                    .map((_, index) => {
-                      // Determine progress and claim status based on index
-                      const progress = index % 3 === 0 ? "3/5" : "5/5"
-                      let claimStatus
-                      if (progress === "3/5") {
-                        claimStatus = "pending" // Gray button
-                      } else {
-                        claimStatus = index % 4 === 0 ? "claimed" : "eligible" // Green or white button
-                      }
-
-                      // Filter logic
-                      if (
-                        (activeFilter === "Claimed" && claimStatus !== "claimed") ||
-                        (activeFilter === "Not Claimed" && claimStatus === "claimed")
-                      ) {
-                        return null
-                      }
-
-                      return (
-                        <tr key={index} className="border-b border-gray-700">
-                          <td className="py-[6px] px-4 text-[10px] w-[30%]">mwaikange@gamil.com</td>
-                          <td className="py-[6px] px-4 text-[10px] w-[20%]">Active</td>
-                          <td className="py-[6px] px-4 text-[10px] w-[15%]">{progress}</td>
-                          <td className="py-[6px] px-4 text-[10px] w-[20%]">12 May, 5:40pm</td>
-                          <td className="py-[6px] px-4 text-[10px] w-[15%]">
-                            {claimStatus === "pending" && (
-                              <button className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16">
-                                claim
-                              </button>
-                            )}
-                            {claimStatus === "claimed" && (
-                              <button className="bg-green-500 text-white px-4 py-1 rounded text-[10px] w-16">
-                                claimed
-                              </button>
-                            )}
-                            {claimStatus === "eligible" && (
-                              <button className="bg-white text-black px-4 py-1 rounded text-[10px] w-16">claim</button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })
-                    .filter(Boolean)}
+                  {filteredReferrals.map((referral, index) => (
+                    <tr key={index} className="border-b border-gray-700">
+                      <td className="py-[6px] px-4 text-[10px] w-[25%]">{referral.referralId}</td>
+                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
+                      <td className="py-[6px] px-4 text-[10px] w-[15%]">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[9px] ${
+                            referral.status === "Active"
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-gray-500/20 text-gray-400"
+                          }`}
+                        >
+                          {referral.status}
+                        </span>
+                      </td>
+                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.progress}</td>
+                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
+                      <td className="py-[6px] px-4 text-[10px] w-[15%]">
+                        {referral.claimStatus === "pending" && (
+                          <button
+                            disabled
+                            className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed opacity-70"
+                          >
+                            claim
+                          </button>
+                        )}
+                        {referral.claimStatus === "claimed" && (
+                          <button
+                            disabled
+                            className="bg-green-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed"
+                          >
+                            claimed
+                          </button>
+                        )}
+                        {referral.claimStatus === "eligible" && (
+                          <button
+                            onClick={() => {
+                              // In a real app, this would call an API to claim the reward
+                              alert("Claimed 1 PWT token! Added to your PWT Cashout balance.")
+                            }}
+                            className="bg-white text-black px-4 py-1 rounded text-[10px] w-16 hover:bg-gray-100"
+                          >
+                            claim
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
