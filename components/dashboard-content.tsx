@@ -20,19 +20,31 @@ export function DashboardContent() {
       >
         <div className="bg-green-600 rounded-lg" style={{ padding: "0.55rem" }}>
           <div className="text-xs">Total OUT-Transfers to date</div>
-          <div className="text-3xl font-bold">300.00</div>
+          <div className="text-3xl font-bold">
+            {useTransactions()
+              .transactions.filter((tx) => tx.type === "OUT-TRANSFER")
+              .reduce((sum, tx) => sum + tx.amountUsd, 0)}
+          </div>
           <div className="text-xs">USD</div>
         </div>
 
         <div className="bg-blue-600 rounded-lg" style={{ padding: "0.55rem" }}>
           <div className="text-xs">Total OUT-Transfer tokens</div>
-          <div className="text-3xl font-bold">30</div>
+          <div className="text-3xl font-bold">
+            {useTransactions()
+              .transactions.filter((tx) => tx.type === "OUT-TRANSFER")
+              .reduce((sum, tx) => sum + tx.amount, 0)}
+          </div>
           <div className="text-xs">tokens</div>
         </div>
 
         <div className="bg-yellow-600 rounded-lg" style={{ padding: "0.55rem" }}>
           <div className="text-xs">Total Referral Claims sum</div>
-          <div className="text-3xl font-bold">6</div>
+          <div className="text-3xl font-bold">
+            {useTransactions()
+              .transactions.filter((tx) => tx.type === "REFERRAL CLAIM")
+              .reduce((sum, tx) => sum + tx.amount, 0)}
+          </div>
           <div className="text-xs">tokens</div>
         </div>
 
