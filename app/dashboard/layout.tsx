@@ -22,6 +22,7 @@ import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { WalletBalances } from "@/components/wallet-balances"
 import { VestingProvider } from "@/contexts/vesting-context"
+import { useTransactions } from "@/contexts/transaction-context"
 
 export default function DashboardLayout({
   children,
@@ -30,6 +31,86 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen] = useState(true) // Always keep sidebar open
   const [showPurchaseToast, setShowPurchaseToast] = useState(false)
+
+  // Add this component inside the DashboardLayout function, before the return statement
+  function NotificationsButton() {
+    const [showNotifications, setShowNotifications] = useState(false)
+    const { transactions } = useTransactions()
+
+    // Filter transactions to only show IN-PWT RECEIPT and IN-AFT GIFT
+    const filteredNotifications = transactions.filter((tx) => tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT")
+
+    // Function to dismiss a notification
+    const dismissNotification = (id: string) => {
+      // In a real app, you would update the transaction status in the database
+      // For now, we'll just close the dropdown
+      setShowNotifications(false)
+    }
+
+    return (
+      <div className="relative" style={{ marginRight: "1.5%" }}>
+        <button
+          className="relative p-1.5 rounded-full bg-[#2a2d3a] border border-gray-700"
+          onClick={() => setShowNotifications(!showNotifications)}
+        >
+          <Bell className="h-5 w-5" />
+          {filteredNotifications.length > 0 && (
+            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 flex items-center justify-center text-xs">
+              {filteredNotifications.length}
+            </span>
+          )}
+        </button>
+
+        {/* Notifications Dropdown */}
+        {showNotifications && (
+          <div className="absolute right-0 mt-2 w-80 bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+            <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="font-medium text-sm">Notifications</h3>
+              <button className="text-gray-400 hover:text-white text-xs" onClick={() => setShowNotifications(false)}>
+                Close All
+              </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto">
+              {filteredNotifications.length > 0 ? (
+                filteredNotifications.map((notification, index) => (
+                  <div key={index} className="p-3 border-b border-gray-700 hover:bg-[#3a3d4a]">
+                    <div className="flex justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">
+                          {notification.type === "IN-PWT RECEIPT" ? "PWT Received" : "AFT Gift Received"}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {notification.type === "IN-PWT RECEIPT"
+                            ? `You received ${notification.amount} PWT (${notification.amountUsd} USD)`
+                            : `You received ${notification.amount} AFT (${notification.amountUsd} USD)`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          From: {notification.sender || "anonymous@example.com"}
+                        </p>
+                        <p className="text-xs text-gray-400">{notification.date}</p>
+                      </div>
+                      <button
+                        className="text-gray-400 hover:text-white"
+                        onClick={() => dismissNotification(notification.id)}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-gray-400 text-sm">No new notifications</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const pathname = usePathname()
   const router = useRouter()
 
@@ -68,14 +149,7 @@ export default function DashboardLayout({
               </div>
 
               <div className="ml-auto flex items-center space-x-3">
-                <div className="relative" style={{ marginRight: "1.5%" }}>
-                  <button className="relative p-1.5 rounded-full bg-[#2a2d3a] border border-gray-700">
-                    <Bell className="h-5 w-5" />
-                    <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 flex items-center justify-center text-xs">
-                      3
-                    </span>
-                  </button>
-                </div>
+                <NotificationsButton />
 
                 {/* Wallet Balances Component */}
                 <WalletBalances />
