@@ -53,11 +53,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       try {
         setLoading(true)
+        // Use .maybeSingle() instead of .single() to handle the case where no row exists
         const { data, error } = await supabase
           .from("balances")
           .select("pwt_invest_balance, pwt_cashout_balance, activation_fee_balance")
           .eq("user_uuid", user.id)
-          .single()
+          .maybeSingle()
 
         if (error) {
           console.error("Error fetching balances:", error)
@@ -70,6 +71,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             pwtCashoutBalance: Number(data.pwt_cashout_balance) || 0,
             aftBalance: Number(data.activation_fee_balance) || 0,
           })
+        } else {
+          // If no data exists, initialize with zeros and create a record
+          setWalletState({
+            pwtInvestBalance: 0,
+            pwtCashoutBalance: 0,
+            aftBalance: 0,
+          })
+
+          // Create initial balance record if it doesn't exist
+          try {
+            await supabase.from("balances").insert({
+              user_uuid: user.id,
+              pwt_invest_balance: 0,
+              pwt_cashout_balance: 0,
+              activation_fee_balance: 0,
+              display_id: user.id.substring(0, 8).toUpperCase(), // Generate a simple display ID
+              updated_at: new Date().toISOString(),
+            })
+          } catch (insertError) {
+            console.error("Error creating initial balance:", insertError)
+          }
         }
       } catch (error) {
         console.error("Error in fetchBalances:", error)

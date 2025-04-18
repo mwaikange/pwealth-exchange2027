@@ -24,25 +24,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
 
   useEffect(() => {
-    async function loadUser() {
-      const supabase = createClientComponentClient()
+    // Update the loadUserSession function to handle the case where user data might not exist yet
+    const loadUserSession = async () => {
+      try {
+        setLoading(true)
+        const supabase = createClientComponentClient()
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+        // Get the initial session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
+        if (session) {
+          setSession(session)
+          setUser(session.user)
+        } else {
+          setSession(null)
+          setUser(null)
+        }
 
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
+        // Set up the auth state change listener
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+          console.log("Auth state changed:", event)
+
+          if (newSession) {
+            setSession(newSession)
+            setUser(newSession.user)
+          } else {
+            setSession(null)
+            setUser(null)
+          }
+
+          // Only redirect on sign_out event
+          if (event === "SIGNED_OUT") {
+            router.push("/login")
+          }
+        })
+
+        return () => {
+          subscription.unsubscribe()
+        }
+      } catch (error) {
+        console.error("Error loading auth session:", error)
+      } finally {
         setLoading(false)
-      })
+      }
     }
 
-    loadUser()
+    loadUserSession()
   }, [router])
 
   const signOut = async () => {

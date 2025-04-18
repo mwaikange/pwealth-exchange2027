@@ -60,78 +60,93 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // Load vesting schedules from Supabase
-  useEffect(() => {
-    async function fetchVestingSchedules() {
-      if (!user) {
-        setLoading(false)
+  async function fetchVestingSchedules() {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      // First, check if the user has any vesting schedules
+      const { data: existingSchedules, error: checkError } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
+
+      if (checkError) {
+        console.error("Error checking vesting schedules:", checkError)
         return
       }
 
-      try {
-        setLoading(true)
-
-        // First, check if the user has any vesting schedules
-        const { data: existingSchedules, error: checkError } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-
-        if (checkError) {
-          console.error("Error checking vesting schedules:", checkError)
-          return
-        }
-
-        // If no schedules exist, create default ones
-        if (!existingSchedules || existingSchedules.length === 0) {
-          await createDefaultVestingSchedules(user.id)
-        }
-
-        // Fetch all schedules
-        const { data, error } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-          .order("level", { ascending: true })
-          .order("position", { ascending: true })
-
-        if (error) {
-          console.error("Error fetching vesting schedules:", error)
-          return
-        }
-
-        if (data) {
-          // Transform the data to match our VestingScheduleState interface
-          const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
-            id: `LEVEL${schedule.level}-${schedule.position}`,
-            level: schedule.level,
-            position: schedule.position,
-            color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
-            activated: schedule.activated,
-            invested: schedule.invested,
-            claimed: schedule.claimed,
-            progress: schedule.progress,
-            startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
-            lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
-            lastClaimPercentage: schedule.last_claim_percentage,
-            prematurelyClaimed: schedule.prematurely_claimed,
-            schedule_id: schedule.schedule_id,
-          }))
-
-          setVestingSchedules(formattedSchedules)
-        }
-      } catch (error) {
-        console.error("Error in fetchVestingSchedules:", error)
-      } finally {
-        setLoading(false)
+      // If no schedules exist, create default ones
+      if (!existingSchedules || existingSchedules.length === 0) {
+        await createDefaultVestingSchedules(user.id)
       }
-    }
 
-    fetchVestingSchedules()
-  }, [user])
+      // Fetch all schedules
+      const { data, error } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .order("level", { ascending: true })
+        .order("position", { ascending: true })
+
+      if (error) {
+        console.error("Error fetching vesting schedules:", error)
+        return
+      }
+
+      if (data) {
+        // Transform the data to match our VestingScheduleState interface
+        const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
+          id: `LEVEL${schedule.level}-${schedule.position}`,
+          level: schedule.level,
+          position: schedule.position,
+          color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
+          activated: schedule.activated,
+          invested: schedule.invested,
+          claimed: schedule.claimed,
+          progress: schedule.progress,
+          startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
+          lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
+          lastClaimPercentage: schedule.last_claim_percentage,
+          prematurelyClaimed: schedule.prematurely_claimed,
+          schedule_id: schedule.schedule_id,
+        }))
+
+        setVestingSchedules(formattedSchedules)
+      }
+    } catch (error) {
+      console.error("Error in fetchVestingSchedules:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Create default vesting schedules for a new user
   const createDefaultVestingSchedules = async (userId: string) => {
     try {
+      // First, verify the user exists in app_users
+      const { data: userData, error: userError } = await supabase
+        .from("app_users")
+        .select("user_uuid")
+        .eq("user_uuid", userId)
+        .maybeSingle()
+
+      if (userError || !userData) {
+        console.error("User not found in app_users, cannot create vesting schedules")
+        return
+      }
+
+      // Get the current authenticated user to ensure RLS compliance
+      const { data: authData } = await supabase.auth.getUser()
+      if (!authData.user || authData.user.id !== userId) {
+        console.error("Auth user ID doesn't match the requested user ID")
+        return
+      }
+
       const schedules = []
 
       // Create schedules for each level (1, 2, 3) and position (A, B, C, D, E)
@@ -139,7 +154,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         for (const position of ["A", "B", "C", "D", "E"]) {
           schedules.push({
             schedule_id: uuidv4(),
-            user_uuid: userId,
+            user_uuid: userId, // This must match auth.uid() for RLS
             level,
             position,
             activated: false,
@@ -155,11 +170,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Insert all schedules at once
-      const { error } = await supabase.from("vesting_schedules").insert(schedules)
-
-      if (error) {
-        console.error("Error creating default vesting schedules:", error)
+      // Insert all schedules one by one to better handle errors
+      for (const schedule of schedules) {
+        const { error } = await supabase.from("vesting_schedules").insert(schedule)
+        if (error) {
+          console.error(`Error creating vesting schedule: ${error.message}`, schedule)
+        }
       }
     } catch (error) {
       console.error("Error in createDefaultVestingSchedules:", error)
@@ -523,6 +539,10 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     resetAllSchedulesInLevel,
     loading,
   }
+
+  useEffect(() => {
+    fetchVestingSchedules()
+  }, [user])
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>
 }

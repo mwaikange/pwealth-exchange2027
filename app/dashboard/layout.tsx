@@ -37,20 +37,103 @@ export default function DashboardLayout({
   const [userData, setUserData] = useState<any>(null)
   const { user } = useAuth()
   const router = useRouter()
+  const [loading, setLoading] = useState(true)
+
+  // Add this at the beginning of the DashboardLayout function
+  useEffect(() => {
+    // Check if user is authenticated
+    const checkAuth = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session) {
+          console.log("No active session found, redirecting to login")
+          router.push("/login")
+        }
+      } catch (error) {
+        console.error("Error checking auth:", error)
+      }
+    }
+
+    checkAuth()
+  }, [router])
 
   // Fetch user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
       if (!user) return
 
-      const { data, error } = await supabase.from("app_users").select("*").eq("user_uuid", user.id).single()
+      try {
+        // Replace .single() with .maybeSingle() to handle the case where no row exists
+        const { data, error } = await supabase.from("app_users").select("*").eq("user_uuid", user.id).maybeSingle()
 
-      if (error) {
-        console.error("Error fetching user data:", error)
-        return
+        if (error) {
+          console.error("Error fetching user data:", error)
+          return
+        }
+
+        // If no user data exists, create it
+        if (!data) {
+          // Create a basic user profile
+          const displayId = `USR-${Math.floor(1000000 + Math.random() * 9000000)}`
+          const { error: createError } = await supabase.from("app_users").insert({
+            user_uuid: user.id,
+            email: user.email,
+            display_id: displayId,
+            created_at: new Date().toISOString(),
+            status: "active",
+          })
+
+          if (createError) {
+            console.error("Error creating user data:", createError)
+          } else {
+            // Fetch the newly created user data
+            const { data: newData } = await supabase
+              .from("app_users")
+              .select("*")
+              .eq("user_uuid", user.id)
+              .maybeSingle()
+
+            setUserData(newData)
+          }
+        } else {
+          setUserData(data)
+        }
+
+        // Also fetch referral code
+        const { data: settingsData } = await supabase
+          .from("usersettings")
+          .select("referral_code")
+          .eq("user_uuid", user.id)
+          .maybeSingle()
+
+        // Add this to your existing data fetching:
+        const { data: referralData } = await supabase
+          .from("referrals")
+          .select("referrer_email")
+          .eq("user_uuid", user.id)
+          .maybeSingle()
+
+        // Then merge this with your user data:
+        if (data) {
+          const userData = {
+            ...data,
+            referrer_email: referralData?.referrer_email || null,
+          }
+
+          if (settingsData) {
+            setUserData((prev) => ({ ...prev, referral_code: settingsData.referral_code, ...userData }))
+          } else {
+            setUserData(userData)
+          }
+        }
+      } catch (error) {
+        console.error("Error in fetchUserData:", error)
+      } finally {
+        setLoading(false)
       }
-
-      setUserData(data)
     }
 
     fetchUserData()

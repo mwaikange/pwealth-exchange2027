@@ -6,7 +6,8 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
-import { doLogin } from "../actions/doLogin"
+// Import the singleton client
+import { supabaseClient } from "@/lib/supabase/client"
 
 export default function Login() {
   const router = useRouter()
@@ -15,21 +16,36 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Replace the handleSubmit function with this improved version
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
 
     try {
-      const result = await doLogin(email, password)
+      console.log("Attempting login with email:", email)
 
-      if (result.success) {
-        console.log("Login successful, redirecting to dashboard...")
-        router.push("/dashboard")
-      } else {
-        setError(result.message || "Login failed. Please check your credentials.")
+      // Use the singleton client
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        console.error("Login error:", error.message)
+        setError(error.message)
+        return
       }
+
+      if (!data.user) {
+        setError("Invalid credentials")
+        return
+      }
+
+      console.log("Login successful, redirecting to dashboard...")
+      router.push("/dashboard")
     } catch (err: any) {
+      console.error("Unexpected login error:", err)
       setError(err.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)

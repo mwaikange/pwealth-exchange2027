@@ -48,9 +48,7 @@ export async function logoutUser() {
   }
 }
 
-// Add the registerUser function that was missing
-
-// Add this function after the existing functions
+// Update the registerUser function to use maybeSingle
 export async function registerUser(formData: FormData) {
   const email = formData.get("email") as string
   const password = formData.get("password") as string
@@ -112,11 +110,12 @@ export async function registerUser(formData: FormData) {
 
       // Handle referral if provided
       if (referrerEmail && referrerEmail.trim() !== "") {
+        // Use maybeSingle instead of single
         const { data: referrerData } = await supabase
           .from("app_users")
           .select("user_uuid, referral_code")
           .eq("email", referrerEmail)
-          .single()
+          .maybeSingle()
 
         if (referrerData) {
           await supabase.from("referrals").insert({
