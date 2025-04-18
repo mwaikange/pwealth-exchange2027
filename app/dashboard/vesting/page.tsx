@@ -1,15 +1,39 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
-import { useTransactions } from "@/contexts/transaction-context"
+import { useVesting } from "@/contexts/vesting-context"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
-  const { claimToPwtCashout } = useWallet()
-  const { addTransaction } = useTransactions()
   const [claimSuccess, setClaimSuccess] = useState("")
+  const [activateError, setActivateError] = useState("")
+  const [investError, setInvestError] = useState("")
+  const [claimError, setClaimError] = useState("")
+
+  const { pwtInvestBalance, aftBalance } = useWallet()
+  const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
+
+  // Clear messages after 5 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (claimSuccess) setClaimSuccess("")
+      if (activateError) setActivateError("")
+      if (investError) setInvestError("")
+      if (claimError) setClaimError("")
+    }, 5000)
+
+    return () => clearTimeout(timer)
+  }, [claimSuccess, activateError, investError, claimError])
+
+  // Get active level number
+  const getActiveLevel = () => {
+    return Number.parseInt(activeTab.split(" ")[1])
+  }
+
+  // Get schedules for the active level
+  const activeSchedules = getSchedulesByLevel(getActiveLevel())
 
   // Function to get the circle number based on active tab
   const getCircleNumber = () => {
@@ -25,46 +49,142 @@ export default function Vesting() {
     }
   }
 
-  // Function to get the yield amount based on active tab
-  const getYieldAmount = () => {
+  // Function to get the activation cost based on active tab
+  const getActivationCost = () => {
     switch (activeTab) {
       case "LEVEL 1":
-        return 10
+        return 2
       case "LEVEL 2":
-        return 20
+        return 4
       case "LEVEL 3":
+        return 8
+      default:
+        return 2
+    }
+  }
+
+  // Function to get the investment cost based on active tab
+  const getInvestmentCost = () => {
+    switch (activeTab) {
+      case "LEVEL 1":
+        return 2
+      case "LEVEL 2":
+        return 4
+      case "LEVEL 3":
+        return 8
+      default:
+        return 2
+    }
+  }
+
+  // Function to get the yield amount based on active tab and progress
+  const getYieldAmount = (level, progress) => {
+    let baseReward = 0
+
+    if (progress >= 20) baseReward = 2
+    if (progress >= 40) baseReward = 4
+    if (progress >= 60) baseReward = 6
+    if (progress >= 80) baseReward = 8
+    if (progress >= 100) baseReward = 10
+
+    // Multiply by level factor
+    const levelMultiplier = level === 1 ? 1 : level === 2 ? 2 : 4
+    return baseReward * levelMultiplier
+  }
+
+  // Function to get the max yield amount based on level
+  const getMaxYieldAmount = (level) => {
+    switch (level) {
+      case 1:
+        return 10
+      case 2:
+        return 20
+      case 3:
         return 40
       default:
         return 10
     }
   }
 
+  // Handle activate button click
+  const handleActivate = (scheduleId) => {
+    const level = getActiveLevel()
+    const cost = getActivationCost()
+
+    if (aftBalance < cost) {
+      setActivateError(`Insufficient AFT balance. Need ${cost} AFT.`)
+      return
+    }
+
+    activateSchedule(scheduleId)
+  }
+
+  // Handle invest button click
+  const handleInvest = (scheduleId) => {
+    const level = getActiveLevel()
+    const cost = getInvestmentCost()
+
+    if (pwtInvestBalance < cost) {
+      setInvestError(`Insufficient PWT Invest balance. Need ${cost} PWT.`)
+      return
+    }
+
+    investInSchedule(scheduleId)
+  }
+
   // Handle claim button click
-  const handleClaim = (scheduleId: string) => {
-    const yieldAmount = getYieldAmount()
+  const handleClaim = (scheduleId, progress) => {
+    const level = getActiveLevel()
 
-    // Update the global wallet state
-    claimToPwtCashout(yieldAmount)
+    if (progress < 20) {
+      setClaimError("Cannot claim until progress reaches 20%")
+      return
+    }
 
-    // Log the transaction
-    addTransaction({
-      type: "CLAIM",
-      account: "PWT Cashout",
-      amount: yieldAmount,
-      amountUsd: yieldAmount * 10,
-      description: `CLAIM - ${scheduleId}`,
-    })
+    claimSchedule(scheduleId)
 
     // Show success message
+    const yieldAmount = getYieldAmount(level, progress)
     setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
-
-    // Clear success message after 3 seconds
-    setTimeout(() => {
-      setClaimSuccess("")
-    }, 3000)
-
-    console.log(`Claimed ${yieldAmount} PWT from ${scheduleId}`)
   }
+
+  // Format maturity date
+  const formatMaturityDate = (startTime) => {
+    if (!startTime) return "Not set | Not Set"
+
+    // Add 10 minutes (for testing)
+    const maturityTime = new Date(startTime + 10 * 60 * 1000)
+
+    // Format as DD/MM/YYYY | HH:MM:SS am/pm
+    const day = maturityTime.getDate().toString().padStart(2, "0")
+    const month = (maturityTime.getMonth() + 1).toString().padStart(2, "0")
+    const year = maturityTime.getFullYear()
+
+    const hours = maturityTime.getHours() % 12 || 12
+    const minutes = maturityTime.getMinutes().toString().padStart(2, "0")
+    const seconds = maturityTime.getSeconds().toString().padStart(2, "0")
+    const ampm = maturityTime.getHours() >= 12 ? "pm" : "am"
+
+    return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
+  }
+
+  // Get time remaining until next reward
+  // const getTimeToNextReward = (schedule) => {
+  //   if (!schedule.startTime || schedule.claimed) return null
+
+  //   const elapsedTime = Date.now() - schedule.startTime
+  //   const totalTime = 10 * 60 * 1000 // 10 minutes
+
+  //   // Calculate the next 20% milestone
+  //   const currentProgress = schedule.progress
+  //   const nextMilestone = Math.ceil(currentProgress / 20) * 20
+  //   if (nextMilestone > 100) return null
+
+  //   const timeToNextMilestone = (nextMilestone / 100) * totalTime - elapsedTime
+  //   if (timeToNextMilestone <= 0) return null
+
+  //   return formatDistanceToNow(Date.now() + timeToNextMilestone, { addSuffix: true })
+  // }
 
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
@@ -74,8 +194,11 @@ export default function Vesting() {
         <p className="text-gray-400 text-sm">Manage your investment schedules</p>
       </div>
 
-      {/* Success message */}
+      {/* Success and error messages */}
       {claimSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{claimSuccess}</div>}
+      {activateError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{activateError}</div>}
+      {investError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{investError}</div>}
+      {claimError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{claimError}</div>}
 
       <div className="px-6 mt-2">
         <div
@@ -112,330 +235,153 @@ export default function Vesting() {
 
           {/* Vesting Schedule Cards - with left alignment adjusted */}
           <div className="space-y-[6px] pl-0">
-            {/* Card 1 - Green - 78% */}
-            <div className="border-l-4 border-green-500 bg-[#1c1e26] relative border-b-2 border-b-green-500">
-              <div className="flex py-2 px-4">
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                  {/* Vertical line running through the circle */}
-                  <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                  {/* Circle with number */}
-                  <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                    {getCircleNumber()}
-                  </div>
-                </div>
-
-                <div className="ml-20 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">
-                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
-                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+            {activeSchedules.map((schedule) => (
+              <div
+                key={schedule.id}
+                className={`border-l-4 border-${schedule.color} bg-[#1c1e26] relative border-b-2 border-b-${schedule.color}`}
+              >
+                <div className="flex py-2 px-4">
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
+                  <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
+                    {/* Vertical line running through the circle */}
+                    <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
+                    {/* Circle with number */}
+                    <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
+                      {getCircleNumber()}
                     </div>
-                    <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-A</div>
                   </div>
 
-                  <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: "78%" }}></div>
-                  </div>
-
-                  <div className="flex justify-between mt-0.5">
-                    <div className="text-xs">
-                      Maturity Yield:4 tokens | <span className="text-red-400">(Claimed before maturity)</span>
+                  <div className="ml-20 flex-1">
+                    <div className="flex justify-between items-start">
+                      <div className="text-xs text-gray-300">
+                        {schedule.invested
+                          ? `Maturity Date -${formatMaturityDate(schedule.startTime)} | Expected Yield ${getMaxYieldAmount(schedule.level)} PWT-Cashout`
+                          : "| Maturity Date -Not set | Not Set | No expectation"}
+                      </div>
+                      <div className="text-xs font-medium">|{schedule.id}</div>
                     </div>
-                    <div className="text-xs font-bold text-green-500">78%</div>
-                  </div>
 
-                  <div className="text-[10px] text-gray-300 mt-0.5">
-                    Earn {getCircleNumber()} PWT Cashout every day for 5 days| Claim anytime | Premature claims end
-                    vesting schedule | Vesting Schedule Activation Fee is 2 USD in AFT Tokens
-                  </div>
-                </div>
-
-                <div className="ml-4 flex flex-col justify-between items-end">
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
+                    <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className={`bg-${schedule.progress > 0 ? "green-500" : "white"} h-2 rounded-full`}
+                        style={{ width: `${schedule.progress}%` }}
+                      ></div>
                     </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Fee Paid</button>
-                  </div>
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
+
+                    <div className="flex justify-between mt-0.5">
+                      {schedule.progress > 0 && (
+                        <div className="text-xs">
+                          {schedule.claimed ? (
+                            <>
+                              Maturity Yield: {getYieldAmount(schedule.level, schedule.progress)} tokens |{" "}
+                              {schedule.prematurelyClaimed ? (
+                                <span className="text-red-400">(Claimed before maturity)</span>
+                              ) : (
+                                <span className="text-green-500">(Claimed on maturity)</span>
+                              )}
+                            </>
+                          ) : (
+                            <>Maturity Yield: {getYieldAmount(schedule.level, schedule.progress)} tokens |</>
+                          )}
+                        </div>
+                      )}
+                      {schedule.progress === 0 && <div className="text-xs">&nbsp;</div>}
+                      <div className="text-xs font-bold text-green-500">
+                        {schedule.progress > 0 ? `${schedule.progress}%` : ""}
+                      </div>
                     </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Invested</button>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
+
+                    <div className="text-[10px] text-gray-300 mt-0.5">
+                      Earn {getCircleNumber()} PWT tokens every 2 minutes for 10 minutes | Claim anytime | Premature
+                      claims end vesting schedule | Vesting Schedule Activation Fee is {getActivationCost()} USD in AFT
+                      Tokens
                     </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Claimed</button>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Card 2 - Blue - 0% */}
-            <div className="border-l-4 border-blue-500 bg-[#1c1e26] relative border-b-2 border-b-blue-500">
-              <div className="flex py-2 px-4">
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                  {/* Vertical line running through the circle */}
-                  <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                  {/* Circle with number */}
-                  <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                    {getCircleNumber()}
-                  </div>
-                </div>
-
-                <div className="ml-20 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">
-                      Maturity Date -Not set | Not Set | Expected Yield{" "}
-                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                  <div className="ml-4 flex flex-col justify-between items-end">
+                    {/* Activate Fee Button */}
+                    <div className="flex items-center mb-1">
+                      {schedule.activated ? (
+                        <>
+                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
+                            <Check className="h-3 w-3 text-white" />
+                          </div>
+                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
+                            Fee Paid
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-4 mr-1.5"></div>
+                          <button
+                            onClick={() => handleActivate(schedule.id)}
+                            className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
+                          >
+                            Activate
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-B</div>
-                  </div>
 
-                  <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                    <div className="bg-white h-2 rounded-full" style={{ width: "0%" }}></div>
-                  </div>
-
-                  <div className="flex justify-between mt-0.5">
-                    <div className="text-xs">&nbsp;</div>
-                    <div className="text-xs font-bold text-green-500"></div>
-                  </div>
-
-                  <div className="text-[10px] text-gray-300 mt-0.5">
-                    Earn {getCircleNumber()} PWT tokens every day for 5 days| Claim anytime | Premature claims end
-                    vesting schedule | Vesting Schedule Activation Fee is 2 USD in AFT Tokens
-                  </div>
-                </div>
-
-                <div className="ml-4 flex flex-col justify-between items-end">
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
+                    {/* Invest Button */}
+                    <div className="flex items-center mb-1">
+                      {schedule.invested ? (
+                        <>
+                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
+                            <Check className="h-3 w-3 text-white" />
+                          </div>
+                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
+                            Invested
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-4 mr-1.5"></div>
+                          <button
+                            onClick={() => handleInvest(schedule.id)}
+                            disabled={!schedule.activated}
+                            className={`w-20 py-0.5 rounded text-[10px] ${
+                              schedule.activated ? "bg-white text-black" : "bg-gray-600 text-white cursor-not-allowed"
+                            }`}
+                          >
+                            Invest
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Fee Paid</button>
-                  </div>
-                  <div className="flex items-center mb-1">
-                    <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-white text-black">Invest</button>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-600 text-white">Claim</button>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Card 3 - Pink - 100% */}
-            <div className="border-l-4 border-pink-500 bg-[#1c1e26] relative border-b-2 border-b-pink-500">
-              <div className="flex py-2 px-4">
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                  {/* Vertical line running through the circle */}
-                  <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                  {/* Circle with number */}
-                  <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                    {getCircleNumber()}
-                  </div>
-                </div>
-
-                <div className="ml-20 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">
-                      Maturity Date -16/04/2025 | 9:55:50 pm | Expected Yield{" "}
-                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
+                    {/* Claim Button */}
+                    <div className="flex items-center">
+                      {schedule.claimed ? (
+                        <>
+                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
+                            <Check className="h-3 w-3 text-white" />
+                          </div>
+                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
+                            Claimed
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-4 mr-1.5"></div>
+                          <button
+                            onClick={() => handleClaim(schedule.id, schedule.progress)}
+                            disabled={!schedule.invested || schedule.progress < 20}
+                            className={`w-20 py-0.5 rounded text-[10px] ${
+                              schedule.invested && schedule.progress >= 20
+                                ? "bg-white text-black"
+                                : "bg-gray-600 text-white cursor-not-allowed"
+                            }`}
+                          >
+                            Claim
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-C</div>
-                  </div>
-
-                  <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: "100%" }}></div>
-                  </div>
-
-                  <div className="flex justify-between mt-0.5">
-                    <div className="text-xs">Maturity Yield:10 tokens |</div>
-                    <div className="text-xs font-bold text-pink-500">100%</div>
-                  </div>
-
-                  <div className="text-[10px] text-gray-300 mt-0.5">
-                    Earn {getCircleNumber()} PWT tokens every day for 5 days| Claim anytime | Premature claims end
-                    vesting schedule | Vesting Schedule Activation Fee is 2 USD in AFT Tokens
-                  </div>
-                </div>
-
-                <div className="ml-4 flex flex-col justify-between items-end">
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
-                    </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Fee Paid</button>
-                  </div>
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
-                    </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Invested</button>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-4 mr-1.5"></div>
-                    <button
-                      className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
-                      onClick={() => handleClaim(`${activeTab.replace(" ", "")}-C`)}
-                    >
-                      Claim
-                    </button>
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Card 4 - Yellow - 100% */}
-            <div className="border-l-4 border-yellow-500 bg-[#1c1e26] relative border-b-2 border-b-yellow-500">
-              <div className="flex py-2 px-4">
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                  {/* Vertical line running through the circle */}
-                  <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                  {/* Circle with number */}
-                  <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                    {getCircleNumber()}
-                  </div>
-                </div>
-
-                <div className="ml-20 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">
-                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
-                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
-                    </div>
-                    <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-D</div>
-                  </div>
-
-                  <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                    <div className="bg-green-500 h-2 rounded-full" style={{ width: "100%" }}></div>
-                  </div>
-
-                  <div className="flex justify-between mt-0.5">
-                    <div className="text-xs">
-                      Maturity Yield:10 tokens | <span className="text-green-500">(Claimed on maturity)</span>
-                    </div>
-                    <div className="text-xs font-bold text-green-500">100%</div>
-                  </div>
-
-                  <div className="text-[10px] text-gray-300 mt-0.5">
-                    Earn {getCircleNumber()} PWT tokens every day for 5 days| Claim anytime | Premature claims end
-                    vesting schedule | Vesting Schedule Activation Fee is 2 USD in AFT Tokens
-                  </div>
-                </div>
-
-                <div className="ml-4 flex flex-col justify-between items-end">
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
-                    </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Fee Paid</button>
-                  </div>
-                  <div className="flex items-center mb-1">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
-                    </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Invested</button>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                      <Check className="h-3 w-3 text-white" />
-                    </div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">Claimed</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 5 - Red - 0% */}
-            <div className="border-l-4 border-red-500 bg-[#1c1e26] relative border-b-2 border-b-red-500">
-              <div className="flex py-2 px-4">
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                  {/* Vertical line running through the circle */}
-                  <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                  {/* Circle with number */}
-                  <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                    {getCircleNumber()}
-                  </div>
-                </div>
-
-                <div className="ml-20 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div className="text-xs text-gray-300">
-                      Maturity Date -15/04/2025 | 5:55:50 pm | Expected Yield{" "}
-                      {activeTab === "LEVEL 1" ? "10" : activeTab === "LEVEL 2" ? "20" : "40"} PWT-Cashout
-                    </div>
-                    <div className="text-xs font-medium">|{activeTab.replace(" ", "")}-E</div>
-                  </div>
-
-                  <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                    <div className="bg-white h-2 rounded-full" style={{ width: "0%" }}></div>
-                  </div>
-
-                  <div className="flex justify-between mt-0.5">
-                    <div className="text-xs">&nbsp;</div>
-                    <div className="text-xs font-bold text-green-500"></div>
-                  </div>
-
-                  <div className="text-[10px] text-gray-300 mt-0.5">
-                    Earn {getCircleNumber()} PWT tokens every day for 5 days| Claim anytime | Premature claims end
-                    vesting schedule | Vesting Schedule Activation Fee is 2 USD in AFT Tokens
-                  </div>
-                </div>
-
-                <div className="ml-4 flex flex-col justify-between items-end">
-                  <div className="flex items-center mb-1">
-                    <div className="w-4 mr-1.5"></div>
-                    <button
-                      className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
-                      onClick={() => {
-                        // Log activation fee transaction
-                        addTransaction({
-                          type: "ACTIVATE FEE",
-                          account: "AFT Wallet",
-                          amount: 2,
-                          amountUsd: 2,
-                          description: `ACTIVATE FEE -${activeTab.replace(" ", "")}-E`,
-                        })
-                      }}
-                    >
-                      Activate
-                    </button>
-                  </div>
-                  <div className="flex items-center mb-1">
-                    <div className="w-4 mr-1.5"></div>
-                    <button
-                      className="w-20 py-0.5 rounded text-[10px] bg-gray-600 text-white"
-                      onClick={() => {
-                        // Log vesting transaction
-                        addTransaction({
-                          type: "VESTING",
-                          account: "PWT Invest",
-                          amount: getYieldAmount(),
-                          amountUsd: getYieldAmount() * 10,
-                          description: `VESTING - ${activeTab.replace(" ", "")}-E`,
-                        })
-                      }}
-                    >
-                      Invest
-                    </button>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-4 mr-1.5"></div>
-                    <button className="w-20 py-0.5 rounded text-[10px] bg-gray-600 text-white">Claim</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>

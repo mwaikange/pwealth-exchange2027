@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
+import { useVesting } from "@/contexts/vesting-context"
 
 export function DashboardContent() {
   const { getRecentTransactions } = useTransactions()
@@ -50,7 +51,15 @@ export function DashboardContent() {
 
         <div className="bg-purple-600 rounded-lg" style={{ padding: "0.55rem" }}>
           <div className="text-xs">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">45</div>
+          <div className="text-3xl font-bold">
+            {useVesting()
+              .vestingSchedules.filter((s) => s.invested && !s.claimed) // Only active schedules
+              .reduce((total, schedule) => {
+                // Calculate expected yield based on level
+                const levelYield = schedule.level === 1 ? 10 : schedule.level === 2 ? 20 : 40
+                return total + levelYield
+              }, 0)}
+          </div>
           <div className="text-xs">tokens</div>
         </div>
 
@@ -84,40 +93,88 @@ export function DashboardContent() {
         </div>
 
         <div className="space-y-4">
-          {/* Level 1 - Active schedule at 78% */}
+          {/* Level 1 - Active schedule */}
           <div className="flex items-center">
             <div className="mr-3 w-12 text-sm">Level 1</div>
             <div className="w-8 h-8 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-sm">
               2
             </div>
             <div className="flex-1 bg-gray-700 rounded-full h-3">
-              <div className="bg-green-500 h-3 rounded-full" style={{ width: "78%" }}></div>
+              <div
+                className="bg-green-500 h-3 rounded-full"
+                style={{
+                  width: `${
+                    useVesting()
+                      .getSchedulesByLevel(1)
+                      .filter((s) => s.invested && !s.claimed)
+                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 0
+                  }%`,
+                }}
+              ></div>
             </div>
-            <div className="ml-3 font-bold text-sm">78%</div>
+            <div className="ml-3 font-bold text-sm">
+              {useVesting()
+                .getSchedulesByLevel(1)
+                .filter((s) => s.invested && !s.claimed)
+                .sort((a, b) => b.progress - a.progress)[0]?.progress || 0}
+              %
+            </div>
           </div>
 
-          {/* Level 2 - Active schedule at 95% (closest to 100% that's not claimed) */}
+          {/* Level 2 - Active schedule */}
           <div className="flex items-center">
             <div className="mr-3 w-12 text-sm">Level 2</div>
             <div className="w-8 h-8 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-sm">
               4
             </div>
             <div className="flex-1 bg-gray-700 rounded-full h-3">
-              <div className="bg-green-500 h-3 rounded-full" style={{ width: "95%" }}></div>
+              <div
+                className="bg-green-500 h-3 rounded-full"
+                style={{
+                  width: `${
+                    useVesting()
+                      .getSchedulesByLevel(2)
+                      .filter((s) => s.invested && !s.claimed)
+                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 0
+                  }%`,
+                }}
+              ></div>
             </div>
-            <div className="ml-3 font-bold text-sm">95%</div>
+            <div className="ml-3 font-bold text-sm">
+              {useVesting()
+                .getSchedulesByLevel(2)
+                .filter((s) => s.invested && !s.claimed)
+                .sort((a, b) => b.progress - a.progress)[0]?.progress || 0}
+              %
+            </div>
           </div>
 
-          {/* Level 3 - No active schedules, empty progress bar */}
+          {/* Level 3 - Active schedule */}
           <div className="flex items-center">
             <div className="mr-3 w-12 text-sm">Level 3</div>
             <div className="w-8 h-8 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-sm">
               8
             </div>
             <div className="flex-1 bg-gray-700 rounded-full h-3">
-              <div className="bg-gray-500 h-3 rounded-full" style={{ width: "0%" }}></div>
+              <div
+                className="bg-green-500 h-3 rounded-full"
+                style={{
+                  width: `${
+                    useVesting()
+                      .getSchedulesByLevel(3)
+                      .filter((s) => s.invested && !s.claimed)
+                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 0
+                  }%`,
+                }}
+              ></div>
             </div>
-            <div className="ml-3 font-bold text-sm">0%</div>
+            <div className="ml-3 font-bold text-sm">
+              {useVesting()
+                .getSchedulesByLevel(3)
+                .filter((s) => s.invested && !s.claimed)
+                .sort((a, b) => b.progress - a.progress)[0]?.progress || 0}
+              %
+            </div>
           </div>
         </div>
       </div>
