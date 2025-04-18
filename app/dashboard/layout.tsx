@@ -26,6 +26,7 @@ import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
 import { logoutUser } from "@/actions/auth-actions"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 export default function DashboardLayout({
   children,
@@ -35,49 +36,55 @@ export default function DashboardLayout({
   const [sidebarOpen] = useState(true) // Always keep sidebar open
   const [showPurchaseToast, setShowPurchaseToast] = useState(false)
   const [userData, setUserData] = useState<any>(null)
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [authChecked, setAuthChecked] = useState(false)
+  const [sessionChecked, setSessionChecked] = useState(false)
 
-  // Check if user is authenticated
+  // Check if user is authenticated - with proper waiting
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log("DashboardLayout: Checking auth...")
+
+        // Wait for auth context to finish loading
+        if (authLoading) {
+          console.log("DashboardLayout: Auth context still loading...")
+          return
+        }
+
+        // Get session directly to double-check
         const {
           data: { session },
         } = await supabase.auth.getSession()
 
-        if (!session) {
-          console.log("No active session found, redirecting to login")
+        console.log("DashboardLayout: Session check result:", session ? "Session found" : "No session")
+
+        if (!session && !user) {
+          console.log("DashboardLayout: No active session found, redirecting to login")
           router.push("/login")
           return
         }
 
-        setAuthChecked(true)
+        setSessionChecked(true)
       } catch (error) {
         console.error("Error checking auth:", error)
-        router.push("/login")
       }
     }
 
     checkAuth()
-  }, [router])
+  }, [router, user, authLoading])
 
   // Fetch or create user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
-      if (!user || !authChecked) return
+      if (!user || !sessionChecked) {
+        console.log("DashboardLayout: Not fetching user data yet - waiting for session check")
+        return
+      }
 
       try {
-        // Get the current session to ensure RLS compliance
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (!session) {
-          console.log("No active session found when fetching user data")
-          return
-        }
+        console.log("DashboardLayout: Fetching user data for:", user.id)
 
         // Try to fetch existing user data
         const { data, error } = await supabase.from("app_users").select("*").eq("user_uuid", user.id).maybeSingle()
@@ -89,10 +96,13 @@ export default function DashboardLayout({
 
         // If no user data exists, create it
         if (!data) {
-          console.log("Creating user data for:", user.id)
+          console.log("DashboardLayout: Creating user data for:", user.id)
           const displayId = `USR-${Math.floor(1000000 + Math.random() * 9000000)}`
 
-          const { error: createError, data: newUserData } = await supabase
+          // Use the service role client for creating user data to bypass RLS
+          const serviceClient = createServerSupabaseClient()
+
+          const { error: createError, data: newUserData } = await serviceClient
             .from("app_users")
             .insert({
               user_uuid: user.id,
@@ -111,7 +121,7 @@ export default function DashboardLayout({
 
           // Also create user settings if they don't exist
           const referralCode = `REF-${Math.floor(1000000 + Math.random() * 9000000)}`
-          await supabase.from("usersettings").insert({
+          await serviceClient.from("usersettings").insert({
             user_uuid: user.id,
             display_id: displayId,
             referral_code: referralCode,
@@ -119,7 +129,7 @@ export default function DashboardLayout({
           })
 
           // Create initial balances
-          await supabase.from("balances").insert({
+          await serviceClient.from("balances").insert({
             user_uuid: user.id,
             display_id: displayId,
             pwt_invest_balance: 0,
@@ -168,7 +178,7 @@ export default function DashboardLayout({
     }
 
     fetchUserData()
-  }, [user, authChecked])
+  }, [user, sessionChecked])
 
   // Add this component inside the DashboardLayout function, before the return statement
   function NotificationsButton() {
@@ -273,7 +283,7 @@ export default function DashboardLayout({
   }
 
   // Show loading state while checking auth and fetching data
-  if (loading || !authChecked) {
+  if (authLoading || loading || !sessionChecked) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#1c1e26] text-white">
         <div className="text-center">

@@ -9,7 +9,6 @@ const isClient = typeof window !== "undefined"
 
 // Create a singleton instance for the client side
 let supabaseInstance: ReturnType<typeof createClient> | null = null
-let instanceCount = 0 // Track how many times we create a client
 
 // Function to get the Supabase client (singleton pattern)
 export const getSupabaseClient = () => {
@@ -17,13 +16,13 @@ export const getSupabaseClient = () => {
     // For client-side, maintain a singleton instance
     if (!supabaseInstance) {
       console.log("Creating NEW Supabase client instance (client-side)")
-      instanceCount++
-      console.log(`Total Supabase client instances created: ${instanceCount}`)
 
       supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
           persistSession: true,
           storageKey: "supabase_auth_token",
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
         },
       })
     } else {
@@ -34,8 +33,6 @@ export const getSupabaseClient = () => {
 
   // For server-side, always create a new instance
   console.log("Creating NEW Supabase client instance (server-side)")
-  instanceCount++
-  console.log(`Total Supabase client instances created: ${instanceCount}`)
 
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {

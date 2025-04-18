@@ -3,7 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { supabase } from "@/lib/supabase"
 
 const AuthContext = createContext<{
   user: any
@@ -28,12 +28,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const loadUserSession = async () => {
       try {
         setLoading(true)
-        const supabase = createClientComponentClient()
+        console.log("AuthProvider: Loading user session...")
 
         // Get the initial session
         const {
           data: { session },
         } = await supabase.auth.getSession()
+
+        console.log("AuthProvider: Initial session check:", session ? "Session found" : "No session")
 
         if (session) {
           setSession(session)
@@ -50,9 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("Auth state changed:", event)
 
           if (newSession) {
+            console.log("AuthProvider: New session detected")
             setSession(newSession)
             setUser(newSession.user)
           } else {
+            console.log("AuthProvider: No session in auth state change")
             setSession(null)
             setUser(null)
           }
@@ -77,9 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router])
 
   const signOut = async () => {
-    const supabase = createClientComponentClient()
-    await supabase.auth.signOut()
-    router.push("/login")
+    try {
+      await supabase.auth.signOut()
+      router.push("/login")
+    } catch (error) {
+      console.error("Error signing out:", error)
+    }
   }
 
   const value = { user, session, loading, signOut }
