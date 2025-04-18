@@ -3,9 +3,54 @@
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { v4 as uuidv4 } from "uuid"
 
-// Register a new user
+export async function loginUser(formData: FormData) {
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
+
+  try {
+    const supabase = createServerSupabaseClient()
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      return { success: false, message: error.message }
+    }
+
+    revalidatePath("/dashboard")
+    redirect("/dashboard")
+
+    return { success: true, message: "Login successful" }
+  } catch (error: any) {
+    return { success: false, message: error.message }
+  }
+}
+
+export async function logoutUser() {
+  try {
+    const supabase = createServerSupabaseClient()
+
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      return { success: false, message: error.message }
+    }
+
+    revalidatePath("/login")
+    redirect("/login")
+
+    return { success: true, message: "Logout successful" }
+  } catch (error: any) {
+    return { success: false, message: error.message }
+  }
+}
+
+// Add the registerUser function that was missing
+
+// Add this function after the existing functions
 export async function registerUser(formData: FormData) {
   const email = formData.get("email") as string
   const password = formData.get("password") as string
@@ -19,6 +64,9 @@ export async function registerUser(formData: FormData) {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL}/api/auth/callback`,
+      },
     })
 
     if (authError) throw new Error(authError.message)
@@ -43,12 +91,11 @@ export async function registerUser(formData: FormData) {
 
       // Initialize user balances
       const { error: balanceError } = await supabase.from("balances").insert({
-        id: uuidv4(),
         user_uuid: userUuid,
         display_id: displayId,
-        pwt_invest_balance: 30,
-        pwt_cashout_balance: 30,
-        activation_fee_balance: 30,
+        pwt_invest_balance: 0,
+        pwt_cashout_balance: 0,
+        activation_fee_balance: 0,
         updated_at: new Date().toISOString(),
       })
 
@@ -56,7 +103,6 @@ export async function registerUser(formData: FormData) {
 
       // Create user settings
       const { error: settingsError } = await supabase.from("usersettings").insert({
-        setting_id: uuidv4(),
         user_uuid: userUuid,
         mfa_enabled: false,
         referral_code: referralCode,
@@ -91,41 +137,4 @@ export async function registerUser(formData: FormData) {
   } catch (error: any) {
     return { success: false, message: error.message }
   }
-}
-
-// Login user
-export async function loginUser(formData: FormData) {
-  const email = formData.get("email") as string
-  const password = formData.get("password") as string
-
-  try {
-    const supabase = createServerSupabaseClient()
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) throw new Error(error.message)
-
-    if (data.user) {
-      // Update last login time
-      await supabase.from("app_users").update({ last_login: new Date().toISOString() }).eq("user_uuid", data.user.id)
-
-      revalidatePath("/dashboard")
-      redirect("/dashboard")
-    }
-
-    return { success: true }
-  } catch (error: any) {
-    return { success: false, message: error.message }
-  }
-}
-
-// Logout user
-export async function logoutUser() {
-  const supabase = createServerSupabaseClient()
-  await supabase.auth.signOut()
-  revalidatePath("/")
-  redirect("/login")
 }

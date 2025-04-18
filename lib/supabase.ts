@@ -9,23 +9,34 @@ const isClient = typeof window !== "undefined"
 
 // Create a singleton instance for the client side
 let supabaseInstance: ReturnType<typeof createClient> | null = null
+let instanceCount = 0 // Track how many times we create a client
 
 // Function to get the Supabase client (singleton pattern)
 export const getSupabaseClient = () => {
   if (isClient) {
     // For client-side, maintain a singleton instance
     if (!supabaseInstance) {
+      console.log("Creating NEW Supabase client instance (client-side)")
+      instanceCount++
+      console.log(`Total Supabase client instances created: ${instanceCount}`)
+
       supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
           persistSession: true,
           storageKey: "supabase_auth_token",
         },
       })
+    } else {
+      console.log("Reusing existing Supabase client instance")
     }
     return supabaseInstance
   }
 
   // For server-side, always create a new instance
+  console.log("Creating NEW Supabase client instance (server-side)")
+  instanceCount++
+  console.log(`Total Supabase client instances created: ${instanceCount}`)
+
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
@@ -40,6 +51,8 @@ export const supabase = getSupabaseClient()
 export const createServerSupabaseClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
+
+  console.log("Creating NEW Supabase server client instance")
 
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {

@@ -29,22 +29,8 @@ export function RegisterForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [showDropdown, setShowDropdown] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [passwordsMatch, setPasswordsMatch] = useState(true)
-
-  const countries = [
-    "Namibia",
-    "South Africa",
-    "Botswana",
-    "Zimbabwe",
-    "Kenya",
-    "Nigeria",
-    "Ghana",
-    "Egypt",
-    "Morocco",
-    "Tanzania",
-  ]
 
   async function handleSubmit(formData: FormData) {
     // Check if passwords match
@@ -62,7 +48,8 @@ export function RegisterForm() {
     const result = await registerUser(formDataWithCountry)
 
     if (result.success) {
-      router.push("/login?registered=true")
+      // Redirect to verify email page instead of login
+      router.push("/verify-email")
     } else {
       setError(result.message || "Registration failed. Please try again.")
     }

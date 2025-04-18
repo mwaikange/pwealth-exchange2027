@@ -4,8 +4,6 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
-
-  // Create a Supabase client specifically for the middleware
   const supabase = createMiddlewareClient({ req, res })
 
   // Check if we have a session
@@ -13,26 +11,24 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
+  // Allow access to auth callback route
+  if (req.nextUrl.pathname.startsWith("/api/auth/callback")) {
+    return res
+  }
+
   // If accessing a protected route without a session, redirect to login
   if (!session && req.nextUrl.pathname.startsWith("/dashboard")) {
-    const redirectUrl = new URL("/login", req.url)
-    return NextResponse.redirect(redirectUrl)
+    return NextResponse.redirect(new URL("/login", req.url))
   }
 
   // If accessing login/register with a session, redirect to dashboard
-  // Skip this check for the debug-login page
-  if (
-    session &&
-    (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/register") &&
-    req.nextUrl.pathname !== "/debug-login"
-  ) {
-    const redirectUrl = new URL("/dashboard", req.url)
-    return NextResponse.redirect(redirectUrl)
+  if (session && (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/register")) {
+    return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
   return res
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register", "/debug-login"],
+  matcher: ["/dashboard/:path*", "/login", "/register", "/api/auth/callback"],
 }
