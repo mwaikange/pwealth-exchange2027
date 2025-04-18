@@ -1,5 +1,5 @@
 "use server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 export async function registerUser(formData: FormData) {
   const supabase = createServerSupabaseClient()

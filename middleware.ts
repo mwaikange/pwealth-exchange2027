@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
+import { createServerClient } from "@supabase/ssr"
+import { env } from "./lib/env"
 
 export async function middleware(request: NextRequest) {
   try {
@@ -8,7 +9,37 @@ export async function middleware(request: NextRequest) {
     const res = NextResponse.next()
 
     // Create a Supabase client configured to use cookies
-    const supabase = createMiddlewareClient({ req: request, res })
+    const supabase = createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+          res.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+        },
+        remove(name: string, options: any) {
+          request.cookies.set({
+            name,
+            value: "",
+            ...options,
+          })
+          res.cookies.set({
+            name,
+            value: "",
+            ...options,
+          })
+        },
+      },
+    })
 
     // Refresh session if expired - required for Server Components
     const {

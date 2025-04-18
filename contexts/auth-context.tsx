@@ -3,7 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabaseClient"
 
 const AuthContext = createContext<{
   user: any
@@ -28,14 +28,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const loadUserSession = async () => {
       try {
         setLoading(true)
-        console.log("AuthProvider: Loading user session...")
+        console.log("[CLIENT] AuthProvider: Loading user session...")
 
         // Get the initial session
         const {
           data: { session },
         } = await supabase.auth.getSession()
 
-        console.log("AuthProvider: Initial session check:", session ? "Session found" : "No session")
+        console.log("[CLIENT] AuthProvider: Initial session check:", session ? "Session found" : "No session")
 
         if (session) {
           setSession(session)
@@ -49,14 +49,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const {
           data: { subscription },
         } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-          console.log("Auth state changed:", event)
+          console.log("[CLIENT] Auth state changed:", event)
 
           if (newSession) {
-            console.log("AuthProvider: New session detected")
+            console.log("[CLIENT] AuthProvider: New session detected")
             setSession(newSession)
             setUser(newSession.user)
           } else {
-            console.log("AuthProvider: No session in auth state change")
+            console.log("[CLIENT] AuthProvider: No session in auth state change")
             setSession(null)
             setUser(null)
           }
