@@ -1,21 +1,35 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
 import Image from "next/image"
+import Link from "next/link"
+import { loginUser } from "@/actions/auth-actions"
+import { useFormStatus } from "react-dom"
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+    >
+      {pending ? "Signing in..." : "Sign in"}
+    </button>
+  )
+}
 
 export function LoginForm() {
-  const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [remember, setRemember] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    router.push("/dashboard")
+  async function handleSubmit(formData: FormData) {
+    setError(null)
+    const result = await loginUser(formData)
+
+    if (!result.success) {
+      setError(result.message || "Login failed. Please check your credentials.")
+    }
   }
 
   return (
@@ -35,23 +49,26 @@ export function LoginForm() {
         {/* Heading */}
         <h2 className="text-center text-2xl font-medium text-white">Welcome back!</h2>
 
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-2 rounded-md text-sm">{error}</div>
+        )}
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form action={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <input
               type="email"
+              name="email"
               placeholder="Your email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
               required
             />
 
             <input
               type="password"
+              name="password"
               placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
               required
             />
@@ -62,8 +79,7 @@ export function LoginForm() {
               <input
                 type="checkbox"
                 id="remember"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
+                name="remember"
                 className="h-4 w-4 rounded border-gray-600 bg-[#3a3d4a]"
               />
               <label htmlFor="remember" className="ml-2 text-sm text-gray-300">
@@ -76,12 +92,7 @@ export function LoginForm() {
             </a>
           </div>
 
-          <button
-            type="submit"
-            className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
-          >
-            Sign in
-          </button>
+          <SubmitButton />
         </form>
 
         {/* Divider */}

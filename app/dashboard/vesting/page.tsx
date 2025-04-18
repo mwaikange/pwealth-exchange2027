@@ -12,6 +12,10 @@ export default function Vesting() {
   const [investError, setInvestError] = useState("")
   const [claimError, setClaimError] = useState("")
 
+  const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
+  const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
+  const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
+
   const { pwtInvestBalance, aftBalance } = useWallet()
   const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
 
@@ -107,7 +111,7 @@ export default function Vesting() {
   }
 
   // Handle activate button click
-  const handleActivate = (scheduleId) => {
+  const handleActivate = (scheduleId: string) => {
     const level = getActiveLevel()
     const cost = getActivationCost()
 
@@ -116,11 +120,22 @@ export default function Vesting() {
       return
     }
 
-    activateSchedule(scheduleId)
+    // Show confirmation dialog instead of activating immediately
+    setPendingScheduleId(scheduleId)
+    setShowActivateConfirmation(true)
+  }
+
+  // New function to handle confirmation
+  const confirmActivate = () => {
+    if (pendingScheduleId) {
+      activateSchedule(pendingScheduleId)
+      setShowActivateConfirmation(false)
+      setPendingScheduleId(null)
+    }
   }
 
   // Handle invest button click
-  const handleInvest = (scheduleId) => {
+  const handleInvest = (scheduleId: string) => {
     const level = getActiveLevel()
     const cost = getInvestmentCost()
 
@@ -129,7 +144,18 @@ export default function Vesting() {
       return
     }
 
-    investInSchedule(scheduleId)
+    // Show confirmation dialog instead of investing immediately
+    setPendingScheduleId(scheduleId)
+    setShowInvestConfirmation(true)
+  }
+
+  // New function to handle confirmation
+  const confirmInvest = () => {
+    if (pendingScheduleId) {
+      investInSchedule(pendingScheduleId)
+      setShowInvestConfirmation(false)
+      setPendingScheduleId(null)
+    }
   }
 
   // Handle claim button click
@@ -385,6 +411,95 @@ export default function Vesting() {
           </div>
         </div>
       </div>
+
+      {/* Activate Confirmation Dialog */}
+      {showActivateConfirmation && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+          <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-white">Confirm Activation</h3>
+              <button onClick={() => setShowActivateConfirmation(false)} className="text-gray-400 hover:text-white">
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-white mb-2">
+                This transaction is irreversible. {getActivationCost()} AFT will be deducted from your wallet.
+              </p>
+              <p className="text-yellow-300 text-sm">Are you sure you want to proceed?</p>
+            </div>
+
+            <div className="flex space-x-4">
+              <button
+                onClick={() => setShowActivateConfirmation(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmActivate}
+                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invest Confirmation Dialog */}
+      {showInvestConfirmation && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+          <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-white">Confirm Investment</h3>
+              <button onClick={() => setShowInvestConfirmation(false)} className="text-gray-400 hover:text-white">
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-white mb-2">
+                This transaction is irreversible. {getInvestmentCost()} PWT will be deducted from your PWT Invest
+                wallet.
+              </p>
+              <p className="text-yellow-300 text-sm">Are you sure you want to proceed?</p>
+            </div>
+
+            <div className="flex space-x-4">
+              <button
+                onClick={() => setShowInvestConfirmation(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmInvest}
+                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

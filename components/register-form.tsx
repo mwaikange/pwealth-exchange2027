@@ -1,12 +1,26 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { ChevronDown } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
+import { registerUser } from "@/actions/auth-actions"
+import { useFormStatus } from "react-dom"
+import { useRouter } from "next/navigation"
+import { CountryCombobox } from "./country-combobox"
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+    >
+      {pending ? "Registering..." : "Register"}
+    </button>
+  )
+}
 
 export function RegisterForm() {
   const router = useRouter()
@@ -16,10 +30,42 @@ export function RegisterForm() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showDropdown, setShowDropdown] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [passwordsMatch, setPasswordsMatch] = useState(true)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    router.push("/dashboard")
+  const countries = [
+    "Namibia",
+    "South Africa",
+    "Botswana",
+    "Zimbabwe",
+    "Kenya",
+    "Nigeria",
+    "Ghana",
+    "Egypt",
+    "Morocco",
+    "Tanzania",
+  ]
+
+  async function handleSubmit(formData: FormData) {
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      setPasswordsMatch(false)
+      return
+    }
+
+    setError(null)
+
+    // Include country with the other form values
+    const formDataWithCountry = new FormData(document.querySelector("form")!)
+    formDataWithCountry.append("country", country)
+
+    const result = await registerUser(formDataWithCountry)
+
+    if (result.success) {
+      router.push("/login?registered=true")
+    } else {
+      setError(result.message || "Registration failed. Please try again.")
+    }
   }
 
   return (
@@ -39,11 +85,17 @@ export function RegisterForm() {
         {/* Heading */}
         <h2 className="text-center text-2xl font-medium text-white">Peer-2-Peer Wealth Creation!</h2>
 
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-2 rounded-md text-sm">{error}</div>
+        )}
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form action={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <input
               type="email"
+              name="referrerEmail"
               placeholder="Referrer's Email Address"
               value={referrerEmail}
               onChange={(e) => setReferrerEmail(e.target.value)}
@@ -51,34 +103,12 @@ export function RegisterForm() {
             />
 
             <div className="relative">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-4 py-3 bg-[#3a3d4a] rounded-full text-gray-400 focus:outline-none"
-                onClick={() => setShowDropdown(!showDropdown)}
-              >
-                <span>{country || "Select Country"}</span>
-                <ChevronDown className="h-5 w-5" />
-              </button>
-              {showDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-[#3a3d4a] rounded-md shadow-lg">
-                  {["Namibia", "South Africa", "Botswana", "Zimbabwe"].map((c) => (
-                    <div
-                      key={c}
-                      className="px-4 py-2 hover:bg-[#4a4d5a] cursor-pointer text-white"
-                      onClick={() => {
-                        setCountry(c)
-                        setShowDropdown(false)
-                      }}
-                    >
-                      {c}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <CountryCombobox value={country} onChange={setCountry} placeholder="Country" />
             </div>
 
             <input
               type="email"
+              name="email"
               placeholder="Your email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -88,29 +118,36 @@ export function RegisterForm() {
 
             <input
               type="password"
+              name="password"
               placeholder="Password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (confirmPassword) {
+                  setPasswordsMatch(e.target.value === confirmPassword)
+                }
+              }}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
               required
             />
 
             <input
               type="password"
-              placeholder="Password"
+              name="confirmPassword"
+              placeholder="Confirm Password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+              onChange={(e) => {
+                setConfirmPassword(e.target.value)
+                setPasswordsMatch(password === e.target.value)
+              }}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
               required
             />
+
+            {!passwordsMatch && <p className="text-red-500 text-sm">Passwords do not match</p>}
           </div>
 
-          <button
-            type="submit"
-            className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
-          >
-            Register
-          </button>
+          <SubmitButton />
         </form>
 
         {/* Divider */}

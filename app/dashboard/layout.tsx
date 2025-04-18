@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -23,6 +23,9 @@ import { TransactionProvider } from "@/contexts/transaction-context"
 import { WalletBalances } from "@/components/wallet-balances"
 import { VestingProvider } from "@/contexts/vesting-context"
 import { useTransactions } from "@/contexts/transaction-context"
+import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase"
+import { logoutUser } from "@/actions/auth-actions"
 
 export default function DashboardLayout({
   children,
@@ -31,20 +34,44 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen] = useState(true) // Always keep sidebar open
   const [showPurchaseToast, setShowPurchaseToast] = useState(false)
+  const [userData, setUserData] = useState<any>(null)
+  const { user } = useAuth()
+  const router = useRouter()
+
+  // Fetch user data from Supabase
+  useEffect(() => {
+    async function fetchUserData() {
+      if (!user) return
+
+      const { data, error } = await supabase.from("app_users").select("*").eq("user_uuid", user.id).single()
+
+      if (error) {
+        console.error("Error fetching user data:", error)
+        return
+      }
+
+      setUserData(data)
+    }
+
+    fetchUserData()
+  }, [user])
 
   // Add this component inside the DashboardLayout function, before the return statement
   function NotificationsButton() {
     const [showNotifications, setShowNotifications] = useState(false)
     const { transactions } = useTransactions()
+    const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([])
 
     // Filter transactions to only show IN-PWT RECEIPT and IN-AFT GIFT
-    const filteredNotifications = transactions.filter((tx) => tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT")
+    // and exclude dismissed notifications
+    const filteredNotifications = transactions.filter(
+      (tx) => (tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT") && !dismissedNotifications.includes(tx.id),
+    )
 
     // Function to dismiss a notification
     const dismissNotification = (id: string) => {
-      // In a real app, you would update the transaction status in the database
-      // For now, we'll just close the dropdown
-      setShowNotifications(false)
+      // Add this notification ID to the dismissed list
+      setDismissedNotifications((prev) => [...prev, id])
     }
 
     return (
@@ -66,7 +93,14 @@ export default function DashboardLayout({
           <div className="absolute right-0 mt-2 w-80 bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
             <div className="p-3 border-b border-gray-700 flex justify-between items-center">
               <h3 className="font-medium text-sm">Notifications</h3>
-              <button className="text-gray-400 hover:text-white text-xs" onClick={() => setShowNotifications(false)}>
+              <button
+                className="text-gray-400 hover:text-white text-xs"
+                onClick={() => {
+                  // Mark all notifications as dismissed
+                  const allIds = filteredNotifications.map((notification) => notification.id)
+                  setDismissedNotifications((prev) => [...prev, ...allIds])
+                }}
+              >
                 Close All
               </button>
             </div>
@@ -112,7 +146,6 @@ export default function DashboardLayout({
   }
 
   const pathname = usePathname()
-  const router = useRouter()
 
   // Extract the current page title from the pathname
   const getPageTitle = () => {
@@ -121,8 +154,8 @@ export default function DashboardLayout({
     return path.toUpperCase()
   }
 
-  const handleSignOut = () => {
-    router.push("/login")
+  const handleSignOut = async () => {
+    await logoutUser()
   }
 
   return (
@@ -260,11 +293,11 @@ export default function DashboardLayout({
                 <div className="p-3 border-t border-gray-700">
                   <div className="flex items-center mb-2">
                     <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-base font-bold mr-2">
-                      M
+                      {userData?.email?.charAt(0).toUpperCase() || "U"}
                     </div>
                     <div>
                       <div className="text-xs font-medium">user :</div>
-                      <div className="text-xs text-gray-400">mwaikange@gmail.com</div>
+                      <div className="text-xs text-gray-400">{userData?.email || user?.email || "Loading..."}</div>
                     </div>
                   </div>
 

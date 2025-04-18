@@ -3,7 +3,21 @@
 import { useWallet } from "@/contexts/wallet-context"
 
 export function WalletBalances() {
-  const { pwtInvestBalance, pwtCashoutBalance, aftBalance } = useWallet()
+  const { pwtInvestBalance, pwtCashoutBalance, aftBalance, loading } = useWallet()
+
+  if (loading) {
+    return (
+      <div className="flex items-center space-x-2">
+        {/* Loading skeletons */}
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
+            <div className="flex items-center text-[10px] text-gray-300 w-full h-3 bg-gray-600 animate-pulse rounded mb-1"></div>
+            <div className="text-xl font-bold w-full h-6 bg-gray-600 animate-pulse rounded"></div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center space-x-2">

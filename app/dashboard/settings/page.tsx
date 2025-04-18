@@ -2,13 +2,86 @@
 
 import { useRouter } from "next/navigation"
 import { Copy } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
+import { updatePassword, updateReferrerEmail } from "@/actions/user-actions"
+import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase"
+// Import the updateReferrer action
+import { updateReferrer } from "@/actions/update-referrer"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 export default function Settings() {
   const router = useRouter()
   const [copied, setCopied] = useState(false)
   const [showCopyNotification, setShowCopyNotification] = useState(false)
+  const [userData, setUserData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
+  const [referrerError, setReferrerError] = useState<string | null>(null)
+  const [referrerSuccess, setReferrerSuccess] = useState<string | null>(null)
+  const { user } = useAuth()
+
+  // Fetch user data from Supabase
+  useEffect(() => {
+    async function fetchUserData() {
+      if (!user) return
+
+      setLoading(true)
+
+      try {
+        const { data: userProfile, error } = await supabase
+          .from("app_users")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .single()
+
+        if (error) {
+          console.error("Error fetching user data:", error)
+          return
+        }
+
+        // Also fetch referral code
+        const { data: settingsData } = await supabase
+          .from("usersettings")
+          .select("referral_code")
+          .eq("user_uuid", user.id)
+          .single()
+
+        // Update the data fetching to include referrer information
+        // Find where you fetch user data and update it to include referrer info
+
+        // Add this to your existing data fetching:
+        const { data: referralData } = await supabase
+          .from("referrals")
+          .select("referrer_email")
+          .eq("user_uuid", user.id)
+          .single()
+
+        // Then merge this with your user data:
+        const userData = {
+          ...userProfile,
+          referrer_email: referralData?.referrer_email || null,
+        }
+
+        if (settingsData) {
+          setUserData((prev) => ({ ...prev, referral_code: settingsData.referral_code, ...userData }))
+        } else {
+          setUserData(userData)
+        }
+      } catch (error) {
+        console.error("Error in fetchUserData:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUserData()
+  }, [user])
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -18,6 +91,59 @@ export default function Settings() {
       setCopied(false)
       setShowCopyNotification(false)
     }, 2000)
+  }
+
+  async function handlePasswordUpdate(formData: FormData) {
+    setPasswordError(null)
+    setPasswordSuccess(null)
+
+    const result = await updatePassword(formData)
+
+    if (result.success) {
+      setPasswordSuccess(result.message)
+      // Clear form
+      const form = document.getElementById("password-form") as HTMLFormElement
+      if (form) form.reset()
+    } else {
+      setPasswordError(result.message)
+    }
+  }
+
+  async function handleReferrerUpdate(formData: FormData) {
+    setReferrerError(null)
+    setReferrerSuccess(null)
+
+    const result = await updateReferrerEmail(formData)
+
+    if (result.success) {
+      setReferrerSuccess(result.message)
+      // Clear form
+      const form = document.getElementById("referrer-form") as HTMLFormElement
+      if (form) form.reset()
+    } else {
+      setReferrerError(result.message)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden p-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-gray-400 text-sm">Loading your settings...</p>
+
+        <div className="mt-8 grid grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-[#2a2d3a] rounded-lg p-6 h-80 animate-pulse">
+              <div className="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
+              <div className="h-4 bg-gray-700 rounded w-1/2 mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-full mb-6"></div>
+              <div className="h-10 bg-gray-700 rounded w-full mb-4"></div>
+              <div className="h-10 bg-gray-700 rounded w-full"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -63,33 +189,52 @@ export default function Settings() {
                   <div className="text-sm text-gray-400">Country :</div>
                 </div>
                 <div>
-                  <div className="text-sm text-green-500">someone@gmail.com</div>
-                  <div className="text-sm text-green-500">South Africa</div>
+                  <div className="text-sm text-green-500">{userData?.email || user?.email}</div>
+                  <div className="text-sm text-green-500">{userData?.country || "Not set"}</div>
                 </div>
               </div>
 
               <h3 className="text-lg font-medium mb-3">Change Password</h3>
 
-              <div className="space-y-3 mb-4">
+              {passwordError && (
+                <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {passwordError}
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="bg-green-500/20 border border-green-500 text-green-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <form id="password-form" action={handlePasswordUpdate} className="space-y-3 mb-4">
                 <input
                   type="password"
+                  name="oldPassword"
                   placeholder="Old Password"
                   className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
+                  required
                 />
                 <input
                   type="password"
+                  name="newPassword"
                   placeholder="New Password"
                   className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
+                  required
                 />
-              </div>
 
-              <div className="flex-grow"></div>
+                <div className="flex-grow"></div>
 
-              <div className="flex justify-center">
-                <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm">
-                  Confirm
-                </button>
-              </div>
+                <div className="flex justify-center mt-6">
+                  <button
+                    type="submit"
+                    className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
 
@@ -97,20 +242,40 @@ export default function Settings() {
           <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
             {/* Referral Email Input Section */}
             <div className="mb-6">
-              <input
-                type="text"
-                placeholder="pwt@example.com"
-                className="w-full p-2 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0 mb-2 text-xs"
-              />
+              {referrerError && (
+                <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {referrerError}
+                </div>
+              )}
 
-              <p className="text-xs text-gray-400 mb-1">Paste email address OR REFERRAL CODE of your Referral here.</p>
-              <p className="text-xs text-gray-400 mb-2">**NB once completed this cant be changed for this account</p>
+              {referrerSuccess && (
+                <div className="bg-green-500/20 border border-green-500 text-green-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {referrerSuccess}
+                </div>
+              )}
 
-              <div className="flex justify-center mt-2 mb-4">
-                <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-4 py-1 rounded-md text-xs">
-                  Confirm
-                </button>
-              </div>
+              <form id="referrer-form" action={handleReferrerUpdate}>
+                <input
+                  type="text"
+                  name="referrerEmail"
+                  placeholder="pwt@example.com"
+                  className="w-full p-2 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0 mb-2 text-xs"
+                />
+
+                <p className="text-xs text-gray-400 mb-1">
+                  Paste email address OR REFERRAL CODE of your Referral here.
+                </p>
+                <p className="text-xs text-gray-400 mb-2">**NB once completed this cant be changed for this account</p>
+
+                <div className="flex justify-center mt-4 mb-4">
+                  <button
+                    type="submit"
+                    className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </form>
             </div>
 
             {/* Divider */}
@@ -214,13 +379,15 @@ export default function Settings() {
                 </p>
                 <div className="flex items-center">
                   <button
-                    onClick={() => copyToClipboard("www.peer-wealth.com/ref/3000278")}
+                    onClick={() => copyToClipboard(`www.peer-wealth.com/ref/${userData?.referral_code || ""}`)}
                     className="mr-2 p-1 hover:bg-gray-700 rounded"
                     title="Copy to clipboard"
                   >
                     <Copy size={16} className={copied ? "text-green-500" : "text-gray-400"} />
                   </button>
-                  <p className="text-[#4285f4] text-sm break-all">www.peer-wealth.com/ref/3000278</p>
+                  <p className="text-[#4285f4] text-sm break-all">
+                    www.peer-wealth.com/ref/{userData?.referral_code || ""}
+                  </p>
                   {showCopyNotification && (
                     <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">
                       Copied to clipboard!
@@ -231,12 +398,36 @@ export default function Settings() {
 
               <div className="mt-auto pt-10">
                 <p className="text-sm mb-1">This is your Referral Code / ID</p>
-                <p className="text-2xl font-bold">RFRL-3000278</p>
+                <p className="text-2xl font-bold">{userData?.referral_code || ""}</p>
               </div>
             </div>
           </div>
         </div>
       </div>
+      {/* Add a new section for updating referrer in the settings page */}
+      {/* Find a suitable location in the settings page and add: */}
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Referrer Information</CardTitle>
+          <CardDescription>Update your referrer if you didn't provide one during registration</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateReferrer} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="referrerEmail">Referrer Email</Label>
+              <Input
+                id="referrerEmail"
+                name="referrerEmail"
+                type="email"
+                placeholder="Enter your referrer's email"
+                defaultValue={userData?.referrer_email || ""}
+              />
+            </div>
+            <Button type="submit">Update Referrer</Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

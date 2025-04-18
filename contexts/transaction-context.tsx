@@ -2,6 +2,9 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/contexts/auth-context"
+import { v4 as uuidv4 } from "uuid"
 
 // Define transaction types
 export type TransactionType =
@@ -29,24 +32,21 @@ export interface Transaction {
   recipient?: string
   reference: string
   description?: string
+  sender?: string
 }
 
 // Define context type
 type TransactionContextType = {
   transactions: Transaction[]
-  addTransaction: (transaction: Omit<Transaction, "id" | "date" | "reference">) => void
+  addTransaction: (transaction: Omit<Transaction, "id" | "date" | "reference">) => Promise<Transaction>
   getRecentTransactions: (count: number) => Transaction[]
   getTransactionsByType: (type: TransactionType | "All" | "Earnings" | "Outflows") => Transaction[]
   getCashoutTransactions: () => Transaction[]
+  loading: boolean
 }
 
 // Create context
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined)
-
-// Generate a unique transaction ID
-const generateTransactionId = () => {
-  return `TRX-${Math.floor(Math.random() * 100000)}`
-}
 
 // Generate a formatted date string
 const generateDateString = () => {
@@ -62,145 +62,109 @@ const generateDateString = () => {
   return `${day} ${month}, ${formattedHours}:${formattedMinutes}${ampm}`
 }
 
-// Sample initial transactions
-const initialTransactions: Transaction[] = [
-  {
-    id: "TRX-87686",
-    type: "VESTING",
-    account: "PWT Invest",
-    date: "12 May, 5:40pm",
-    amount: 80,
-    amountUsd: 800,
-    reference: "LEVEL 1C",
-    description: "VESTING - LEVEL 1C",
-  },
-  {
-    id: "TRX-87685",
-    type: "VESTING",
-    account: "PWT Invest",
-    date: "12 May, 4:30pm",
-    amount: 80,
-    amountUsd: 800,
-    reference: "LEVEL 1D",
-    description: "VESTING - LEVEL 1D",
-  },
-  {
-    id: "TRX-87684",
-    type: "CLAIM",
-    account: "PWT Cashout",
-    date: "12 May, 3:20pm",
-    amount: 10,
-    amountUsd: 100,
-    reference: "LEVEL 2B",
-    description: "CLAIM - LEVEL 2B",
-  },
-  {
-    id: "TRX-87683",
-    type: "OUT-TRANSFER",
-    account: "PWT Cashout",
-    date: "12 May, 2:10pm",
-    amount: 80,
-    amountUsd: 800,
-    recipient: "john@example.com",
-    reference: "TRX-87683",
-    description: "OUT-TRANSFER",
-  },
-  {
-    id: "TRX-87682",
-    type: "OUT-AFT GIFT",
-    account: "AFT Wallet",
-    date: "12 May, 1:00pm",
-    amount: 80,
-    amountUsd: 80,
-    recipient: "sarah@example.com",
-    reference: "TRX-87682",
-    description: "OUT-AFT GIFT",
-  },
-  {
-    id: "TRX-87681",
-    type: "IN-PWT RECEIPT",
-    account: "PWT Invest",
-    date: "11 May, 11:50am",
-    amount: 80,
-    amountUsd: 800,
-    reference: "TRX-87681",
-    description: "IN-PWT RECEIPT",
-  },
-  {
-    id: "TRX-87680",
-    type: "REFERRAL CLAIM",
-    account: "PWT Cashout",
-    date: "11 May, 10:40am",
-    amount: 80,
-    amountUsd: 800,
-    reference: "TRX-87680",
-    description: "REFERRAL CLAIM",
-  },
-  {
-    id: "TRX-87679",
-    type: "BUY-AFT RECEIPT",
-    account: "AFT Wallet",
-    date: "11 May, 9:30am",
-    amount: 80,
-    amountUsd: 80,
-    reference: "TRX-87679",
-    description: "BUY-AFT RECEIPT",
-  },
-  {
-    id: "TRX-87678",
-    type: "ACTIVATE FEE",
-    account: "AFT Wallet",
-    date: "11 May, 8:20am",
-    amount: 4,
-    amountUsd: 4,
-    reference: "LEVEL 2B",
-    description: "ACTIVATE FEE -LEVEL 2B",
-  },
-  {
-    id: "TRX-87677",
-    type: "IN-AFT GIFT",
-    account: "AFT Wallet",
-    date: "11 May, 7:10am",
-    amount: 8,
-    amountUsd: 8,
-    reference: "TRX-87677",
-    description: "IN-AFT GIFT",
-  },
-]
-
 // Provider component
 export function TransactionProvider({ children }: { children: React.ReactNode }) {
   // State for transactions
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
 
-  // Load transactions from localStorage on initial render (if available)
+  // Load transactions from Supabase on initial render
   useEffect(() => {
-    const savedTransactions = localStorage.getItem("transactions")
-    if (savedTransactions) {
+    async function fetchTransactions() {
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
       try {
-        setTransactions(JSON.parse(savedTransactions))
+        setLoading(true)
+        const { data, error } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false })
+
+        if (error) {
+          console.error("Error fetching transactions:", error)
+          return
+        }
+
+        if (data) {
+          // Transform the data to match our Transaction interface
+          const formattedTransactions: Transaction[] = data.map((tx) => ({
+            id: tx.transaction_id,
+            type: tx.transaction_type as TransactionType,
+            account: tx.account_type as WalletType,
+            date: new Date(tx.created_at).toLocaleString("en-US", {
+              day: "numeric",
+              month: "short",
+              hour: "numeric",
+              minute: "numeric",
+              hour12: true,
+            }),
+            amount: Number(tx.amount),
+            amountUsd: Number(tx.amount_usd),
+            recipient: tx.recipient_email,
+            reference: tx.reference,
+            description: tx.description,
+            sender: tx.sender_email,
+          }))
+
+          setTransactions(formattedTransactions)
+        }
       } catch (error) {
-        console.error("Failed to parse saved transactions:", error)
+        console.error("Error in fetchTransactions:", error)
+      } finally {
+        setLoading(false)
       }
     }
-  }, [])
 
-  // Save transactions to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem("transactions", JSON.stringify(transactions))
-  }, [transactions])
+    fetchTransactions()
+  }, [user])
 
   // Add a new transaction
-  const addTransaction = (transaction: Omit<Transaction, "id" | "date" | "reference">) => {
+  const addTransaction = async (transaction: Omit<Transaction, "id" | "date" | "reference">) => {
+    if (!user) throw new Error("User not authenticated")
+
+    const transactionId = uuidv4()
+    const reference = `TRX-${Math.floor(Math.random() * 10000)}`
+    const dateString = generateDateString()
+
+    // Create the new transaction object
     const newTransaction: Transaction = {
       ...transaction,
-      id: generateTransactionId(),
-      date: generateDateString(),
-      reference: `TRX-${Math.floor(Math.random() * 10000)}`,
+      id: transactionId,
+      date: dateString,
+      reference,
     }
 
-    setTransactions((prev) => [newTransaction, ...prev])
-    return newTransaction
+    try {
+      // Insert into Supabase
+      const { error } = await supabase.from("transactions").insert({
+        transaction_id: transactionId,
+        user_uuid: user.id,
+        transaction_type: transaction.type,
+        account_type: transaction.account,
+        amount: transaction.amount,
+        amount_usd: transaction.amountUsd,
+        recipient_email: transaction.recipient,
+        sender_email: transaction.sender,
+        reference,
+        description: transaction.description,
+        created_at: new Date().toISOString(),
+      })
+
+      if (error) throw error
+
+      // Update local state
+      setTransactions((prev) => [newTransaction, ...prev])
+
+      return newTransaction
+    } catch (error) {
+      console.error("Error adding transaction:", error)
+      throw error
+    }
   }
 
   // Get recent transactions
@@ -239,6 +203,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     getRecentTransactions,
     getTransactionsByType,
     getCashoutTransactions,
+    loading,
   }
 
   return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>
