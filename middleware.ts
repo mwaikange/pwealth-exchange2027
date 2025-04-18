@@ -20,7 +20,12 @@ export async function middleware(req: NextRequest) {
   }
 
   // If accessing login/register with a session, redirect to dashboard
-  if (session && (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/register")) {
+  // Skip this check for the debug-login page
+  if (
+    session &&
+    (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/register") &&
+    req.nextUrl.pathname !== "/debug-login"
+  ) {
     const redirectUrl = new URL("/dashboard", req.url)
     return NextResponse.redirect(redirectUrl)
   }
@@ -29,5 +34,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register"],
+  matcher: ["/dashboard/:path*", "/login", "/register", "/debug-login"],
 }

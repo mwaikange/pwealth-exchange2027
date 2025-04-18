@@ -79,14 +79,20 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
       try {
         setLoading(true)
-        const { data, error } = await supabase
+
+        // Handle the case where the user has no transactions yet
+        const query = supabase
           .from("transactions")
           .select("*")
           .eq("user_uuid", user.id)
           .order("created_at", { ascending: false })
 
+        const { data, error } = await query
+
         if (error) {
           console.error("Error fetching transactions:", error)
+          // Set empty transactions array on error
+          setTransactions([])
           return
         }
 
@@ -112,9 +118,14 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           }))
 
           setTransactions(formattedTransactions)
+        } else {
+          // Set empty array if no data
+          setTransactions([])
         }
       } catch (error) {
         console.error("Error in fetchTransactions:", error)
+        // Set empty transactions array on error
+        setTransactions([])
       } finally {
         setLoading(false)
       }
