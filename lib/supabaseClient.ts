@@ -9,7 +9,7 @@ const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 let supabaseInstance: ReturnType<typeof createClient> | null = null
 
 // Function to get the Supabase client (singleton pattern)
-export const getSupabase = () => {
+const getSupabase = () => {
   if (!supabaseInstance) {
     console.log("Creating NEW Supabase client instance")
 
@@ -30,3 +30,9 @@ export const getSupabase = () => {
 
 // Export the singleton client
 export const supabase = getSupabase()
+
+// Re-export the singleton instance
+// import { supabase } from "./supabase-singleton" // Removed as it creates a circular dependency
+
+// For backwards compatibility
+// export const getSupabase = () => supabase // Removed duplicate declaration

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { VestingProvider } from "@/contexts/vesting-context"
-import { supabase } from "@/lib/supabaseClient"
+import { supabase } from "@/lib/supabase-singleton"
 
 export default function DashboardLayout({
   children,

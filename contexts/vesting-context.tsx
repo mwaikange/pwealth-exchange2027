@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { useWallet } from "./wallet-context"
 import { useTransactions } from "./transaction-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { v4 as uuidv4 } from "uuid"
 

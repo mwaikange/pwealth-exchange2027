@@ -58,3 +58,8 @@ export const createServerSupabaseClient = () => {
     },
   })
 }
+
+// Re-export the singleton
+// import { supabase } from "./supabase-singleton" // Removed redundant import
+
+export default supabase

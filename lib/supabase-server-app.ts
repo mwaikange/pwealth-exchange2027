@@ -2,11 +2,16 @@ import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { env } from "./env"
 
+// Server-side singleton with cookies
+const serverCookiesSupabaseInstance: ReturnType<typeof createClient> | null = null
+
 export const createServerSupabaseClientWithCookies = () => {
   const cookieStore = cookies()
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
 
+  // We can't reuse the instance with cookies because the cookies might change
+  // between requests, so we create a new instance each time
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,

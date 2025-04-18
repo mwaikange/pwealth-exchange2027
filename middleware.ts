@@ -3,6 +3,9 @@ import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { env } from "./lib/env"
 
+// Middleware singleton
+const middlewareSupabaseInstance: ReturnType<typeof createServerClient> | null = null
+
 export async function middleware(request: NextRequest) {
   try {
     // Create a response to modify
@@ -47,7 +50,7 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getSession()
 
     // Public routes that don't require authentication
-    const publicRoutes = ["/login", "/register", "/api/auth/callback", "/verify-email"]
+    const publicRoutes = ["/login", "/register", "/api/auth/callback", "/verify-email", "/debug"]
     const isPublicRoute = publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
 
     // If accessing a protected route and not logged in, redirect to login
@@ -98,5 +101,6 @@ export const config = {
     "/register",
     "/verify-email",
     "/api/auth/callback",
+    "/debug",
   ],
 }
