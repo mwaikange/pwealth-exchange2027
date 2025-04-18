@@ -1,18 +1,12 @@
 import { supabase } from "./supabase"
 
-export async function login(email: string, password: string, remember = false) {
+// LOG IN USER
+export async function login(email: string, password: string) {
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       return { success: false, message: error.message }
-    }
-
-    if (!data.user) {
-      return { success: false, message: "Invalid credentials" }
     }
 
     return { success: true, user: data.user }
@@ -22,84 +16,92 @@ export async function login(email: string, password: string, remember = false) {
   }
 }
 
+// REGISTER USER
 export async function register(name: string, email: string, password: string, referrerEmail?: string) {
   try {
-    // Create the user in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    // 1. Sign up using Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password })
 
-    if (authError) {
-      throw new Error(authError.message)
-    }
+    if (authError) throw new Error(authError.message)
+    if (!authData.user) throw new Error("User creation failed")
 
-    if (!authData.user) {
-      throw new Error("User creation failed")
-    }
-
-    // Generate a unique display ID
+    const user = authData.user
     const displayId = generateDisplayId()
-
-    // Create the user profile in the app_users table
-    const { error: profileError } = await supabase.from("app_users").insert({
-      user_uuid: authData.user.id,
-      email: email,
-      display_id: displayId,
-      name: name,
-    })
-
-    if (profileError) {
-      throw new Error(profileError.message)
-    }
-
-    // Generate a referral code
     const referralCode = generateReferralCode()
 
-    // Create user settings
-    const { error: settingsError } = await supabase.from("usersettings").insert({
-      user_uuid: authData.user.id,
-      display_id: displayId,
-      referral_code: referralCode,
-    })
+    // 2. Ensure user is authenticated (getSession required for RLS)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session?.user?.id) throw new Error("Session not found after signup")
 
-    if (settingsError) {
-      throw new Error(settingsError.message)
-    }
+    const user_uuid = session.user.id
 
-    // If referrerEmail is provided, create a referral record
-    if (referrerEmail && referrerEmail.trim() !== "") {
-      // Check if the referrer exists
+    // 3. Insert into app_users
+    const { error: appUserError } = await supabase.from("app_users").insert([
+      {
+        user_uuid,
+        email,
+        name,
+        display_id: displayId,
+      },
+    ])
+    if (appUserError) throw new Error(appUserError.message)
+
+    // 4. Insert into usersettings
+    const { error: settingsError } = await supabase.from("usersettings").insert([
+      {
+        user_uuid,
+        display_id: displayId,
+        referral_code: referralCode,
+      },
+    ])
+    if (settingsError) throw new Error(settingsError.message)
+
+    // 5. Insert referral if valid referrerEmail exists
+    if (referrerEmail?.trim()) {
       const { data: referrer, error: referrerError } = await supabase
         .from("app_users")
         .select("user_uuid")
         .eq("email", referrerEmail)
-        .single()
+        .maybeSingle()
 
       if (!referrerError && referrer) {
-        // Create the referral record
-        await supabase.from("referrals").insert({
-          user_uuid: authData.user.id,
-          referrer_email: referrerEmail,
-        })
+        await supabase.from("referrals").insert([
+          {
+            user_uuid,
+            referrer_email: referrerEmail,
+            referred_email: email,
+            referral_code: referralCode,
+            referral_date: new Date().toISOString(),
+          },
+        ])
       }
     }
 
-    return authData.user
+    // 6. Optionally: Pre-create empty vesting schedules
+    const vestingSchedules = Array.from({ length: 15 }).map((_, index) => ({
+      user_uuid,
+      schedule_id: index + 1,
+      level: `${Math.ceil((index + 1) / 5)}`, // 1,2,3
+      status: "Unclaimed",
+    }))
+
+    const { error: vestingError } = await supabase.from("vesting_schedules").insert(vestingSchedules)
+    if (vestingError) throw new Error(vestingError.message)
+
+    return user
   } catch (error: any) {
     console.error("Registration error:", error)
     throw new Error(error.message || "Registration failed")
   }
 }
 
+// LOGOUT
 export async function logout() {
   try {
     const { error } = await supabase.auth.signOut()
-
-    if (error) {
-      throw error
-    }
-
+    if (error) throw error
     return { success: true }
   } catch (error: any) {
     console.error("Logout error:", error)
@@ -107,13 +109,11 @@ export async function logout() {
   }
 }
 
-// Helper functions
+// Helpers
 function generateDisplayId() {
-  // Generate a random 8-character alphanumeric string
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
 
 function generateReferralCode() {
-  // Generate a random 6-character alphanumeric string
   return Math.random().toString(36).substring(2, 8).toUpperCase()
 }

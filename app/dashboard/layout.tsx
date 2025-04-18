@@ -38,10 +38,10 @@ export default function DashboardLayout({
   const { user } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [authChecked, setAuthChecked] = useState(false)
 
-  // Add this at the beginning of the DashboardLayout function
+  // Check if user is authenticated
   useEffect(() => {
-    // Check if user is authenticated
     const checkAuth = async () => {
       try {
         const {
@@ -51,22 +51,35 @@ export default function DashboardLayout({
         if (!session) {
           console.log("No active session found, redirecting to login")
           router.push("/login")
+          return
         }
+
+        setAuthChecked(true)
       } catch (error) {
         console.error("Error checking auth:", error)
+        router.push("/login")
       }
     }
 
     checkAuth()
   }, [router])
 
-  // Fetch user data from Supabase
+  // Fetch or create user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
-      if (!user) return
+      if (!user || !authChecked) return
 
       try {
-        // Replace .single() with .maybeSingle() to handle the case where no row exists
+        // Get the current session to ensure RLS compliance
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) {
+          console.log("No active session found when fetching user data")
+          return
+        }
+
+        // Try to fetch existing user data
         const { data, error } = await supabase.from("app_users").select("*").eq("user_uuid", user.id).maybeSingle()
 
         if (error) {
@@ -76,28 +89,46 @@ export default function DashboardLayout({
 
         // If no user data exists, create it
         if (!data) {
-          // Create a basic user profile
+          console.log("Creating user data for:", user.id)
           const displayId = `USR-${Math.floor(1000000 + Math.random() * 9000000)}`
-          const { error: createError } = await supabase.from("app_users").insert({
-            user_uuid: user.id,
-            email: user.email,
-            display_id: displayId,
-            created_at: new Date().toISOString(),
-            status: "active",
-          })
+
+          const { error: createError, data: newUserData } = await supabase
+            .from("app_users")
+            .insert({
+              user_uuid: user.id,
+              email: user.email,
+              display_id: displayId,
+              created_at: new Date().toISOString(),
+              status: "active",
+            })
+            .select()
+            .single()
 
           if (createError) {
             console.error("Error creating user data:", createError)
-          } else {
-            // Fetch the newly created user data
-            const { data: newData } = await supabase
-              .from("app_users")
-              .select("*")
-              .eq("user_uuid", user.id)
-              .maybeSingle()
-
-            setUserData(newData)
+            return
           }
+
+          // Also create user settings if they don't exist
+          const referralCode = `REF-${Math.floor(1000000 + Math.random() * 9000000)}`
+          await supabase.from("usersettings").insert({
+            user_uuid: user.id,
+            display_id: displayId,
+            referral_code: referralCode,
+            mfa_enabled: false,
+          })
+
+          // Create initial balances
+          await supabase.from("balances").insert({
+            user_uuid: user.id,
+            display_id: displayId,
+            pwt_invest_balance: 0,
+            pwt_cashout_balance: 0,
+            activation_fee_balance: 10, // Give them some starting tokens
+            updated_at: new Date().toISOString(),
+          })
+
+          setUserData(newUserData)
         } else {
           setUserData(data)
         }
@@ -137,7 +168,7 @@ export default function DashboardLayout({
     }
 
     fetchUserData()
-  }, [user])
+  }, [user, authChecked])
 
   // Add this component inside the DashboardLayout function, before the return statement
   function NotificationsButton() {
@@ -239,6 +270,18 @@ export default function DashboardLayout({
 
   const handleSignOut = async () => {
     await logoutUser()
+  }
+
+  // Show loading state while checking auth and fetching data
+  if (loading || !authChecked) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#1c1e26] text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

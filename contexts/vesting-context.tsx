@@ -58,77 +58,119 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   // State for vesting schedules
   const [vestingSchedules, setVestingSchedules] = useState<VestingScheduleState[]>([])
   const [loading, setLoading] = useState(true)
+  const [sessionChecked, setSessionChecked] = useState(false)
+
+  // Check for active session first
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        setSessionChecked(!!session)
+      } catch (error) {
+        console.error("Error checking session:", error)
+      }
+    }
+
+    checkSession()
+  }, [])
 
   // Load vesting schedules from Supabase
-  async function fetchVestingSchedules() {
-    if (!user) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-
-      // First, check if the user has any vesting schedules
-      const { data: existingSchedules, error: checkError } = await supabase
-        .from("vesting_schedules")
-        .select("*")
-        .eq("user_uuid", user.id)
-
-      if (checkError) {
-        console.error("Error checking vesting schedules:", checkError)
+  useEffect(() => {
+    async function fetchVestingSchedules() {
+      if (!user || !sessionChecked) {
+        setLoading(false)
         return
       }
 
-      // If no schedules exist, create default ones
-      if (!existingSchedules || existingSchedules.length === 0) {
-        await createDefaultVestingSchedules(user.id)
+      try {
+        setLoading(true)
+
+        // Ensure we have an active session before proceeding
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) {
+          console.error("No active session when fetching vesting schedules")
+          setLoading(false)
+          return
+        }
+
+        // First, check if the user has any vesting schedules
+        const { data: existingSchedules, error: checkError } = await supabase
+          .from("vesting_schedules")
+          .select("*")
+          .eq("user_uuid", user.id)
+
+        if (checkError) {
+          console.error("Error checking vesting schedules:", checkError)
+          setLoading(false)
+          return
+        }
+
+        // If no schedules exist, create default ones
+        if (!existingSchedules || existingSchedules.length === 0) {
+          await createDefaultVestingSchedules(user.id)
+        }
+
+        // Fetch all schedules
+        const { data, error } = await supabase
+          .from("vesting_schedules")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("level", { ascending: true })
+          .order("position", { ascending: true })
+
+        if (error) {
+          console.error("Error fetching vesting schedules:", error)
+          setLoading(false)
+          return
+        }
+
+        if (data) {
+          // Transform the data to match our VestingScheduleState interface
+          const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
+            id: `LEVEL${schedule.level}-${schedule.position}`,
+            level: schedule.level,
+            position: schedule.position,
+            color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
+            activated: schedule.activated,
+            invested: schedule.invested,
+            claimed: schedule.claimed,
+            progress: schedule.progress,
+            startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
+            lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
+            lastClaimPercentage: schedule.last_claim_percentage,
+            prematurelyClaimed: schedule.prematurely_claimed,
+            schedule_id: schedule.schedule_id,
+          }))
+
+          setVestingSchedules(formattedSchedules)
+        }
+      } catch (error) {
+        console.error("Error in fetchVestingSchedules:", error)
+      } finally {
+        setLoading(false)
       }
-
-      // Fetch all schedules
-      const { data, error } = await supabase
-        .from("vesting_schedules")
-        .select("*")
-        .eq("user_uuid", user.id)
-        .order("level", { ascending: true })
-        .order("position", { ascending: true })
-
-      if (error) {
-        console.error("Error fetching vesting schedules:", error)
-        return
-      }
-
-      if (data) {
-        // Transform the data to match our VestingScheduleState interface
-        const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
-          id: `LEVEL${schedule.level}-${schedule.position}`,
-          level: schedule.level,
-          position: schedule.position,
-          color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
-          activated: schedule.activated,
-          invested: schedule.invested,
-          claimed: schedule.claimed,
-          progress: schedule.progress,
-          startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
-          lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
-          lastClaimPercentage: schedule.last_claim_percentage,
-          prematurelyClaimed: schedule.prematurely_claimed,
-          schedule_id: schedule.schedule_id,
-        }))
-
-        setVestingSchedules(formattedSchedules)
-      }
-    } catch (error) {
-      console.error("Error in fetchVestingSchedules:", error)
-    } finally {
-      setLoading(false)
     }
-  }
+
+    fetchVestingSchedules()
+  }, [user, sessionChecked])
 
   // Create default vesting schedules for a new user
   const createDefaultVestingSchedules = async (userId: string) => {
     try {
-      // First, verify the user exists in app_users
+      // First, verify we have an active session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session || session.user.id !== userId) {
+        console.error("User not authenticated or session user ID doesn't match")
+        return
+      }
+
+      // Check if user exists in app_users
       const { data: userData, error: userError } = await supabase
         .from("app_users")
         .select("user_uuid")
@@ -137,13 +179,6 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       if (userError || !userData) {
         console.error("User not found in app_users, cannot create vesting schedules")
-        return
-      }
-
-      // Get the current authenticated user to ensure RLS compliance
-      const { data: authData } = await supabase.auth.getUser()
-      if (!authData.user || authData.user.id !== userId) {
-        console.error("Auth user ID doesn't match the requested user ID")
         return
       }
 
@@ -170,7 +205,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Insert all schedules one by one to better handle errors
+      // Insert schedules one by one to better handle errors
       for (const schedule of schedules) {
         const { error } = await supabase.from("vesting_schedules").insert(schedule)
         if (error) {
@@ -225,8 +260,14 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         setVestingSchedules(updatedSchedulesList)
 
         // Update Supabase in batches
-        if (schedulesToUpdate.length > 0 && user) {
+        if (schedulesToUpdate.length > 0 && user && sessionChecked) {
           try {
+            // Verify session is still active
+            const {
+              data: { session },
+            } = await supabase.auth.getSession()
+            if (!session) return
+
             for (const schedule of schedulesToUpdate) {
               await supabase
                 .from("vesting_schedules")
@@ -241,7 +282,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }, 1000) // Check every second
 
     return () => clearInterval(interval)
-  }, [loading, vestingSchedules, user])
+  }, [loading, vestingSchedules, user, sessionChecked])
 
   // Check if all schedules in a level are completed
   useEffect(() => {
@@ -309,7 +350,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Activate a schedule
   const activateSchedule = async (scheduleId: string) => {
-    if (!user) return
+    if (!user || !sessionChecked) return
+
+    // Verify session is still active
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session) return
 
     const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
     if (scheduleIndex === -1) return
@@ -325,6 +372,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         .from("vesting_schedules")
         .update({ activated: true })
         .eq("schedule_id", schedule.schedule_id)
+        .eq("user_uuid", user.id) // Ensure RLS compliance
 
       if (error) throw error
 
@@ -356,7 +404,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Invest in a schedule
   const investInSchedule = async (scheduleId: string) => {
-    if (!user) return
+    if (!user || !sessionChecked) return
+
+    // Verify session is still active
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session) return
 
     const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
     if (scheduleIndex === -1) return
@@ -376,6 +430,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           start_time: startTime.toISOString(),
         })
         .eq("schedule_id", schedule.schedule_id)
+        .eq("user_uuid", user.id) // Ensure RLS compliance
 
       if (error) throw error
 
@@ -408,7 +463,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Claim rewards from a schedule
   const claimSchedule = async (scheduleId: string) => {
-    if (!user) return
+    if (!user || !sessionChecked) return
+
+    // Verify session is still active
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session) return
 
     const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
     if (scheduleIndex === -1) return
@@ -439,6 +500,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           prematurely_claimed: isPremature,
         })
         .eq("schedule_id", schedule.schedule_id)
+        .eq("user_uuid", user.id) // Ensure RLS compliance
 
       if (error) throw error
 
@@ -483,7 +545,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Reset all schedules in a level
   const resetAllSchedulesInLevel = async (level: number) => {
-    if (!user) return
+    if (!user || !sessionChecked) return
+
+    // Verify session is still active
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session) return
 
     try {
       // Update schedules in Supabase
@@ -539,10 +607,6 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     resetAllSchedulesInLevel,
     loading,
   }
-
-  useEffect(() => {
-    fetchVestingSchedules()
-  }, [user])
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>
 }
