@@ -30,6 +30,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true)
         console.log("[CLIENT] AuthProvider: Loading user session...")
 
+        // Add a small delay to ensure Supabase is fully initialized
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
         // Get the initial session
         const {
           data: { session },

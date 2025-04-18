@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
@@ -14,6 +14,21 @@ export default function Login() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Check if already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (session) {
+        console.log("[Login] Already logged in, redirecting to dashboard")
+        router.push("/dashboard")
+      }
+    }
+
+    checkSession()
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -41,8 +56,16 @@ export default function Login() {
         return
       }
 
+      // Log the session to verify it exists
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      console.log("[CLIENT] Session after login:", session ? "Session exists" : "No session")
+
       console.log("[CLIENT] Login successful, redirecting to dashboard...")
-      router.push("/dashboard")
+
+      // Use hard navigation to dashboard
+      window.location.href = "/dashboard"
     } catch (err: any) {
       console.error("[CLIENT] Unexpected login error:", err)
       setError(err.message || "An unexpected error occurred")

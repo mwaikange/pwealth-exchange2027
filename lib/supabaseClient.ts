@@ -21,6 +21,8 @@ export const getSupabase = () => {
         detectSessionInUrl: true,
       },
     })
+  } else {
+    console.log("Reusing existing Supabase client instance")
   }
 
   return supabaseInstance
