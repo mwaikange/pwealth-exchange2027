@@ -1,6 +1,26 @@
-import { supabase } from "@/lib/supabaseClient"
+import { supabase } from "./supabase"
 
-// Update the register function in lib/auth.ts to handle optional referrer email
+export async function login(email: string, password: string, remember = false) {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      return { success: false, message: error.message }
+    }
+
+    if (!data.user) {
+      return { success: false, message: "Invalid credentials" }
+    }
+
+    return { success: true, user: data.user }
+  } catch (error: any) {
+    console.error("Login error:", error)
+    return { success: false, message: error.message || "Login failed" }
+  }
+}
 
 export async function register(name: string, email: string, password: string, referrerEmail?: string) {
   try {
@@ -63,14 +83,27 @@ export async function register(name: string, email: string, password: string, re
           referrer_email: referrerEmail,
         })
       }
-      // If referrer doesn't exist, we still proceed with registration
-      // The user can update the referrer later in settings
     }
 
     return authData.user
   } catch (error: any) {
     console.error("Registration error:", error)
     throw new Error(error.message || "Registration failed")
+  }
+}
+
+export async function logout() {
+  try {
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      throw error
+    }
+
+    return { success: true }
+  } catch (error: any) {
+    console.error("Logout error:", error)
+    return { success: false, message: error.message }
   }
 }
 

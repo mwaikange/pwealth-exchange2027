@@ -58,13 +58,13 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "zod": "latest",
-    "@supabase/supabase-js": "latest",
     "@auth/core": "latest",
     "nodemailer": "latest",
-    "@supabase/auth-helpers-nextjs": "latest",
+    "@supabase/supabase-js": "latest",
     "uuid": "latest",
     "next-auth": "latest",
-    "@vercel/postgres": "latest"
+    "@vercel/postgres": "latest",
+    "@supabase/auth-helpers-nextjs": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

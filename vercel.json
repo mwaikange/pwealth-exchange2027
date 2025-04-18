@@ -1,0 +1,15 @@
+{
+  "redirects": [
+    {
+      "source": "/login",
+      "has": [
+        {
+          "type": "cookie",
+          "key": "supabase-auth-token"
+        }
+      ],
+      "destination": "/dashboard",
+      "permanent": false
+    }
+  ]
+}
