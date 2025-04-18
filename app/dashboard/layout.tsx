@@ -19,12 +19,13 @@ export default function DashboardLayout({
 
   useEffect(() => {
     let isMounted = true
+    let authListener: { subscription: { unsubscribe: () => void } } | null = null
 
     const check = async () => {
       try {
-        // Add a small delay to ensure Supabase is fully initialized
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        console.log("[DashboardLayout] Checking session...")
 
+        // Get the current session
         const {
           data: { session },
         } = await supabase.auth.getSession()
@@ -34,12 +35,24 @@ export default function DashboardLayout({
         if (session) {
           console.log("[DashboardLayout] Session is ACTIVE", session.user.id)
           setHasSession(true)
+          setSessionChecked(true)
         } else {
-          console.warn("[DashboardLayout] No session, redirecting to login")
+          console.warn("[DashboardLayout] No session found, redirecting to login")
           router.replace("/login")
+          return
         }
 
-        setSessionChecked(true)
+        // Set up auth listener only after confirming we have a session
+        authListener = supabase.auth.onAuthStateChange((event, newSession) => {
+          console.log("[DashboardLayout] Auth state changed:", event)
+
+          // Only redirect on explicit sign out, not during initial session check
+          if (event === "SIGNED_OUT" && !newSession) {
+            console.warn("[DashboardLayout] User signed out")
+            router.replace("/login")
+            return
+          }
+        })
       } catch (error) {
         console.error("[DashboardLayout] Error checking session:", error)
         if (isMounted) {
@@ -48,26 +61,19 @@ export default function DashboardLayout({
       }
     }
 
+    // Run the check
     check()
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("[DashboardLayout] Auth changed:", event)
-
-      if (session) {
-        console.log("[DashboardLayout] Auth changed: session ACTIVE", session.user.id)
-        setHasSession(true)
-      } else {
-        console.warn("[DashboardLayout] Auth changed: session NULL")
-        router.replace("/login")
-      }
-    })
-
+    // Cleanup function
     return () => {
       isMounted = false
-      listener.subscription.unsubscribe()
+      if (authListener) {
+        authListener.subscription.unsubscribe()
+      }
     }
   }, [router])
 
+  // Show loading state while checking session
   if (!sessionChecked) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#1c1e26] text-white">
@@ -79,6 +85,7 @@ export default function DashboardLayout({
     )
   }
 
+  // Only render children if we have a session
   if (!hasSession) {
     return null
   }

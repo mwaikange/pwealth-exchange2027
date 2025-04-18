@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
@@ -14,20 +13,32 @@ export default function Login() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
 
   // Check if already logged in
   useEffect(() => {
-    const checkSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (session) {
-        console.log("[Login] Already logged in, redirecting to dashboard")
-        router.push("/dashboard")
+    const redirectIfLoggedIn = async () => {
+      try {
+        console.log("[Login] Checking for existing session...")
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session?.user) {
+          console.log("[Login] Already logged in, redirecting to dashboard")
+          router.replace("/dashboard")
+          return
+        }
+
+        console.log("[Login] No session found, showing login form")
+        setIsCheckingSession(false)
+      } catch (error) {
+        console.error("[Login] Error checking session:", error)
+        setIsCheckingSession(false)
       }
     }
 
-    checkSession()
+    redirectIfLoggedIn()
   }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -64,13 +75,25 @@ export default function Login() {
 
       console.log("[CLIENT] Login successful, redirecting to dashboard...")
 
-      // Use hard navigation to dashboard
-      window.location.href = "/dashboard"
+      // Use Next.js router for navigation after successful login
+      router.replace("/dashboard")
     } catch (err: any) {
       console.error("[CLIENT] Unexpected login error:", err)
       setError(err.message || "An unexpected error occurred")
       setIsLoading(false)
     }
+  }
+
+  // Show loading state while checking session
+  if (isCheckingSession) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#1c1e26] text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Checking session...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

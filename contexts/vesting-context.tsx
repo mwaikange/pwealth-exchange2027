@@ -13,6 +13,7 @@ export type VestingScheduleState = {
   id: string
   level: number
   position: string // A, B, C, D, E
+  level_rank: number // 1-15
   color: string
   activated: boolean
   invested: boolean
@@ -33,6 +34,7 @@ type VestingContextType = {
   claimSchedule: (scheduleId: string) => Promise<void>
   getScheduleById: (scheduleId: string) => VestingScheduleState | undefined
   getSchedulesByLevel: (level: number) => VestingScheduleState[]
+  getScheduleByRank: (rank: number) => VestingScheduleState | undefined
   resetAllSchedulesInLevel: (level: number) => Promise<void>
   loading: boolean
 }
@@ -47,6 +49,28 @@ const scheduleColors = {
   C: "pink-500",
   D: "yellow-500",
   E: "red-500",
+}
+
+// Map level and position to rank (1-15)
+const getLevelRank = (level: number, position: string): number => {
+  const positions = ["A", "B", "C", "D", "E"]
+  const positionIndex = positions.indexOf(position)
+  if (positionIndex === -1) return 0
+  return (level - 1) * 5 + positionIndex + 1
+}
+
+// Map rank to level and position
+const getLevelAndPosition = (rank: number): { level: number; position: string } => {
+  if (rank < 1 || rank > 15) {
+    return { level: 1, position: "A" }
+  }
+
+  const level = Math.ceil(rank / 5)
+  const positionIndex = (rank - 1) % 5
+  const positions = ["A", "B", "C", "D", "E"]
+  const position = positions[positionIndex]
+
+  return { level, position }
 }
 
 // Provider component
@@ -119,8 +143,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           .from("vesting_schedules")
           .select("*")
           .eq("user_uuid", user.id)
-          .order("level", { ascending: true })
-          .order("position", { ascending: true })
+          .order("level_rank", { ascending: true }) // Use level_rank for ordering
 
         if (error) {
           console.error("Error fetching vesting schedules:", error)
@@ -134,6 +157,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
             id: `LEVEL${schedule.level}-${schedule.position}`,
             level: schedule.level,
             position: schedule.position,
+            level_rank: schedule.level_rank,
             color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
             activated: schedule.activated,
             invested: schedule.invested,
@@ -187,11 +211,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       // Create schedules for each level (1, 2, 3) and position (A, B, C, D, E)
       for (let level = 1; level <= 3; level++) {
         for (const position of ["A", "B", "C", "D", "E"]) {
+          const level_rank = getLevelRank(level, position)
           schedules.push({
             schedule_id: uuidv4(),
             user_uuid: userId, // This must match auth.uid() for RLS
             level,
             position,
+            level_rank, // Add the level_rank
             activated: false,
             invested: false,
             claimed: false,
@@ -538,6 +564,11 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return vestingSchedules.find((s) => s.id === scheduleId)
   }
 
+  // Get a schedule by rank
+  const getScheduleByRank = (rank: number) => {
+    return vestingSchedules.find((s) => s.level_rank === rank)
+  }
+
   // Get schedules by level
   const getSchedulesByLevel = (level: number) => {
     return vestingSchedules.filter((s) => s.level === level)
@@ -604,6 +635,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     claimSchedule,
     getScheduleById,
     getSchedulesByLevel,
+    getScheduleByRank,
     resetAllSchedulesInLevel,
     loading,
   }
