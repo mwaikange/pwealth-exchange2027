@@ -29,6 +29,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const [sidebarOpen] = useState(true) // Always keep sidebar open
+  const [showPurchaseToast, setShowPurchaseToast] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
 
@@ -87,7 +88,7 @@ export default function DashboardLayout({
                     minWidth: "160px",
                     padding: "6px 12px",
                   }}
-                  onClick={() => alert("Top Up clicked")}
+                  onClick={() => setShowPurchaseToast(true)}
                 >
                   <div className="text-base font-bold">Top Up</div>
                   <div className="text-xs">Activation Token (AFT)</div>
@@ -216,6 +217,68 @@ export default function DashboardLayout({
               <main className="flex-1 overflow-hidden">{children}</main>
             </div>
           </div>
+          {/* Purchase Toast */}
+          {showPurchaseToast && (
+            <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+              <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-white">Purchase Activation Tokens</h3>
+                  <button onClick={() => setShowPurchaseToast(false)} className="text-gray-400 hover:text-white">
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mb-4">
+                  <label htmlFor="amount" className="block text-gray-300 mb-2">
+                    Enter amount to purchase (minimum $50):
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                    <input
+                      id="amount"
+                      type="number"
+                      min="50"
+                      defaultValue="50"
+                      className="w-full bg-[#1c1e26] text-white py-2 px-8 rounded-md"
+                      placeholder="Enter amount"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Minimum purchase amount is $50 USD</p>
+                </div>
+
+                <div className="mb-6">
+                  <p className="text-gray-300 mb-2">Payment method:</p>
+                  <button className="w-full bg-[#1c1e26] text-white py-3 rounded-md transition-colors flex items-center justify-center">
+                    <svg
+                      className="w-5 h-5 mr-2"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path d="M20 4H4C2.89 4 2.01 4.89 2.01 6L2 18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V6C22 4.89 21.11 4 20 4ZM20 18H4V12H20V18ZM20 8H4V6H20V8Z" />
+                    </svg>
+                    <span>Credit Card</span>
+                  </button>
+                </div>
+
+                <button className="w-full bg-[#34a853] hover:bg-green-600 text-white py-3 rounded-md font-medium transition-colors">
+                  Proceed to Payment
+                </button>
+
+                <p className="text-xs text-gray-400 mt-4 text-center">
+                  By proceeding, you agree to our Terms and Conditions.
+                </p>
+              </div>
+            </div>
+          )}
         </VestingProvider>
       </TransactionProvider>
     </WalletProvider>
