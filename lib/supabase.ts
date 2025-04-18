@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js"
+import { env } from "./env"
 
 // Ensure environment variables are available
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 // Check if we're running on the client side
 const isClient = typeof window !== "undefined"
@@ -46,8 +47,7 @@ export const supabase = getSupabaseClient()
 
 // Create a server-side client (for server components and server actions)
 export const createServerSupabaseClient = () => {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
+  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
 
   console.log("Creating NEW Supabase server client instance")
 

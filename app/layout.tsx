@@ -2,6 +2,14 @@ import type React from "react"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
+import { validateEnv } from "@/lib/env"
+
+// Validate environment variables
+try {
+  validateEnv()
+} catch (error) {
+  console.error("Environment validation failed:", error)
+}
 
 const inter = Inter({ subsets: ["latin"] })
 
