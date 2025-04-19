@@ -7,6 +7,8 @@ import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { VestingProvider } from "@/contexts/vesting-context"
 import { supabase } from "@/lib/supabase-singleton"
+import { DashboardHeader } from "@/components/dashboard-header"
+import { DashboardSidebar } from "@/components/dashboard-sidebar"
 
 export default function DashboardLayout({
   children,
@@ -19,7 +21,6 @@ export default function DashboardLayout({
 
   useEffect(() => {
     let isMounted = true
-    let authListener: { subscription: { unsubscribe: () => void } } | null = null
 
     const check = async () => {
       try {
@@ -41,18 +42,6 @@ export default function DashboardLayout({
           router.replace("/login")
           return
         }
-
-        // Set up auth listener only after confirming we have a session
-        authListener = supabase.auth.onAuthStateChange((event, newSession) => {
-          console.log("[DashboardLayout] Auth state changed:", event)
-
-          // Only redirect on explicit sign out, not during initial session check
-          if (event === "SIGNED_OUT" && !newSession) {
-            console.warn("[DashboardLayout] User signed out")
-            router.replace("/login")
-            return
-          }
-        })
       } catch (error) {
         console.error("[DashboardLayout] Error checking session:", error)
         if (isMounted) {
@@ -64,11 +53,25 @@ export default function DashboardLayout({
     // Run the check
     check()
 
+    // Set up auth listener
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      console.log("[DashboardLayout] Auth state changed:", event)
+
+      // Only redirect on explicit sign out, not during initial session check
+      if (event === "SIGNED_OUT" && !newSession) {
+        console.warn("[DashboardLayout] User signed out")
+        router.replace("/login")
+        return
+      }
+    })
+
     // Cleanup function
     return () => {
       isMounted = false
-      if (authListener) {
-        authListener.subscription.unsubscribe()
+      if (subscription) {
+        subscription.unsubscribe()
       }
     }
   }, [router])
@@ -94,7 +97,13 @@ export default function DashboardLayout({
     <WalletProvider>
       <TransactionProvider>
         <VestingProvider>
-          <div className="flex flex-col h-screen max-h-[960px] bg-[#1c1e26] text-white overflow-hidden">{children}</div>
+          <div className="flex flex-col h-screen bg-[#1e2130] text-white overflow-hidden">
+            <DashboardHeader />
+            <div className="flex flex-1 overflow-hidden">
+              <DashboardSidebar />
+              <main className="flex-1 overflow-auto p-4">{children}</main>
+            </div>
+          </div>
         </VestingProvider>
       </TransactionProvider>
     </WalletProvider>

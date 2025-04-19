@@ -194,24 +194,6 @@ export default function Vesting() {
     return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
   }
 
-  // Get time remaining until next reward
-  // const getTimeToNextReward = (schedule) => {
-  //   if (!schedule.startTime || schedule.claimed) return null
-
-  //   const elapsedTime = Date.now() - schedule.startTime
-  //   const totalTime = 10 * 60 * 1000 // 10 minutes
-
-  //   // Calculate the next 20% milestone
-  //   const currentProgress = schedule.progress
-  //   const nextMilestone = Math.ceil(currentProgress / 20) * 20
-  //   if (nextMilestone > 100) return null
-
-  //   const timeToNextMilestone = (nextMilestone / 100) * totalTime - elapsedTime
-  //   if (timeToNextMilestone <= 0) return null
-
-  //   return formatDistanceToNow(Date.now() + timeToNextMilestone, { addSuffix: true })
-  // }
-
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title - adjusted to match other pages */}
