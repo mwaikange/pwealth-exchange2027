@@ -1,9 +1,16 @@
 import { createClient } from "@supabase/supabase-js"
 import { env } from "./env"
 
-// Ensure environment variables are available
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Update the Supabase initialization to handle missing environment variables
+
+// Ensure environment variables are available with fallbacks
+const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL || (typeof window !== "undefined" ? window.location.origin : "")
+const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "missing-key"
+
+// Add error handling
+if (!supabaseUrl) {
+  console.error("Supabase URL is missing. Please check your environment variables.")
+}
 
 // Check if we're running on the client side
 const isClient = typeof window !== "undefined"

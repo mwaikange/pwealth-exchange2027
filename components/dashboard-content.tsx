@@ -9,11 +9,11 @@ export function DashboardContent() {
 
   return (
     <div className="h-full flex flex-col">
-      <h1 className="text-2xl font-bold mb-4">Dashboard Overview</h1>
+      <h1 className="text-2xl font-bold mb-3">Dashboard Overview</h1>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-5 gap-3 mb-3">
-        <div className="bg-green-600 p-2.5 rounded-lg">
+        <div className="bg-green-600 h-24 p-2 rounded-lg flex flex-col justify-center">
           <div className="text-xs">Total OUT-Transfers to date</div>
           <div className="text-2xl font-bold">
             {useTransactions()
@@ -23,7 +23,7 @@ export function DashboardContent() {
           <div className="text-xs">USD</div>
         </div>
 
-        <div className="bg-blue-600 p-2.5 rounded-lg">
+        <div className="bg-blue-600 h-24 p-2 rounded-lg flex flex-col justify-center">
           <div className="text-xs">Total OUT-Transfer tokens</div>
           <div className="text-2xl font-bold">
             {useTransactions()
@@ -33,7 +33,7 @@ export function DashboardContent() {
           <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-yellow-500 p-2.5 rounded-lg">
+        <div className="bg-yellow-500 h-24 p-2 rounded-lg flex flex-col justify-center">
           <div className="text-xs">Total Referral Claims sum</div>
           <div className="text-2xl font-bold">
             {useTransactions()
@@ -43,7 +43,7 @@ export function DashboardContent() {
           <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-purple-600 p-2.5 rounded-lg">
+        <div className="bg-purple-600 h-24 p-2 rounded-lg flex flex-col justify-center">
           <div className="text-xs">Active Vesting Expected Yield</div>
           <div className="text-2xl font-bold">
             {useVesting()
@@ -56,25 +56,25 @@ export function DashboardContent() {
           <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-gray-700 p-2.5 rounded-lg flex flex-col items-center justify-center">
+        <div className="bg-gray-700 h-24 p-2 rounded-lg flex flex-col items-center justify-center">
           <div className="text-sm">Current Rate</div>
           <div className="text-xl font-bold">1 PWT</div>
           <div className="text-sm">=</div>
           <div className="text-xl font-bold">10 USD</div>
-          <div className="text-[8px] text-center mt-1">PWT Cashout & Invest Wallets</div>
+          <div className="text-[8px] text-center">PWT Cashout & Invest Wallets</div>
         </div>
       </div>
 
       {/* Vesting Schedules */}
       <div className="bg-[#2a2d3a] rounded-lg p-3 mb-3">
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex justify-between items-center mb-2">
           <h2 className="text-base font-medium">Top 3 Active vesting Schedules per Level</h2>
           <Link href="/dashboard/vesting" className="text-gray-400 hover:text-white">
             <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {/* Level 1 */}
           <div className="flex items-center">
             <div className="mr-3 w-14 text-xs">Level 1</div>
@@ -173,18 +173,18 @@ export function DashboardContent() {
         <table className="w-full">
           <thead>
             <tr className="text-left border-b border-gray-700">
-              <th className="py-1.5 px-3 font-medium text-xs">Description</th>
-              <th className="py-1.5 px-3 font-medium text-xs">Account</th>
-              <th className="py-1.5 px-3 font-medium text-xs">Date</th>
-              <th className="py-1.5 px-3 font-medium text-xs">Amount (PWT)</th>
-              <th className="py-1.5 px-3 font-medium text-xs">Amount (USD)</th>
+              <th className="py-1.5 px-3 font-medium text-[11px]">Description</th>
+              <th className="py-1.5 px-3 font-medium text-[11px]">Account</th>
+              <th className="py-1.5 px-3 font-medium text-[11px]">Date</th>
+              <th className="py-1.5 px-3 font-medium text-[11px]">Amount (PWT)</th>
+              <th className="py-1.5 px-3 font-medium text-[11px]">Amount (USD)</th>
             </tr>
           </thead>
           <tbody>
             {recentTransactions.length > 0
               ? recentTransactions.map((transaction, index) => (
                   <tr key={index} className="border-b border-gray-700">
-                    <td className="py-1.5 px-3 text-xs">
+                    <td className="py-1.5 px-3 text-[10px]">
                       <span
                         className={
                           ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
@@ -202,10 +202,10 @@ export function DashboardContent() {
                       </span>{" "}
                       {transaction.type}
                     </td>
-                    <td className="py-1.5 px-3 text-xs">{transaction.account}</td>
-                    <td className="py-1.5 px-3 text-xs">{transaction.date}</td>
-                    <td className="py-1.5 px-3 text-xs">{transaction.amount} PWT</td>
-                    <td className="py-1.5 px-3 text-xs">{transaction.amountUsd} USD</td>
+                    <td className="py-1.5 px-3 text-[10px]">{transaction.account}</td>
+                    <td className="py-1.5 px-3 text-[10px]">{transaction.date}</td>
+                    <td className="py-1.5 px-3 text-[10px]">{transaction.amount} PWT</td>
+                    <td className="py-1.5 px-3 text-[10px]">{transaction.amountUsd} USD</td>
                   </tr>
                 ))
               : // Fallback data if no transactions
@@ -233,16 +233,16 @@ export function DashboardContent() {
                   },
                 ].map((item, index) => (
                   <tr key={index} className="border-b border-gray-700">
-                    <td className="py-1.5 px-3 text-xs">
+                    <td className="py-1.5 px-3 text-[10px]">
                       <span className={item.type.includes("CLAIM") ? "text-green-400" : "text-red-400"}>
                         {item.type.includes("CLAIM") ? "+" : "-"}
                       </span>{" "}
                       {item.type}
                     </td>
-                    <td className="py-1.5 px-3 text-xs">{item.account}</td>
-                    <td className="py-1.5 px-3 text-xs">{item.date}</td>
-                    <td className="py-1.5 px-3 text-xs">{item.amount} PWT</td>
-                    <td className="py-1.5 px-3 text-xs">{item.amountUsd} USD</td>
+                    <td className="py-1.5 px-3 text-[10px]">{item.account}</td>
+                    <td className="py-1.5 px-3 text-[10px]">{item.date}</td>
+                    <td className="py-1.5 px-3 text-[10px]">{item.amount} PWT</td>
+                    <td className="py-1.5 px-3 text-[10px]">{item.amountUsd} USD</td>
                   </tr>
                 ))}
           </tbody>

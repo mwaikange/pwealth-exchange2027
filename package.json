@@ -63,9 +63,9 @@
     "@supabase/supabase-js": "latest",
     "next-auth": "latest",
     "@vercel/postgres": "latest",
-    "@supabase/auth-helpers-nextjs": "latest",
     "@supabase/ssr": "latest",
-    "uuid": "latest"
+    "uuid": "latest",
+    "@supabase/auth-helpers-nextjs": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
