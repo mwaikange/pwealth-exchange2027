@@ -13,7 +13,11 @@ export function DashboardHeader() {
       <header className="bg-[#1e2130] h-[60px] flex items-center px-4">
         <div className="flex items-center">
           <div className="w-10 h-10 relative mr-3">
-            <div className="absolute inset-0 rounded-full bg-[#1e2130] border-2 border-blue-500"></div>
+            <img
+              src="/peerWealth_Cursor.png"
+              alt="Peer Wealth Logo"
+              className="absolute inset-0 rounded-full w-full h-full object-cover"
+            />
           </div>
           <Link href="/dashboard" className="flex items-center">
             <ChevronLeft className="h-5 w-5 mr-2" />

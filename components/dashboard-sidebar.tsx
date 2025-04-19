@@ -76,8 +76,8 @@ export function DashboardSidebar() {
                 <item.icon className="h-5 w-5" />
               </div>
               <div>
-                <div className="font-medium">{item.name}</div>
-                <div className="text-xs">{item.description}</div>
+                <div className="font-medium text-sm">{item.name}</div>
+                <div className="text-[10px]">{item.description}</div>
               </div>
             </Link>
           )
@@ -90,8 +90,8 @@ export function DashboardSidebar() {
             M
           </div>
           <div>
-            <div className="text-xs">user :</div>
-            <div className="text-xs text-gray-400">mwaikange@gmail.com</div>
+            <div className="text-[10px]">user :</div>
+            <div className="text-[8px] text-gray-400">mwaikange@gmail.com</div>
           </div>
         </div>
 
