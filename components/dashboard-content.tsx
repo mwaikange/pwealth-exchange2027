@@ -1,252 +1,194 @@
-import { ChevronRight } from "lucide-react"
+"use client"
 import Link from "next/link"
-import { useTransactions } from "@/contexts/transaction-context"
+import { ChevronRight } from "lucide-react"
 import { useVesting } from "@/contexts/vesting-context"
+import { useTransactions } from "@/contexts/transaction-context"
+import { TransactionTable } from "@/components/transaction-table"
 
 export function DashboardContent() {
+  const { vestingSchedules, getSchedulesByLevel } = useVesting()
   const { getRecentTransactions } = useTransactions()
-  const recentTransactions = getRecentTransactions(4)
+  const recentTransactions = getRecentTransactions(5)
+
+  // Get most active schedule for each level
+  const getMostActiveSchedule = (level: number) => {
+    const levelSchedules = getSchedulesByLevel(level)
+
+    // Filter for active schedules (invested but not claimed)
+    const activeSchedules = levelSchedules.filter((s) => s.invested && !s.claimed)
+
+    if (activeSchedules.length === 0) {
+      return null // No active schedules
+    }
+
+    // Sort by progress (highest first)
+    return activeSchedules.sort((a, b) => b.progress - a.progress)[0]
+  }
+
+  const level1Schedule = getMostActiveSchedule(1)
+  const level2Schedule = getMostActiveSchedule(2)
+  const level3Schedule = getMostActiveSchedule(3)
 
   return (
-    <div className="h-full flex flex-col">
-      <h1 className="text-2xl font-bold mb-3">Dashboard Overview</h1>
+    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-auto">
+      {/* Page Title */}
+      <div className="px-6 pt-4 pb-2">
+        <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+      </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-5 gap-3 mb-3">
-        <div className="bg-green-600 h-24 p-2 rounded-lg flex flex-col justify-center">
-          <div className="text-xs">Total OUT-Transfers to date</div>
-          <div className="text-2xl font-bold">
-            {useTransactions()
-              .transactions.filter((tx) => tx.type === "OUT-TRANSFER")
-              .reduce((sum, tx) => sum + tx.amountUsd, 0) || "300.00"}
+      <div className="px-6 grid grid-cols-5 gap-4">
+        {/* Total OUT-Transfers to date */}
+        <div className="bg-green-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+          <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
+          <div className="text-3xl font-bold">300</div>
+          <div className="text-[10px]">USD</div>
+          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+            <svg viewBox="0 0 100 20" className="w-full h-full">
+              <path
+                fill="none"
+                stroke="white"
+                strokeWidth="1"
+                d="M0,10 Q10,15 20,10 T40,10 T60,10 T80,10 T100,10"
+                className="animate-pulse"
+              />
+            </svg>
           </div>
-          <div className="text-xs">USD</div>
         </div>
 
-        <div className="bg-blue-600 h-24 p-2 rounded-lg flex flex-col justify-center">
-          <div className="text-xs">Total OUT-Transfer tokens</div>
-          <div className="text-2xl font-bold">
-            {useTransactions()
-              .transactions.filter((tx) => tx.type === "OUT-TRANSFER")
-              .reduce((sum, tx) => sum + tx.amount, 0) || "30"}
+        {/* Total OUT-Transfer tokens */}
+        <div className="bg-blue-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+          <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
+          <div className="text-3xl font-bold">30</div>
+          <div className="text-[10px]">tokens</div>
+          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+            <svg viewBox="0 0 100 20" className="w-full h-full">
+              <path
+                fill="none"
+                stroke="white"
+                strokeWidth="1"
+                d="M0,10 Q10,5 20,10 T40,15 T60,10 T80,5 T100,10"
+                className="animate-pulse"
+              />
+            </svg>
           </div>
-          <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-yellow-500 h-24 p-2 rounded-lg flex flex-col justify-center">
-          <div className="text-xs">Total Referral Claims sum</div>
-          <div className="text-2xl font-bold">
-            {useTransactions()
-              .transactions.filter((tx) => tx.type === "REFERRAL CLAIM")
-              .reduce((sum, tx) => sum + tx.amount, 0) || "6"}
+        {/* Total Referral Claims sum */}
+        <div className="bg-yellow-500 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+          <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
+          <div className="text-3xl font-bold">9</div>
+          <div className="text-[10px]">tokens</div>
+          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+            <svg viewBox="0 0 100 20" className="w-full h-full">
+              <path
+                fill="none"
+                stroke="white"
+                strokeWidth="1"
+                d="M0,10 Q10,15 20,5 T40,10 T60,15 T80,10 T100,5"
+                className="animate-pulse"
+              />
+            </svg>
           </div>
-          <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-purple-600 h-24 p-2 rounded-lg flex flex-col justify-center">
-          <div className="text-xs">Active Vesting Expected Yield</div>
-          <div className="text-2xl font-bold">
-            {useVesting()
-              .vestingSchedules.filter((s) => s.invested && !s.claimed)
-              .reduce((total, schedule) => {
-                const levelYield = schedule.level === 1 ? 10 : schedule.level === 2 ? 20 : 40
-                return total + levelYield
-              }, 0) || "45"}
+        {/* Active Vesting Expected Yield */}
+        <div className="bg-purple-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+          <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
+          <div className="text-3xl font-bold">45</div>
+          <div className="text-[10px]">tokens</div>
+          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+            <svg viewBox="0 0 100 20" className="w-full h-full">
+              <path
+                fill="none"
+                stroke="white"
+                strokeWidth="1"
+                d="M0,10 Q10,5 20,15 T40,5 T60,15 T80,5 T100,10"
+                className="animate-pulse"
+              />
+            </svg>
           </div>
-          <div className="text-xs">tokens</div>
         </div>
 
-        <div className="bg-gray-700 h-24 p-2 rounded-lg flex flex-col items-center justify-center">
-          <div className="text-sm">Current Rate</div>
-          <div className="text-xl font-bold">1 PWT</div>
-          <div className="text-sm">=</div>
+        {/* Current Rate */}
+        <div className="bg-gray-700 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+          <div className="text-[10px] text-gray-300">Current Rate</div>
+          <div className="text-3xl font-bold">1 PWT</div>
+          <div className="text-xs">=</div>
           <div className="text-xl font-bold">10 USD</div>
-          <div className="text-[8px] text-center">PWT Cashout & Invest Wallets</div>
+          <div className="text-[8px] text-gray-400">PWT Cashout & Invest Wallets</div>
         </div>
       </div>
 
-      {/* Vesting Schedules */}
-      <div className="bg-[#2a2d3a] rounded-lg p-3 mb-3">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-base font-medium">Top 3 Active vesting Schedules per Level</h2>
-          <Link href="/dashboard/vesting" className="text-gray-400 hover:text-white">
-            <ChevronRight className="h-4 w-4" />
-          </Link>
-        </div>
-
-        <div className="space-y-2">
-          {/* Level 1 */}
-          <div className="flex items-center">
-            <div className="mr-3 w-14 text-xs">Level 1</div>
-            <div className="w-6 h-6 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-xs">
-              2
-            </div>
-            <div className="flex-1 bg-gray-700 rounded-full h-2.5">
-              <div
-                className="bg-green-500 h-2.5 rounded-full"
-                style={{
-                  width: `${
-                    useVesting()
-                      .getSchedulesByLevel(1)
-                      .filter((s) => s.invested && !s.claimed)
-                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 78
-                  }%`,
-                }}
-              ></div>
-            </div>
-            <div className="ml-3 font-bold text-xs">
-              {useVesting()
-                .getSchedulesByLevel(1)
-                .filter((s) => s.invested && !s.claimed)
-                .sort((a, b) => b.progress - a.progress)[0]?.progress || 78}
-              %
-            </div>
+      {/* Top 3 Active vesting Schedules per Level */}
+      <div className="px-6 mt-6">
+        <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
+          <div className="flex justify-between items-center px-4 py-2">
+            <h3 className="text-sm font-medium">Top 3 Active vesting Schedules per Level</h3>
+            <Link href="/dashboard/vesting">
+              <ChevronRight className="h-4 w-4 text-gray-400 hover:text-white cursor-pointer" />
+            </Link>
           </div>
 
-          {/* Level 2 */}
-          <div className="flex items-center">
-            <div className="mr-3 w-14 text-xs">Level 2</div>
-            <div className="w-6 h-6 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-xs">
-              4
+          <div className="p-4 space-y-4">
+            {/* Level 1 */}
+            <div className="flex items-center">
+              <div className="w-16 text-xs">Level 1</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
+                {level1Schedule ? "2" : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level1Schedule && (
+                  <div className="h-full bg-green-500" style={{ width: `${level1Schedule.progress}%` }}></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level1Schedule ? `${level1Schedule.progress}%` : "0%"}</div>
             </div>
-            <div className="flex-1 bg-gray-700 rounded-full h-2.5">
-              <div
-                className="bg-green-500 h-2.5 rounded-full"
-                style={{
-                  width: `${
-                    useVesting()
-                      .getSchedulesByLevel(2)
-                      .filter((s) => s.invested && !s.claimed)
-                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 95
-                  }%`,
-                }}
-              ></div>
-            </div>
-            <div className="ml-3 font-bold text-xs">
-              {useVesting()
-                .getSchedulesByLevel(2)
-                .filter((s) => s.invested && !s.claimed)
-                .sort((a, b) => b.progress - a.progress)[0]?.progress || 95}
-              %
-            </div>
-          </div>
 
-          {/* Level 3 */}
-          <div className="flex items-center">
-            <div className="mr-3 w-14 text-xs">Level 3</div>
-            <div className="w-6 h-6 rounded-full bg-gray-200 text-black flex items-center justify-center font-bold mr-3 text-xs">
-              8
+            {/* Level 2 */}
+            <div className="flex items-center">
+              <div className="w-16 text-xs">Level 2</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
+                {level2Schedule ? "4" : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level2Schedule && (
+                  <div className="h-full bg-green-500" style={{ width: `${level2Schedule.progress}%` }}></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level2Schedule ? `${level2Schedule.progress}%` : "0%"}</div>
             </div>
-            <div className="flex-1 bg-gray-700 rounded-full h-2.5">
-              <div
-                className="bg-green-500 h-2.5 rounded-full"
-                style={{
-                  width: `${
-                    useVesting()
-                      .getSchedulesByLevel(3)
-                      .filter((s) => s.invested && !s.claimed)
-                      .sort((a, b) => b.progress - a.progress)[0]?.progress || 0
-                  }%`,
-                }}
-              ></div>
-            </div>
-            <div className="ml-3 font-bold text-xs">
-              {useVesting()
-                .getSchedulesByLevel(3)
-                .filter((s) => s.invested && !s.claimed)
-                .sort((a, b) => b.progress - a.progress)[0]?.progress || 0}
-              %
+
+            {/* Level 3 */}
+            <div className="flex items-center">
+              <div className="w-16 text-xs">Level 3</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
+                {level3Schedule ? "8" : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level3Schedule && (
+                  <div className="h-full bg-green-500" style={{ width: `${level3Schedule.progress}%` }}></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level3Schedule ? `${level3Schedule.progress}%` : "0%"}</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Transactions Table */}
-      <div className="bg-[#2a2d3a] rounded-lg p-3 flex-1">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-base font-medium">Recent Transactions</h2>
-          <Link href="/dashboard/transactions" className="text-gray-400 hover:text-white">
-            <ChevronRight className="h-4 w-4" />
-          </Link>
+      {/* Recent Transactions */}
+      <div className="px-6 mt-6 pb-6">
+        <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
+          <div className="flex justify-between items-center px-4 py-2">
+            <h3 className="text-sm font-medium">Recent Transactions</h3>
+            <Link href="/dashboard/transactions">
+              <ChevronRight className="h-4 w-4 text-gray-400 hover:text-white cursor-pointer" />
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <TransactionTable transactions={recentTransactions} showAccount={true} compact={true} />
+          </div>
         </div>
-
-        <table className="w-full">
-          <thead>
-            <tr className="text-left border-b border-gray-700">
-              <th className="py-1.5 px-3 font-medium text-[11px]">Description</th>
-              <th className="py-1.5 px-3 font-medium text-[11px]">Account</th>
-              <th className="py-1.5 px-3 font-medium text-[11px]">Date</th>
-              <th className="py-1.5 px-3 font-medium text-[11px]">Amount (PWT)</th>
-              <th className="py-1.5 px-3 font-medium text-[11px]">Amount (USD)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentTransactions.length > 0
-              ? recentTransactions.map((transaction, index) => (
-                  <tr key={index} className="border-b border-gray-700">
-                    <td className="py-1.5 px-3 text-[10px]">
-                      <span
-                        className={
-                          ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
-                            transaction.type,
-                          )
-                            ? "text-green-400"
-                            : "text-red-400"
-                        }
-                      >
-                        {["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
-                          transaction.type,
-                        )
-                          ? "+"
-                          : "-"}
-                      </span>{" "}
-                      {transaction.type}
-                    </td>
-                    <td className="py-1.5 px-3 text-[10px]">{transaction.account}</td>
-                    <td className="py-1.5 px-3 text-[10px]">{transaction.date}</td>
-                    <td className="py-1.5 px-3 text-[10px]">{transaction.amount} PWT</td>
-                    <td className="py-1.5 px-3 text-[10px]">{transaction.amountUsd} USD</td>
-                  </tr>
-                ))
-              : // Fallback data if no transactions
-                [
-                  {
-                    type: "VESTING - LEVEL 1C",
-                    account: "PWT Invest",
-                    date: "12 May, 5:40pm",
-                    amount: 80,
-                    amountUsd: 800,
-                  },
-                  {
-                    type: "VESTING - LEVEL 1D",
-                    account: "PWT Invest",
-                    date: "12 May, 4:30pm",
-                    amount: 80,
-                    amountUsd: 800,
-                  },
-                  {
-                    type: "CLAIM - LEVEL 2B",
-                    account: "PWT Cashout",
-                    date: "12 May, 3:20pm",
-                    amount: 10,
-                    amountUsd: 100,
-                  },
-                ].map((item, index) => (
-                  <tr key={index} className="border-b border-gray-700">
-                    <td className="py-1.5 px-3 text-[10px]">
-                      <span className={item.type.includes("CLAIM") ? "text-green-400" : "text-red-400"}>
-                        {item.type.includes("CLAIM") ? "+" : "-"}
-                      </span>{" "}
-                      {item.type}
-                    </td>
-                    <td className="py-1.5 px-3 text-[10px]">{item.account}</td>
-                    <td className="py-1.5 px-3 text-[10px]">{item.date}</td>
-                    <td className="py-1.5 px-3 text-[10px]">{item.amount} PWT</td>
-                    <td className="py-1.5 px-3 text-[10px]">{item.amountUsd} USD</td>
-                  </tr>
-                ))}
-          </tbody>
-        </table>
       </div>
     </div>
   )

@@ -4,10 +4,12 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/contexts/auth-context"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { user, signOut } = useAuth()
 
   const navItems = [
     {
@@ -48,7 +50,8 @@ export function DashboardSidebar() {
     },
   ]
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await signOut()
     router.push("/login")
   }
 
@@ -89,11 +92,11 @@ export function DashboardSidebar() {
       <div className="p-2 border-t border-gray-800">
         <div className="flex items-center mb-2">
           <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold mr-2">
-            M
+            {user?.email ? user.email.charAt(0).toUpperCase() : "M"}
           </div>
           <div>
             <div className="text-[9px]">user :</div>
-            <div className="text-[8px] text-gray-400">mwaikange@gmail.com</div>
+            <div className="text-[8px] text-gray-400">{user?.email || "loading..."}</div>
           </div>
         </div>
 

@@ -5,7 +5,7 @@ import { useWallet } from "@/contexts/wallet-context"
 import Link from "next/link"
 
 export function DashboardHeader() {
-  const { pwtInvestBalance, pwtCashoutBalance, aftBalance } = useWallet()
+  const { pwtInvestBalance, pwtCashoutBalance, aftBalance, loading } = useWallet()
 
   return (
     <div className="w-full">
@@ -38,24 +38,24 @@ export function DashboardHeader() {
           <div className="flex items-center space-x-2">
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">PWT Invest</div>
-              <div className="text-xl font-bold">{pwtInvestBalance || 30}</div>
+              <div className="text-xl font-bold">{loading ? "..." : pwtInvestBalance}</div>
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">PWT Cashout</div>
-              <div className="text-xl font-bold">{pwtCashoutBalance || 30}</div>
+              <div className="text-xl font-bold">{loading ? "..." : pwtCashoutBalance}</div>
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">Activation Token</div>
               <div className="text-xl font-bold">
-                {aftBalance || 30} <span className="text-xs">USD</span>
+                {loading ? "..." : aftBalance} <span className="text-xs">USD</span>
               </div>
             </div>
           </div>
 
           <button className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
-            <div className="font-medium">Top Up</div>
+            <div className="font-medium text-sm">Top Up</div>
             <div className="text-xs">Activation Token (AFT)</div>
           </button>
         </div>

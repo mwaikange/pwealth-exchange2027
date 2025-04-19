@@ -6,7 +6,7 @@ import { useState, useEffect } from "react"
 import Image from "next/image"
 import { updatePassword, updateReferrerEmail } from "@/actions/user-actions"
 import { useAuth } from "@/contexts/auth-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase-singleton"
 // Import the updateReferrer action
 import { updateReferrer } from "@/actions/update-referrer"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
@@ -297,7 +297,7 @@ export default function Settings() {
                       className="rounded-full"
                     />
                   </div>
-                  <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-3 py-2 rounded-md text-xs w-full">
+                  <button className="w-full flex items-center px-3 py-2 bg-white text-black rounded text-xs">
                     Join Telegram Group
                   </button>
                 </div>
@@ -313,7 +313,7 @@ export default function Settings() {
                       className="rounded-full"
                     />
                   </div>
-                  <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-3 py-2 rounded-md text-xs w-full">
+                  <button className="w-full flex items-center px-3 py-2 bg-white text-black rounded text-xs">
                     Talk to AI Agent
                   </button>
                 </div>
@@ -329,7 +329,7 @@ export default function Settings() {
                       className="rounded-full"
                     />
                   </div>
-                  <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-3 py-2 rounded-md text-xs w-full">
+                  <button className="w-full flex items-center px-3 py-2 bg-white text-black rounded text-xs">
                     Talk to AI Agent
                   </button>
                 </div>
@@ -342,7 +342,7 @@ export default function Settings() {
                       <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm0 22c-5.523 0-10-4.477-10-10S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
                     </svg>
                   </div>
-                  <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-3 py-2 rounded-md text-xs w-full">
+                  <button className="w-full flex items-center px-3 py-2 bg-white text-black rounded text-xs">
                     Join Whatsapp Channel
                   </button>
                 </div>
@@ -398,7 +398,7 @@ export default function Settings() {
 
               <div className="mt-auto pt-10">
                 <p className="text-sm mb-1">This is your Referral Code / ID</p>
-                <p className="text-2xl font-bold">{userData?.referral_code || ""}</p>
+                <p className="text-2xl font-bold">{userData?.referral_code || "Loading..."}</p>
               </div>
             </div>
           </div>

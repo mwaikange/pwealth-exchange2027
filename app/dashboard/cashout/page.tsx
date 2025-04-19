@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
+import { supabase } from "@/lib/supabase-singleton"
 
 export default function Cashout() {
   const [emailTransfer, setEmailTransfer] = useState("")
@@ -19,6 +20,12 @@ export default function Cashout() {
   // Add success message states
   const [transferSuccess, setTransferSuccess] = useState("")
   const [giftSuccess, setGiftSuccess] = useState("")
+  // Add loading states
+  const [isCheckingTransferEmail, setIsCheckingTransferEmail] = useState(false)
+  const [isCheckingGiftEmail, setIsCheckingGiftEmail] = useState(false)
+  // Add validation states
+  const [isTransferEmailValid, setIsTransferEmailValid] = useState(false)
+  const [isGiftEmailValid, setIsGiftEmailValid] = useState(false)
 
   // Add useEffect for auto-clearing transfer messages
   useEffect(() => {
@@ -65,7 +72,64 @@ export default function Cashout() {
 
   const currentUserEmail = "mwaikange@gmail.com" // Keep this for email validation
 
-  const handleTransfer = () => {
+  // Function to check if email exists in database
+  const checkEmailExists = async (email: string) => {
+    try {
+      const { data, error } = await supabase.from("app_users").select("email").eq("email", email).single()
+
+      if (error) {
+        console.error("Error checking email:", error)
+        return false
+      }
+
+      return !!data
+    } catch (error) {
+      console.error("Error in checkEmailExists:", error)
+      return false
+    }
+  }
+
+  // Handle transfer email change with validation
+  const handleTransferEmailChange = async (email: string) => {
+    setEmailTransfer(email)
+    setTransferError("")
+    setTransferSuccess("")
+
+    if (email && email.includes("@")) {
+      setIsCheckingTransferEmail(true)
+      const exists = await checkEmailExists(email)
+      setIsTransferEmailValid(exists)
+      setIsCheckingTransferEmail(false)
+
+      if (!exists) {
+        setTransferError("Recipient not found in system")
+      }
+    } else {
+      setIsTransferEmailValid(false)
+    }
+  }
+
+  // Handle gift email change with validation
+  const handleGiftEmailChange = async (email: string) => {
+    setEmailGift(email)
+    setGiftError("")
+    setGiftSuccess("")
+
+    if (email && email.includes("@")) {
+      setIsCheckingGiftEmail(true)
+      const exists = await checkEmailExists(email)
+      setIsGiftEmailValid(exists)
+      setIsCheckingGiftEmail(false)
+
+      if (!exists) {
+        setGiftError("Recipient not found in system")
+      }
+    } else {
+      setIsGiftEmailValid(false)
+    }
+  }
+
+  const handleTransfer = async () => {
     // Reset messages
     setTransferError("")
     setTransferSuccess("")
@@ -73,6 +137,12 @@ export default function Cashout() {
     // Validate email is not the user's own email
     if (emailTransfer.toLowerCase() === currentUserEmail.toLowerCase()) {
       setTransferError("You cannot transfer to your own account")
+      return
+    }
+
+    // Validate email exists in system
+    if (!isTransferEmailValid) {
+      setTransferError("Recipient not found in system")
       return
     }
 
@@ -92,10 +162,10 @@ export default function Cashout() {
     // If all validations pass, proceed with transfer and update balance
     try {
       // Update the global wallet state
-      transferFromPwtCashout(tokenAmount)
+      await transferFromPwtCashout(tokenAmount)
 
       // Log the transaction
-      addTransaction({
+      await addTransaction({
         type: "OUT-TRANSFER",
         account: "PWT Cashout",
         amount: tokenAmount,
@@ -111,6 +181,7 @@ export default function Cashout() {
       setPwtTokens("")
       setUsdValueTransfer("")
       setEmailTransfer("")
+      setIsTransferEmailValid(false)
 
       console.log("Transfer completed successfully")
     } catch (error) {
@@ -119,7 +190,7 @@ export default function Cashout() {
     }
   }
 
-  const handleGift = () => {
+  const handleGift = async () => {
     // Reset messages
     setGiftError("")
     setGiftSuccess("")
@@ -127,6 +198,12 @@ export default function Cashout() {
     // Validate email is not the user's own email
     if (emailGift.toLowerCase() === currentUserEmail.toLowerCase()) {
       setGiftError("You cannot gift to your own account")
+      return
+    }
+
+    // Validate email exists in system
+    if (!isGiftEmailValid) {
+      setGiftError("Recipient not found in system")
       return
     }
 
@@ -146,10 +223,10 @@ export default function Cashout() {
     // If all validations pass, proceed with gift and update balance
     try {
       // Update the global wallet state
-      transferFromAft(usdAmount)
+      await transferFromAft(usdAmount)
 
       // Log the transaction
-      addTransaction({
+      await addTransaction({
         type: "OUT-AFT GIFT",
         account: "AFT Wallet",
         amount: usdAmount,
@@ -164,6 +241,7 @@ export default function Cashout() {
       // Clear form after successful transfer
       setUsdValueGift("")
       setEmailGift("")
+      setIsGiftEmailValid(false)
 
       console.log("Gift completed successfully")
     } catch (error) {
@@ -194,18 +272,20 @@ export default function Cashout() {
             </p>
 
             <div className="space-y-2">
-              <input
-                type="text"
-                value={emailTransfer}
-                onChange={(e) => {
-                  setEmailTransfer(e.target.value)
-                  // Clear messages when user starts typing
-                  if (transferError) setTransferError("")
-                  if (transferSuccess) setTransferSuccess("")
-                }}
-                placeholder="enter the email of receiving party"
-                className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={emailTransfer}
+                  onChange={(e) => handleTransferEmailChange(e.target.value)}
+                  placeholder="enter the email of receiving party"
+                  className={`w-full p-2 rounded ${
+                    isTransferEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"
+                  } text-sm border-0`}
+                />
+                {isCheckingTransferEmail && (
+                  <div className="absolute right-2 top-2 text-xs text-gray-500">Checking...</div>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -247,6 +327,7 @@ export default function Cashout() {
                 <button
                   onClick={handleTransfer}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
+                  disabled={!isTransferEmailValid || !pwtTokens}
                 >
                   TRANSFER
                 </button>
@@ -265,18 +346,18 @@ export default function Cashout() {
             </p>
 
             <div className="space-y-2">
-              <input
-                type="text"
-                value={emailGift}
-                onChange={(e) => {
-                  setEmailGift(e.target.value)
-                  // Clear messages when user starts typing
-                  if (giftError) setGiftError("")
-                  if (giftSuccess) setGiftSuccess("")
-                }}
-                placeholder="enter the email of the recieving party"
-                className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={emailGift}
+                  onChange={(e) => handleGiftEmailChange(e.target.value)}
+                  placeholder="enter the email of the recieving party"
+                  className={`w-full p-2 rounded ${
+                    isGiftEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"
+                  } text-sm border-0`}
+                />
+                {isCheckingGiftEmail && <div className="absolute right-2 top-2 text-xs text-gray-500">Checking...</div>}
+              </div>
 
               <input
                 type="text"
@@ -306,6 +387,7 @@ export default function Cashout() {
                 <button
                   onClick={handleGift}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
+                  disabled={!isGiftEmailValid || !usdValueGift}
                 >
                   TRANSFER
                 </button>
