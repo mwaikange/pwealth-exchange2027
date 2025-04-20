@@ -1,7 +1,9 @@
 "use client"
-import Link from "next/link"
+
 import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link"
 import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 
 export function DashboardSidebar() {
@@ -9,111 +11,110 @@ export function DashboardSidebar() {
   const router = useRouter()
   const { user, signOut } = useAuth()
 
+  const navItems = [
+    {
+      name: "Overview",
+      description: "Dashboard Overview",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      name: "Vesting",
+      description: "Investment Schedules",
+      href: "/dashboard/vesting",
+      icon: Clock,
+    },
+    {
+      name: "Cashout",
+      description: "Transfer, Sell & Swap",
+      href: "/dashboard/cashout",
+      icon: DollarSign,
+    },
+    {
+      name: "Transactions",
+      description: "Transactions History",
+      href: "/dashboard/transactions",
+      icon: BarChart3,
+    },
+    {
+      name: "Referrals",
+      description: "Claim referral rewards",
+      href: "/dashboard/referrals",
+      icon: Users,
+    },
+    {
+      name: "Settings",
+      description: "Change password",
+      href: "/dashboard/settings",
+      icon: Settings,
+    },
+  ]
+
   const handleSignOut = async () => {
     await signOut()
     router.push("/login")
   }
 
-  const navItems = [
-    {
-      title: "Overview",
-      icon: LayoutDashboard,
-      href: "/dashboard",
-      active: pathname === "/dashboard",
-    },
-    {
-      title: "Vesting",
-      icon: Clock,
-      href: "/dashboard/vesting",
-      active: pathname === "/dashboard/vesting",
-      description: "Investment Schedules",
-    },
-    {
-      title: "Cashout",
-      icon: DollarSign,
-      href: "/dashboard/cashout",
-      active: pathname === "/dashboard/cashout",
-      description: "Transfer, Sell & Swap",
-    },
-    {
-      title: "Transactions",
-      icon: BarChart3,
-      href: "/dashboard/transactions",
-      active: pathname === "/dashboard/transactions",
-      description: "Transactions History",
-    },
-    {
-      title: "Referrals",
-      icon: Users,
-      href: "/dashboard/referrals",
-      active: pathname === "/dashboard/referrals",
-      description: "Claim referral rewards",
-    },
-    {
-      title: "Settings",
-      icon: Settings,
-      href: "/dashboard/settings",
-      active: pathname === "/dashboard/settings",
-      description: "Change password",
-    },
-  ]
-
   return (
-    <div className="w-[220px] h-screen bg-[#1c1e26] border-r border-gray-800 flex flex-col">
-      <div className="p-4 flex items-center">
-        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black font-bold mr-3">
-          PW
-        </div>
-        <div>
-          <div className="font-bold uppercase">PEER WEALTH</div>
-          <div className="text-xs text-gray-400">TOKEN</div>
-        </div>
+    <aside className="w-[200px] bg-[#1e2130] border-r border-gray-800 flex flex-col h-full">
+      <div className="p-3 text-base font-bold">
+        PEER WEALTH
+        <br />
+        TOKEN
       </div>
 
-      <div className="flex-1 overflow-auto py-4">
-        <nav className="space-y-1 px-3">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center px-3 py-2 rounded-md text-[11px] ${
-                item.active ? "bg-gray-800 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
-              }`}
-            >
-              <item.icon className="h-4 w-4 mr-3" />
-              <div>
-                <div>{item.title}</div>
-                {item.description && <div className="text-[9px] text-gray-500">{item.description}</div>}
-              </div>
-            </Link>
-          ))}
-        </nav>
-      </div>
+      <nav className="flex-1 py-1">
+        <div className="flex flex-col gap-1 px-2">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center px-3 py-1.5 rounded",
+                  isActive ? "bg-yellow-400 text-black" : "text-gray-300 hover:bg-gray-800",
+                )}
+              >
+                <div className="w-5 h-5 mr-2 flex items-center justify-center">
+                  <item.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-medium text-xs">{item.name}</div>
+                  <div className="text-[9px]">{item.description}</div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
 
-      <div className="p-4 border-t border-gray-800">
-        <div className="mb-4">
-          <div className="text-xs text-gray-400">Logged in as:</div>
-          <div className="text-sm truncate">{user?.email || "User"}</div>
+      <div className="p-2 border-t border-gray-800">
+        <div className="flex items-center mb-2">
+          <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold mr-2">
+            {user?.email ? user.email.charAt(0).toUpperCase() : "M"}
+          </div>
+          <div>
+            <div className="text-[9px]">user :</div>
+            <div className="text-[8px] text-gray-400">{user?.email || "loading..."}</div>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Link
-            href="#"
-            className="flex items-center px-3 py-2 rounded-md text-[11px] text-gray-400 hover:text-white hover:bg-gray-800"
-          >
-            <HelpCircle className="h-4 w-4 mr-3" />
+        <div className="space-y-1">
+          <button className="w-full flex items-center px-2 py-1.5 bg-white text-black rounded text-xs">
+            <HelpCircle className="mr-1.5 h-3 w-3" />
             Help & Support
-          </Link>
+          </button>
 
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center px-3 py-2 rounded-md text-[11px] text-red-400 hover:text-white hover:bg-red-900"
+            className="w-full flex items-center px-2 py-1.5 bg-red-500 text-white rounded text-xs"
           >
-            <LogOut className="h-4 w-4 mr-3" />
+            <LogOut className="mr-1.5 h-3 w-3" />
             Sign Out
           </button>
         </div>
       </div>
-    </div>
+    </aside>
   )
 }

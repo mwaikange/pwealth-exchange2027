@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/contexts/auth-context"
 
 interface AppSidebarProps {
   open: boolean
@@ -12,6 +13,7 @@ interface AppSidebarProps {
 export function AppSidebar({ open }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { user, signOut } = useAuth()
 
   const navItems = [
     {
@@ -30,7 +32,7 @@ export function AppSidebar({ open }: AppSidebarProps) {
       name: "Cashout",
       href: "/dashboard/cashout",
       icon: DollarSign,
-      description: "Transfer, Sell & Swap Tokens",
+      description: "Transfer, Sell & Swap",
     },
     {
       name: "Transactions",
@@ -52,17 +54,13 @@ export function AppSidebar({ open }: AppSidebarProps) {
     },
   ]
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await signOut()
     router.push("/login")
   }
 
   return (
-    <aside
-      className={cn(
-        "fixed left-0 top-[96px] h-[calc(100vh-96px)] w-[200px] bg-[#2a2d3a] transition-transform duration-300 z-10",
-        open ? "translate-x-0" : "-translate-x-full",
-      )}
-    >
+    <aside className={cn("w-[200px] bg-[#2a2d3a] h-full", open ? "block" : "hidden")}>
       <div className="flex flex-col h-full">
         <div className="p-4 text-xl font-bold">PEER WEALTH TOKEN</div>
         <nav className="flex-1">
@@ -99,7 +97,7 @@ export function AppSidebar({ open }: AppSidebarProps) {
             </div>
             <div>
               <div className="text-sm font-medium">user :</div>
-              <div className="text-xs text-gray-400">mwaikange@gmail.com</div>
+              <div className="text-xs text-gray-400">{user?.email || "mwaikange@gmail.com"}</div>
             </div>
           </div>
 

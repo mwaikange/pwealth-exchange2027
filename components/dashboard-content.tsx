@@ -1,6 +1,4 @@
 "use client"
-
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 import { useVesting } from "@/contexts/vesting-context"
@@ -10,7 +8,7 @@ import { TransactionTable } from "@/components/transaction-table"
 export function DashboardContent() {
   const { vestingSchedules, getSchedulesByLevel } = useVesting()
   const { transactions, getRecentTransactions } = useTransactions()
-  const recentTransactions = getRecentTransactions(5)
+  const recentTransactions = getRecentTransactions(3) // Reduced to 3 to fit on one page
 
   // Calculate total OUT-Transfers
   const totalOutTransfers = transactions
@@ -28,30 +26,22 @@ export function DashboardContent() {
     .reduce((sum, tx) => sum + tx.amount, 0)
 
   // Calculate Active Vesting Expected Yield
-  const [activeVestingYield, setActiveVestingYield] = useState(0)
-
-  useEffect(() => {
+  const activeVestingYield = (() => {
     // Calculate expected yield from active and unclaimed vesting schedules
     const yield1 = getSchedulesByLevel(1).filter((s) => s.invested && !s.claimed).length * 10 // Level 1 yields 10 tokens
-
     const yield2 = getSchedulesByLevel(2).filter((s) => s.invested && !s.claimed).length * 20 // Level 2 yields 20 tokens
-
     const yield3 = getSchedulesByLevel(3).filter((s) => s.invested && !s.claimed).length * 40 // Level 3 yields 40 tokens
-
-    setActiveVestingYield(yield1 + yield2 + yield3)
-  }, [vestingSchedules, getSchedulesByLevel])
+    return yield1 + yield2 + yield3
+  })()
 
   // Get most active schedule for each level
   const getMostActiveSchedule = (level: number) => {
     const levelSchedules = getSchedulesByLevel(level)
-
     // Filter for active schedules (invested but not claimed)
     const activeSchedules = levelSchedules.filter((s) => s.invested && !s.claimed)
-
     if (activeSchedules.length === 0) {
       return null // No active schedules
     }
-
     // Sort by progress (highest first)
     return activeSchedules.sort((a, b) => b.progress - a.progress)[0]
   }
@@ -61,20 +51,20 @@ export function DashboardContent() {
   const level3Schedule = getMostActiveSchedule(3)
 
   return (
-    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-auto">
+    <div className="h-full bg-[#1c1e26] overflow-hidden">
       {/* Page Title */}
       <div className="px-6 pt-4 pb-2">
         <h1 className="text-2xl font-bold">Dashboard Overview</h1>
       </div>
 
-      {/* Stats Grid */}
-      <div className="px-6 grid grid-cols-5 gap-4">
+      {/* Stats Grid - Reduced padding and margins */}
+      <div className="px-6 grid grid-cols-5 gap-3">
         {/* Total OUT-Transfers to date */}
-        <div className="bg-green-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+        <div className="bg-green-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
-          <div className="text-3xl font-bold">{totalOutTransfers || 0}</div>
+          <div className="text-2xl font-bold">{totalOutTransfers || 0}</div>
           <div className="text-[10px]">USD</div>
-          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+          <div className="absolute bottom-0 left-0 right-0 h-6 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
               <path
                 fill="none"
@@ -88,11 +78,11 @@ export function DashboardContent() {
         </div>
 
         {/* Total OUT-Transfer tokens */}
-        <div className="bg-blue-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+        <div className="bg-blue-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
-          <div className="text-3xl font-bold">{totalOutTransferTokens || 0}</div>
+          <div className="text-2xl font-bold">{totalOutTransferTokens || 0}</div>
           <div className="text-[10px]">tokens</div>
-          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+          <div className="absolute bottom-0 left-0 right-0 h-6 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
               <path
                 fill="none"
@@ -106,11 +96,11 @@ export function DashboardContent() {
         </div>
 
         {/* Total Referral Claims sum */}
-        <div className="bg-yellow-500 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+        <div className="bg-yellow-500 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
-          <div className="text-3xl font-bold">{totalReferralClaims || 0}</div>
+          <div className="text-2xl font-bold">{totalReferralClaims || 0}</div>
           <div className="text-[10px]">tokens</div>
-          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+          <div className="absolute bottom-0 left-0 right-0 h-6 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
               <path
                 fill="none"
@@ -124,11 +114,11 @@ export function DashboardContent() {
         </div>
 
         {/* Active Vesting Expected Yield */}
-        <div className="bg-purple-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+        <div className="bg-purple-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">{activeVestingYield}</div>
+          <div className="text-2xl font-bold">{activeVestingYield}</div>
           <div className="text-[10px]">tokens</div>
-          <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
+          <div className="absolute bottom-0 left-0 right-0 h-6 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
               <path
                 fill="none"
@@ -141,27 +131,27 @@ export function DashboardContent() {
           </div>
         </div>
 
-        {/* Current Rate */}
-        <div className="bg-gray-700 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
+        {/* Current Rate - Reduced font size */}
+        <div className="bg-gray-700 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-gray-300">Current Rate</div>
-          <div className="text-2xl font-bold">1 PWT</div>
-          <div className="text-xs">=</div>
-          <div className="text-xl font-bold">10 USD</div>
+          <div className="text-xl font-bold">1 PWT</div>
+          <div className="text-[10px]">=</div>
+          <div className="text-lg font-bold">10 USD</div>
           <div className="text-[8px] text-gray-400">PWT Cashout & Invest Wallets</div>
         </div>
       </div>
 
-      {/* Top 3 Active vesting Schedules per Level */}
-      <div className="px-6 mt-6">
+      {/* Top 3 Active vesting Schedules per Level - Reduced padding */}
+      <div className="px-6 mt-3">
         <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
-          <div className="flex justify-between items-center px-4 py-2">
+          <div className="flex justify-between items-center px-4 py-1">
             <h3 className="text-sm font-medium">Top 3 Active vesting Schedules per Level</h3>
             <Link href="/dashboard/vesting">
               <ChevronRight className="h-4 w-4 text-gray-400 hover:text-white cursor-pointer" />
             </Link>
           </div>
 
-          <div className="p-4 space-y-4">
+          <div className="p-2 space-y-2">
             {/* Level 1 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 1</div>
@@ -207,10 +197,10 @@ export function DashboardContent() {
         </div>
       </div>
 
-      {/* Recent Transactions */}
-      <div className="px-6 mt-6 pb-6">
+      {/* Recent Transactions - Reduced padding and number of transactions */}
+      <div className="px-6 mt-3">
         <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
-          <div className="flex justify-between items-center px-4 py-2">
+          <div className="flex justify-between items-center px-4 py-1">
             <h3 className="text-sm font-medium">Recent Transactions</h3>
             <Link href="/dashboard/transactions">
               <ChevronRight className="h-4 w-4 text-gray-400 hover:text-white cursor-pointer" />
