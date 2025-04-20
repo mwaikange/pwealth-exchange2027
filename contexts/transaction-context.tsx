@@ -42,6 +42,7 @@ type TransactionContextType = {
   getRecentTransactions: (count: number) => Transaction[]
   getTransactionsByType: (type: TransactionType | "All" | "Earnings" | "Outflows") => Transaction[]
   getCashoutTransactions: () => Transaction[]
+  refreshTransactions: () => Promise<void>
   loading: boolean
 }
 
@@ -69,70 +70,76 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true)
   const { user } = useAuth()
 
-  // Load transactions from Supabase on initial render
-  useEffect(() => {
-    async function fetchTransactions() {
-      if (!user) {
-        setLoading(false)
+  // Function to fetch transactions
+  const fetchTransactions = async () => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      // Handle the case where the user has no transactions yet
+      const query = supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .order("created_at", { ascending: false })
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error("Error fetching transactions:", error)
+        // Set empty transactions array on error
+        setTransactions([])
         return
       }
 
-      try {
-        setLoading(true)
+      if (data) {
+        // Transform the data to match our Transaction interface
+        const formattedTransactions: Transaction[] = data.map((tx) => ({
+          id: tx.transaction_id,
+          type: tx.transaction_type as TransactionType,
+          account: tx.account_type as WalletType,
+          date: new Date(tx.created_at).toLocaleString("en-US", {
+            day: "numeric",
+            month: "short",
+            hour: "numeric",
+            minute: "numeric",
+            hour12: true,
+          }),
+          amount: Number(tx.amount),
+          amountUsd: Number(tx.amount_usd),
+          recipient: tx.recipient_email,
+          reference: tx.reference,
+          description: tx.description,
+          sender: tx.sender_email,
+        }))
 
-        // Handle the case where the user has no transactions yet
-        const query = supabase
-          .from("transactions")
-          .select("*")
-          .eq("user_uuid", user.id)
-          .order("created_at", { ascending: false })
-
-        const { data, error } = await query
-
-        if (error) {
-          console.error("Error fetching transactions:", error)
-          // Set empty transactions array on error
-          setTransactions([])
-          return
-        }
-
-        if (data) {
-          // Transform the data to match our Transaction interface
-          const formattedTransactions: Transaction[] = data.map((tx) => ({
-            id: tx.transaction_id,
-            type: tx.transaction_type as TransactionType,
-            account: tx.account_type as WalletType,
-            date: new Date(tx.created_at).toLocaleString("en-US", {
-              day: "numeric",
-              month: "short",
-              hour: "numeric",
-              minute: "numeric",
-              hour12: true,
-            }),
-            amount: Number(tx.amount),
-            amountUsd: Number(tx.amount_usd),
-            recipient: tx.recipient_email,
-            reference: tx.reference,
-            description: tx.description,
-            sender: tx.sender_email,
-          }))
-
-          setTransactions(formattedTransactions)
-        } else {
-          // Set empty array if no data
-          setTransactions([])
-        }
-      } catch (error) {
-        console.error("Error in fetchTransactions:", error)
-        // Set empty transactions array on error
+        setTransactions(formattedTransactions)
+      } else {
+        // Set empty array if no data
         setTransactions([])
-      } finally {
-        setLoading(false)
       }
+    } catch (error) {
+      console.error("Error in fetchTransactions:", error)
+      // Set empty transactions array on error
+      setTransactions([])
+    } finally {
+      setLoading(false)
     }
+  }
 
+  // Load transactions from Supabase on initial render
+  useEffect(() => {
     fetchTransactions()
   }, [user])
+
+  // Function to refresh transactions
+  const refreshTransactions = async () => {
+    await fetchTransactions()
+  }
 
   // Add a new transaction
   const addTransaction = async (transaction: Omit<Transaction, "id" | "date" | "reference">) => {
@@ -214,6 +221,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     getRecentTransactions,
     getTransactionsByType,
     getCashoutTransactions,
+    refreshTransactions,
     loading,
   }
 

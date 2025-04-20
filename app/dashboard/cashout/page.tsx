@@ -7,6 +7,7 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
 import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function Cashout() {
   const [emailTransfer, setEmailTransfer] = useState("")
@@ -26,6 +27,13 @@ export default function Cashout() {
   // Add validation states
   const [isTransferEmailValid, setIsTransferEmailValid] = useState(false)
   const [isGiftEmailValid, setIsGiftEmailValid] = useState(false)
+  // Add loading states for transfers
+  const [isTransferring, setIsTransferring] = useState(false)
+  const [isGifting, setIsGifting] = useState(false)
+
+  // Get current user from auth context
+  const { user } = useAuth()
+  const currentUserEmail = user?.email || ""
 
   // Add useEffect for auto-clearing transfer messages
   useEffect(() => {
@@ -61,31 +69,35 @@ export default function Cashout() {
     }
   }, [giftError, giftSuccess])
 
-  // Get wallet balances and update functions from context
-  const { pwtCashoutBalance, aftBalance, transferFromPwtCashout, transferFromAft } = useWallet()
+  // Get wallet balances from context
+  const { pwtCashoutBalance, aftBalance, loading: walletLoading } = useWallet()
 
   // Get transaction functions from context
-  const { addTransaction, getCashoutTransactions } = useTransactions()
+  const { getCashoutTransactions, loading: transactionsLoading } = useTransactions()
 
   // Get cashout transactions
   const cashoutTransactions = getCashoutTransactions()
 
-  const currentUserEmail = "mwaikange@gmail.com" // Keep this for email validation
-
-  // Function to check if email exists in database
+  // Function to check if email exists in database and is confirmed
   const checkEmailExists = async (email: string) => {
     try {
+      // First check if this is the user's own email
+      if (email.toLowerCase() === currentUserEmail.toLowerCase()) {
+        return { exists: false, isOwnEmail: true }
+      }
+
+      // Check in app_users table for confirmed users
       const { data, error } = await supabase.from("app_users").select("email").eq("email", email).single()
 
       if (error) {
-        console.error("Error checking email:", error)
-        return false
+        console.error("Error checking app user:", error)
+        return { exists: false, isOwnEmail: false }
       }
 
-      return !!data
+      return { exists: !!data, isOwnEmail: false }
     } catch (error) {
       console.error("Error in checkEmailExists:", error)
-      return false
+      return { exists: false, isOwnEmail: false }
     }
   }
 
@@ -94,18 +106,22 @@ export default function Cashout() {
     setEmailTransfer(email)
     setTransferError("")
     setTransferSuccess("")
+    setIsTransferEmailValid(false)
 
     if (email && email.includes("@")) {
       setIsCheckingTransferEmail(true)
-      const exists = await checkEmailExists(email)
-      setIsTransferEmailValid(exists)
+      const { exists, isOwnEmail } = await checkEmailExists(email)
       setIsCheckingTransferEmail(false)
 
-      if (!exists) {
-        setTransferError("Recipient not found in system")
+      if (isOwnEmail) {
+        setTransferError("You cannot transfer to your own account")
+        return
       }
-    } else {
-      setIsTransferEmailValid(false)
+
+      setIsTransferEmailValid(exists)
+      if (!exists) {
+        setTransferError("Recipient not found or email not confirmed")
+      }
     }
   }
 
@@ -114,18 +130,22 @@ export default function Cashout() {
     setEmailGift(email)
     setGiftError("")
     setGiftSuccess("")
+    setIsGiftEmailValid(false)
 
     if (email && email.includes("@")) {
       setIsCheckingGiftEmail(true)
-      const exists = await checkEmailExists(email)
-      setIsGiftEmailValid(exists)
+      const { exists, isOwnEmail } = await checkEmailExists(email)
       setIsCheckingGiftEmail(false)
 
-      if (!exists) {
-        setGiftError("Recipient not found in system")
+      if (isOwnEmail) {
+        setGiftError("You cannot gift to your own account")
+        return
       }
-    } else {
-      setIsGiftEmailValid(false)
+
+      setIsGiftEmailValid(exists)
+      if (!exists) {
+        setGiftError("Recipient not found or email not confirmed")
+      }
     }
   }
 
@@ -142,7 +162,7 @@ export default function Cashout() {
 
     // Validate email exists in system
     if (!isTransferEmailValid) {
-      setTransferError("Recipient not found in system")
+      setTransferError("Recipient not found or email not confirmed")
       return
     }
 
@@ -159,20 +179,30 @@ export default function Cashout() {
       return
     }
 
-    // If all validations pass, proceed with transfer and update balance
+    // If all validations pass, proceed with transfer using the RPC function
     try {
-      // Update the global wallet state
-      await transferFromPwtCashout(tokenAmount)
+      setIsTransferring(true)
 
-      // Log the transaction
-      await addTransaction({
-        type: "OUT-TRANSFER",
-        account: "PWT Cashout",
+      // Call the transfer_tokens RPC function
+      const { data, error } = await supabase.rpc("transfer_tokens", {
+        sender_uuid: user?.id,
+        recipient_email: emailTransfer,
+        token_type: "PWT",
         amount: tokenAmount,
-        amountUsd: tokenAmount * 10,
-        recipient: emailTransfer,
-        description: "OUT-TRANSFER",
+        transaction_type: "OUT-TRANSFER",
+        description: "PWT Transfer",
       })
+
+      if (error) {
+        console.error("Transfer error:", error)
+        setTransferError(`Transfer failed: ${error.message}`)
+        return
+      }
+
+      if (!data.success) {
+        setTransferError(`Transfer failed: ${data.message}`)
+        return
+      }
 
       // Show success message
       setTransferSuccess(`Successfully transferred ${tokenAmount} PWT to ${emailTransfer}`)
@@ -183,10 +213,13 @@ export default function Cashout() {
       setEmailTransfer("")
       setIsTransferEmailValid(false)
 
-      console.log("Transfer completed successfully")
-    } catch (error) {
-      setTransferError("Transfer failed. Please try again.")
+      // Refresh wallet balances and transactions
+      window.location.reload()
+    } catch (error: any) {
+      setTransferError(`Transfer failed: ${error.message}`)
       console.error("Transfer error:", error)
+    } finally {
+      setIsTransferring(false)
     }
   }
 
@@ -203,7 +236,7 @@ export default function Cashout() {
 
     // Validate email exists in system
     if (!isGiftEmailValid) {
-      setGiftError("Recipient not found in system")
+      setGiftError("Recipient not found or email not confirmed")
       return
     }
 
@@ -220,20 +253,30 @@ export default function Cashout() {
       return
     }
 
-    // If all validations pass, proceed with gift and update balance
+    // If all validations pass, proceed with gift using the RPC function
     try {
-      // Update the global wallet state
-      await transferFromAft(usdAmount)
+      setIsGifting(true)
 
-      // Log the transaction
-      await addTransaction({
-        type: "OUT-AFT GIFT",
-        account: "AFT Wallet",
+      // Call the transfer_tokens RPC function
+      const { data, error } = await supabase.rpc("transfer_tokens", {
+        sender_uuid: user?.id,
+        recipient_email: emailGift,
+        token_type: "AFT",
         amount: usdAmount,
-        amountUsd: usdAmount,
-        recipient: emailGift,
-        description: "OUT-AFT GIFT",
+        transaction_type: "OUT-AFT GIFT",
+        description: "AFT Gift",
       })
+
+      if (error) {
+        console.error("Gift error:", error)
+        setGiftError(`Gift failed: ${error.message}`)
+        return
+      }
+
+      if (!data.success) {
+        setGiftError(`Gift failed: ${data.message}`)
+        return
+      }
 
       // Show success message
       setGiftSuccess(`Successfully gifted ${usdAmount} AFT to ${emailGift}`)
@@ -243,10 +286,13 @@ export default function Cashout() {
       setEmailGift("")
       setIsGiftEmailValid(false)
 
-      console.log("Gift completed successfully")
-    } catch (error) {
-      setGiftError("Gift failed. Please try again.")
+      // Refresh wallet balances and transactions
+      window.location.reload()
+    } catch (error: any) {
+      setGiftError(`Gift failed: ${error.message}`)
       console.error("Gift error:", error)
+    } finally {
+      setIsGifting(false)
     }
   }
 
@@ -281,6 +327,7 @@ export default function Cashout() {
                   className={`w-full p-2 rounded ${
                     isTransferEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"
                   } text-sm border-0`}
+                  disabled={isTransferring}
                 />
                 {isCheckingTransferEmail && (
                   <div className="absolute right-2 top-2 text-xs text-gray-500">Checking...</div>
@@ -306,6 +353,7 @@ export default function Cashout() {
                   }}
                   placeholder="#Pwt Tokens"
                   className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
+                  disabled={isTransferring}
                 />
                 <input
                   type="text"
@@ -327,9 +375,9 @@ export default function Cashout() {
                 <button
                   onClick={handleTransfer}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
-                  disabled={!isTransferEmailValid || !pwtTokens}
+                  disabled={!isTransferEmailValid || !pwtTokens || isTransferring}
                 >
-                  TRANSFER
+                  {isTransferring ? "PROCESSING..." : "TRANSFER"}
                 </button>
               </div>
             </div>
@@ -355,6 +403,7 @@ export default function Cashout() {
                   className={`w-full p-2 rounded ${
                     isGiftEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"
                   } text-sm border-0`}
+                  disabled={isGifting}
                 />
                 {isCheckingGiftEmail && <div className="absolute right-2 top-2 text-xs text-gray-500">Checking...</div>}
               </div>
@@ -374,6 +423,7 @@ export default function Cashout() {
                 }}
                 placeholder="USD Value (1 AFT = 1 USD)"
                 className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
+                disabled={isGifting}
               />
 
               {/* Display error message if any */}
@@ -387,9 +437,9 @@ export default function Cashout() {
                 <button
                   onClick={handleGift}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
-                  disabled={!isGiftEmailValid || !usdValueGift}
+                  disabled={!isGiftEmailValid || !usdValueGift || isGifting}
                 >
-                  TRANSFER
+                  {isGifting ? "PROCESSING..." : "TRANSFER"}
                 </button>
               </div>
             </div>

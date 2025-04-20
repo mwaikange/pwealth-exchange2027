@@ -23,6 +23,7 @@ type WalletContextType = WalletState & {
   claimToPwtCashout: (amount: number) => Promise<void>
   receivePwtInvest: (amount: number) => Promise<void>
   receiveAft: (amount: number) => Promise<void>
+  refreshBalances: () => Promise<void>
   loading: boolean
 }
 
@@ -43,65 +44,71 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const { user } = useAuth()
 
-  // Load balances from Supabase on initial render
-  useEffect(() => {
-    async function fetchBalances() {
-      if (!user) {
-        setLoading(false)
+  // Function to fetch balances
+  const fetchBalances = async () => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      // Use .maybeSingle() instead of .single() to handle the case where no row exists
+      const { data, error } = await supabase
+        .from("balances")
+        .select("pwt_invest_balance, pwt_cashout_balance, activation_fee_balance")
+        .eq("user_uuid", user.id)
+        .maybeSingle()
+
+      if (error) {
+        console.error("Error fetching balances:", error)
         return
       }
 
-      try {
-        setLoading(true)
-        // Use .maybeSingle() instead of .single() to handle the case where no row exists
-        const { data, error } = await supabase
-          .from("balances")
-          .select("pwt_invest_balance, pwt_cashout_balance, activation_fee_balance")
-          .eq("user_uuid", user.id)
-          .maybeSingle()
+      if (data) {
+        setWalletState({
+          pwtInvestBalance: Number(data.pwt_invest_balance) || 0,
+          pwtCashoutBalance: Number(data.pwt_cashout_balance) || 0,
+          aftBalance: Number(data.activation_fee_balance) || 0,
+        })
+      } else {
+        // If no data exists, initialize with zeros and create a record
+        setWalletState({
+          pwtInvestBalance: 0,
+          pwtCashoutBalance: 0,
+          aftBalance: 0,
+        })
 
-        if (error) {
-          console.error("Error fetching balances:", error)
-          return
-        }
-
-        if (data) {
-          setWalletState({
-            pwtInvestBalance: Number(data.pwt_invest_balance) || 0,
-            pwtCashoutBalance: Number(data.pwt_cashout_balance) || 0,
-            aftBalance: Number(data.activation_fee_balance) || 0,
+        // Create initial balance record if it doesn't exist
+        try {
+          await supabase.from("balances").insert({
+            user_uuid: user.id,
+            pwt_invest_balance: 0,
+            pwt_cashout_balance: 0,
+            activation_fee_balance: 0,
+            display_id: user.id.substring(0, 8).toUpperCase(), // Generate a simple display ID
+            updated_at: new Date().toISOString(),
           })
-        } else {
-          // If no data exists, initialize with zeros and create a record
-          setWalletState({
-            pwtInvestBalance: 0,
-            pwtCashoutBalance: 0,
-            aftBalance: 0,
-          })
-
-          // Create initial balance record if it doesn't exist
-          try {
-            await supabase.from("balances").insert({
-              user_uuid: user.id,
-              pwt_invest_balance: 0,
-              pwt_cashout_balance: 0,
-              activation_fee_balance: 0,
-              display_id: user.id.substring(0, 8).toUpperCase(), // Generate a simple display ID
-              updated_at: new Date().toISOString(),
-            })
-          } catch (insertError) {
-            console.error("Error creating initial balance:", insertError)
-          }
+        } catch (insertError) {
+          console.error("Error creating initial balance:", insertError)
         }
-      } catch (error) {
-        console.error("Error in fetchBalances:", error)
-      } finally {
-        setLoading(false)
       }
+    } catch (error) {
+      console.error("Error in fetchBalances:", error)
+    } finally {
+      setLoading(false)
     }
+  }
 
+  // Load balances from Supabase on initial render
+  useEffect(() => {
     fetchBalances()
   }, [user])
+
+  // Function to refresh balances
+  const refreshBalances = async () => {
+    await fetchBalances()
+  }
 
   // Update functions for each wallet
   const updatePwtInvestBalance = async (amount: number, operation: "add" | "subtract") => {
@@ -201,6 +208,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     claimToPwtCashout,
     receivePwtInvest,
     receiveAft,
+    refreshBalances,
     loading,
   }
 
