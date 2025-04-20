@@ -7,7 +7,6 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
 import { supabase } from "@/lib/supabase-singleton"
-import { useAuth } from "@/contexts/auth-context"
 
 export default function Cashout() {
   const [emailTransfer, setEmailTransfer] = useState("")
@@ -27,10 +26,6 @@ export default function Cashout() {
   // Add validation states
   const [isTransferEmailValid, setIsTransferEmailValid] = useState(false)
   const [isGiftEmailValid, setIsGiftEmailValid] = useState(false)
-
-  // Get current user from auth context
-  const { user } = useAuth()
-  const currentUserEmail = user?.email || ""
 
   // Add useEffect for auto-clearing transfer messages
   useEffect(() => {
@@ -75,43 +70,22 @@ export default function Cashout() {
   // Get cashout transactions
   const cashoutTransactions = getCashoutTransactions()
 
-  // Function to check if email exists in database and is confirmed
+  const currentUserEmail = "mwaikange@gmail.com" // Keep this for email validation
+
+  // Function to check if email exists in database
   const checkEmailExists = async (email: string) => {
     try {
-      // First check if this is the user's own email
-      if (email.toLowerCase() === currentUserEmail.toLowerCase()) {
-        return { exists: false, isOwnEmail: true }
+      const { data, error } = await supabase.from("app_users").select("email").eq("email", email).single()
+
+      if (error) {
+        console.error("Error checking email:", error)
+        return false
       }
 
-      // Check in auth.users table for confirmed users
-      const { data: authUser, error: authError } = await supabase.auth.admin.getUserByEmail(email)
-
-      if (authError) {
-        console.error("Error checking auth user:", authError)
-
-        // Fallback to app_users table if admin API fails
-        const { data: appUser, error: appUserError } = await supabase
-          .from("app_users")
-          .select("email")
-          .eq("email", email)
-          .single()
-
-        if (appUserError) {
-          console.error("Error checking app user:", appUserError)
-          return { exists: false, isOwnEmail: false }
-        }
-
-        return { exists: !!appUser, isOwnEmail: false }
-      }
-
-      // Check if user exists and email is confirmed
-      return {
-        exists: !!authUser && authUser.user.email_confirmed_at !== null,
-        isOwnEmail: false,
-      }
+      return !!data
     } catch (error) {
       console.error("Error in checkEmailExists:", error)
-      return { exists: false, isOwnEmail: false }
+      return false
     }
   }
 
@@ -120,22 +94,18 @@ export default function Cashout() {
     setEmailTransfer(email)
     setTransferError("")
     setTransferSuccess("")
-    setIsTransferEmailValid(false)
 
     if (email && email.includes("@")) {
       setIsCheckingTransferEmail(true)
-      const { exists, isOwnEmail } = await checkEmailExists(email)
+      const exists = await checkEmailExists(email)
+      setIsTransferEmailValid(exists)
       setIsCheckingTransferEmail(false)
 
-      if (isOwnEmail) {
-        setTransferError("You cannot transfer to your own account")
-        return
-      }
-
-      setIsTransferEmailValid(exists)
       if (!exists) {
-        setTransferError("Recipient not found or email not confirmed")
+        setTransferError("Recipient not found in system")
       }
+    } else {
+      setIsTransferEmailValid(false)
     }
   }
 
@@ -144,22 +114,18 @@ export default function Cashout() {
     setEmailGift(email)
     setGiftError("")
     setGiftSuccess("")
-    setIsGiftEmailValid(false)
 
     if (email && email.includes("@")) {
       setIsCheckingGiftEmail(true)
-      const { exists, isOwnEmail } = await checkEmailExists(email)
+      const exists = await checkEmailExists(email)
+      setIsGiftEmailValid(exists)
       setIsCheckingGiftEmail(false)
 
-      if (isOwnEmail) {
-        setGiftError("You cannot gift to your own account")
-        return
-      }
-
-      setIsGiftEmailValid(exists)
       if (!exists) {
-        setGiftError("Recipient not found or email not confirmed")
+        setGiftError("Recipient not found in system")
       }
+    } else {
+      setIsGiftEmailValid(false)
     }
   }
 
@@ -176,7 +142,7 @@ export default function Cashout() {
 
     // Validate email exists in system
     if (!isTransferEmailValid) {
-      setTransferError("Recipient not found or email not confirmed")
+      setTransferError("Recipient not found in system")
       return
     }
 
@@ -237,7 +203,7 @@ export default function Cashout() {
 
     // Validate email exists in system
     if (!isGiftEmailValid) {
-      setGiftError("Recipient not found or email not confirmed")
+      setGiftError("Recipient not found in system")
       return
     }
 

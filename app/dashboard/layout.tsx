@@ -7,9 +7,8 @@ import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { VestingProvider } from "@/contexts/vesting-context"
 import { supabase } from "@/lib/supabase-singleton"
-import { AppSidebar } from "@/components/app-sidebar"
-import { HeaderWithWallet } from "@/components/HeaderWithWallet"
-import { NotificationSlider } from "@/components/NotificationSlider"
+import { DashboardHeader } from "@/components/dashboard-header"
+import { DashboardSidebar } from "@/components/dashboard-sidebar"
 
 export default function DashboardLayout({
   children,
@@ -18,7 +17,6 @@ export default function DashboardLayout({
 }) {
   const [sessionChecked, setSessionChecked] = useState(false)
   const [hasSession, setHasSession] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
@@ -99,20 +97,11 @@ export default function DashboardLayout({
     <WalletProvider>
       <TransactionProvider>
         <VestingProvider>
-          <div className="flex flex-col h-screen bg-[#1c1e26] text-white overflow-hidden">
-            {/* Header at the top */}
-            <HeaderWithWallet sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-
-            {/* Green notification slider */}
-            <NotificationSlider />
-
-            {/* Main content area with sidebar */}
+          <div className="flex flex-col h-screen bg-[#1e2130] text-white overflow-hidden">
+            <DashboardHeader />
             <div className="flex flex-1 overflow-hidden">
-              {/* Sidebar that starts below the green bar */}
-              <AppSidebar open={sidebarOpen} />
-
-              {/* Main content area */}
-              <main className="flex-1 overflow-hidden">{children}</main>
+              <DashboardSidebar />
+              <main className="flex-1 overflow-auto p-4">{children}</main>
             </div>
           </div>
         </VestingProvider>

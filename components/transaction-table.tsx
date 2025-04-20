@@ -1,92 +1,67 @@
 "use client"
 
-import type { useTransactions } from "@/contexts/transaction-context"
+import type { Transaction } from "@/contexts/transaction-context"
 
 interface TransactionTableProps {
-  transactions: ReturnType<typeof useTransactions>["transactions"]
+  transactions: Transaction[]
+  showRecipient?: boolean
   showAccount?: boolean
+  showReference?: boolean
   compact?: boolean
 }
 
-export function TransactionTable({ transactions, showAccount = false, compact = false }: TransactionTableProps) {
-  if (!transactions || transactions.length === 0) {
-    return <div className="p-4 text-center text-gray-500">No transactions found</div>
-  }
-
+export function TransactionTable({
+  transactions,
+  showRecipient = true,
+  showAccount = true,
+  showReference = true,
+  compact = false,
+}: TransactionTableProps) {
   return (
-    <table className="w-full min-w-full divide-y divide-gray-700">
-      <thead className="bg-[#1e2130]">
-        <tr>
-          <th
-            className={`${compact ? "py-1" : "py-2"} px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider`}
-          >
-            Description
-          </th>
-          {showAccount && (
-            <th
-              className={`${compact ? "py-1" : "py-2"} px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider`}
-            >
-              Account
-            </th>
-          )}
-          <th
-            className={`${compact ? "py-1" : "py-2"} px-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider`}
-          >
-            Date
-          </th>
-          <th
-            className={`${compact ? "py-1" : "py-2"} px-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider`}
-          >
-            Amount (PWT)
-          </th>
-          <th
-            className={`${compact ? "py-1" : "py-2"} px-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider`}
-          >
-            Amount (USD)
-          </th>
-          <th
-            className={`${compact ? "py-1" : "py-2"} px-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider`}
-          >
-            Type
-          </th>
-        </tr>
-      </thead>
-      <tbody className="bg-[#2a2d3a] divide-y divide-gray-700">
-        {transactions.map((transaction, index) => (
-          <tr key={index} className="hover:bg-[#3a3d4a]">
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>
-              <div className="flex items-center">{transaction.type}</div>
-            </td>
-            {showAccount && (
-              <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>{transaction.account}</td>
-            )}
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>{transaction.date}</td>
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right text-white`}>
-              {transaction.amount} PWT
-            </td>
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right text-white`}>
-              {transaction.amountUsd} USD
-            </td>
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-center`}>
-              <span
-                className={
-                  ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-gray-700 bg-[#1c1e26]">
+            <th className="text-left py-2 px-4 text-[11px] font-medium">Description</th>
+            {showAccount && <th className="text-left py-2 px-4 text-[11px] font-medium">Account</th>}
+            <th className="text-left py-2 px-4 text-[11px] font-medium">Date</th>
+            {showReference && <th className="text-left py-2 px-4 text-[11px] font-medium">Reference</th>}
+            {showRecipient && <th className="text-left py-2 px-4 text-[11px] font-medium">Recipient</th>}
+            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (PWT)</th>
+            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (USD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((transaction) => (
+            <tr key={transaction.id} className="border-b border-gray-700">
+              <td className="py-[6px] px-4 text-[10px]">
+                <span
+                  className={
+                    ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
+                      transaction.type,
+                    )
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }
+                >
+                  {["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
                     transaction.type,
                   )
-                    ? "text-green-400"
-                    : "text-red-400"
-                }
-              >
-                {["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
-                  transaction.type,
-                )
-                  ? "+"
-                  : "-"}
-              </span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+                    ? "+"
+                    : "-"}
+                </span>{" "}
+                {transaction.description || transaction.type}
+              </td>
+              {showAccount && <td className="py-[6px] px-4 text-[10px]">{transaction.account}</td>}
+              <td className="py-[6px] px-4 text-[10px]">{transaction.date}</td>
+              {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
+              {showRecipient && <td className="py-[6px] px-4 text-[10px]">{transaction.recipient || "-"}</td>}
+              <td className="py-[6px] px-4 text-[10px]">{transaction.amount} PWT</td>
+              <td className="py-[6px] px-4 text-[10px]">{transaction.amountUsd} USD</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

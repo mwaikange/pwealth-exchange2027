@@ -6,7 +6,7 @@ export async function registerUser(formData: FormData) {
 
   const email = formData.get("email") as string
   const password = formData.get("password") as string
-  const country = formData.get("country") as string
+  const name = formData.get("name") as string
   const referrerEmail = (formData.get("referrer") as string) || null
 
   try {
@@ -26,12 +26,12 @@ export async function registerUser(formData: FormData) {
     const displayId = generateDisplayId()
     const referralCode = generateReferralCode()
 
-    // 2. Insert into app_users - removed name field
+    // 2. Insert into app_users
     const { error: appUserError } = await supabase.from("app_users").insert([
       {
         user_uuid: user.id,
         email,
-        country, // Add country field
+        name,
         display_id: displayId,
         created_at: new Date().toISOString(),
         status: "active",

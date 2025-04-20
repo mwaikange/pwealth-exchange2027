@@ -1,9 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { useWallet } from "@/contexts/wallet-context"
+import { AFTPurchaseModal } from "./aft-purchase-modal"
 
 export function WalletBalances() {
   const { pwtInvestBalance, pwtCashoutBalance, aftBalance, loading } = useWallet()
+  const [isAftModalOpen, setIsAftModalOpen] = useState(false)
 
   if (loading) {
     return (
@@ -72,7 +75,16 @@ export function WalletBalances() {
         <div className="text-xl font-bold flex items-center">
           {aftBalance} <span className="text-[10px] ml-1">USD</span>
         </div>
+        <button
+          onClick={() => setIsAftModalOpen(true)}
+          className="mt-1 text-[10px] bg-yellow-500 text-black px-2 py-0.5 rounded-sm hover:bg-yellow-600"
+        >
+          Top Up
+        </button>
       </div>
+
+      {/* AFT Purchase Modal */}
+      <AFTPurchaseModal isOpen={isAftModalOpen} onClose={() => setIsAftModalOpen(false)} />
     </div>
   )
 }
