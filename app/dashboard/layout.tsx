@@ -97,11 +97,11 @@ export default function DashboardLayout({
     <WalletProvider>
       <TransactionProvider>
         <VestingProvider>
-          <div className="flex flex-col h-screen bg-[#1e2130] text-white overflow-hidden">
-            <DashboardHeader />
-            <div className="flex flex-1 overflow-hidden">
-              <DashboardSidebar />
-              <main className="flex-1 overflow-auto p-4">{children}</main>
+          <div className="flex h-screen bg-[#1c1e26] text-white">
+            <DashboardSidebar />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <DashboardHeader />
+              <main className="flex-1 overflow-auto">{children}</main>
             </div>
           </div>
         </VestingProvider>

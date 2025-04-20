@@ -1,4 +1,6 @@
 "use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 import { useVesting } from "@/contexts/vesting-context"
@@ -7,8 +9,37 @@ import { TransactionTable } from "@/components/transaction-table"
 
 export function DashboardContent() {
   const { vestingSchedules, getSchedulesByLevel } = useVesting()
-  const { getRecentTransactions } = useTransactions()
+  const { transactions, getRecentTransactions } = useTransactions()
   const recentTransactions = getRecentTransactions(5)
+
+  // Calculate total OUT-Transfers
+  const totalOutTransfers = transactions
+    .filter((tx) => tx.type === "OUT-TRANSFER")
+    .reduce((sum, tx) => sum + tx.amountUsd, 0)
+
+  // Calculate total OUT-Transfer tokens
+  const totalOutTransferTokens = transactions
+    .filter((tx) => tx.type === "OUT-TRANSFER")
+    .reduce((sum, tx) => sum + tx.amount, 0)
+
+  // Calculate total Referral Claims
+  const totalReferralClaims = transactions
+    .filter((tx) => tx.type === "REFERRAL CLAIM")
+    .reduce((sum, tx) => sum + tx.amount, 0)
+
+  // Calculate Active Vesting Expected Yield
+  const [activeVestingYield, setActiveVestingYield] = useState(0)
+
+  useEffect(() => {
+    // Calculate expected yield from active and unclaimed vesting schedules
+    const yield1 = getSchedulesByLevel(1).filter((s) => s.invested && !s.claimed).length * 10 // Level 1 yields 10 tokens
+
+    const yield2 = getSchedulesByLevel(2).filter((s) => s.invested && !s.claimed).length * 20 // Level 2 yields 20 tokens
+
+    const yield3 = getSchedulesByLevel(3).filter((s) => s.invested && !s.claimed).length * 40 // Level 3 yields 40 tokens
+
+    setActiveVestingYield(yield1 + yield2 + yield3)
+  }, [vestingSchedules, getSchedulesByLevel])
 
   // Get most active schedule for each level
   const getMostActiveSchedule = (level: number) => {
@@ -41,7 +72,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfers to date */}
         <div className="bg-green-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
-          <div className="text-3xl font-bold">300</div>
+          <div className="text-3xl font-bold">{totalOutTransfers || 0}</div>
           <div className="text-[10px]">USD</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -59,7 +90,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfer tokens */}
         <div className="bg-blue-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
-          <div className="text-3xl font-bold">30</div>
+          <div className="text-3xl font-bold">{totalOutTransferTokens || 0}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -77,7 +108,7 @@ export function DashboardContent() {
         {/* Total Referral Claims sum */}
         <div className="bg-yellow-500 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
-          <div className="text-3xl font-bold">9</div>
+          <div className="text-3xl font-bold">{totalReferralClaims || 0}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -95,7 +126,7 @@ export function DashboardContent() {
         {/* Active Vesting Expected Yield */}
         <div className="bg-purple-600 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">45</div>
+          <div className="text-3xl font-bold">{activeVestingYield}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -113,7 +144,7 @@ export function DashboardContent() {
         {/* Current Rate */}
         <div className="bg-gray-700 rounded-lg h-24 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-gray-300">Current Rate</div>
-          <div className="text-3xl font-bold">1 PWT</div>
+          <div className="text-2xl font-bold">1 PWT</div>
           <div className="text-xs">=</div>
           <div className="text-xl font-bold">10 USD</div>
           <div className="text-[8px] text-gray-400">PWT Cashout & Invest Wallets</div>
