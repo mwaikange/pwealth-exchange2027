@@ -8,7 +8,7 @@ import { TransactionTable } from "@/components/transaction-table"
 export function DashboardContent() {
   const { vestingSchedules, getSchedulesByLevel } = useVesting()
   const { transactions, getRecentTransactions } = useTransactions()
-  const recentTransactions = getRecentTransactions(3) // Reduced to 3 to fit on one page
+  const recentTransactions = getRecentTransactions(6) // Show 6 transactions
 
   // Calculate total OUT-Transfers
   const totalOutTransfers = transactions
@@ -52,9 +52,10 @@ export function DashboardContent() {
 
   return (
     <div className="h-full bg-[#1c1e26] overflow-hidden">
-      {/* Page Title */}
-      <div className="px-6 pt-4 pb-2">
+      {/* Page Title with Logo */}
+      <div className="px-6 pt-4 pb-2 flex justify-between items-center">
         <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+        <img src="/peerWealth_Cursor.png" alt="Peer Wealth Logo" className="h-8" />
       </div>
 
       {/* Stats Grid - Reduced padding and margins */}
@@ -131,13 +132,10 @@ export function DashboardContent() {
           </div>
         </div>
 
-        {/* Current Rate - Reduced font size */}
+        {/* Exchange Rate */}
         <div className="bg-gray-700 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
-          <div className="text-[10px] text-gray-300">Current Rate</div>
-          <div className="text-xl font-bold">1 PWT</div>
-          <div className="text-[10px]">=</div>
-          <div className="text-lg font-bold">10 USD</div>
-          <div className="text-[8px] text-gray-400">PWT Cashout & Invest Wallets</div>
+          <div className="text-[10px] text-gray-300">Exchange Rate</div>
+          <div className="text-xl font-bold">1 PWT = 10 USD</div>
         </div>
       </div>
 

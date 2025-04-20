@@ -1,7 +1,6 @@
 "use client"
 
 import { ChevronLeft } from "lucide-react"
-import { NotificationBell } from "./notification-bell"
 
 interface TopBarProps {
   sidebarOpen: boolean
@@ -15,10 +14,6 @@ export function TopBar({ sidebarOpen, setSidebarOpen }: TopBarProps) {
         <ChevronLeft className={`h-6 w-6 transition-transform ${sidebarOpen ? "" : "rotate-180"}`} />
       </button>
       <div className="text-xl font-bold">OVERVIEW</div>
-
-      <div className="ml-auto mr-4">
-        <NotificationBell />
-      </div>
     </div>
   )
 }

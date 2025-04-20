@@ -44,22 +44,46 @@ export function TransactionTable({ transactions, showAccount = false, compact = 
           >
             Amount (USD)
           </th>
+          <th
+            className={`${compact ? "py-1" : "py-2"} px-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider`}
+          >
+            Type
+          </th>
         </tr>
       </thead>
       <tbody className="bg-[#2a2d3a] divide-y divide-gray-700">
         {transactions.map((transaction, index) => (
           <tr key={index} className="hover:bg-[#3a3d4a]">
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs`}>
-              <div
-                className={`flex items-center ${transaction.type.includes("VESTING") ? "text-blue-400" : transaction.type.includes("CLAIM") ? "text-yellow-400" : ""}`}
-              >
-                {transaction.type}
-              </div>
+            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>
+              <div className="flex items-center">{transaction.type}</div>
             </td>
-            {showAccount && <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs`}>{transaction.account}</td>}
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-gray-300`}>{transaction.date}</td>
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right`}>{transaction.amount} PWT</td>
-            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right`}>{transaction.amountUsd} USD</td>
+            {showAccount && (
+              <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>{transaction.account}</td>
+            )}
+            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-white`}>{transaction.date}</td>
+            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right text-white`}>
+              {transaction.amount} PWT
+            </td>
+            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-right text-white`}>
+              {transaction.amountUsd} USD
+            </td>
+            <td className={`${compact ? "py-1" : "py-2"} px-3 text-xs text-center`}>
+              <span
+                className={
+                  ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
+                    transaction.type,
+                  )
+                    ? "text-green-400"
+                    : "text-red-400"
+                }
+              >
+                {["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(
+                  transaction.type,
+                )
+                  ? "+"
+                  : "-"}
+              </span>
+            </td>
           </tr>
         ))}
       </tbody>

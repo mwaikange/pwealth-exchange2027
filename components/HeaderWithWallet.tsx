@@ -4,6 +4,7 @@ import { TopBar } from "./Header"
 import { WalletBalances } from "./wallet-balances"
 import { useState } from "react"
 import { X } from "lucide-react"
+import { NotificationBell } from "./notification-bell"
 
 interface HeaderWithWalletProps {
   sidebarOpen: boolean
@@ -18,6 +19,7 @@ export function HeaderWithWallet({ sidebarOpen, setSidebarOpen }: HeaderWithWall
       <TopBar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       <div className="flex items-center space-x-4">
         <WalletBalances />
+        <NotificationBell />
         <button
           className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md"
           onClick={() => setShowTopUpModal(true)}
