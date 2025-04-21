@@ -1,10 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
+import { useVesting } from "@/contexts/vesting-context"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function Referrals() {
   const [activeFilter, setActiveFilter] = useState("All")
@@ -13,6 +16,10 @@ export default function Referrals() {
   const router = useRouter()
   const { claimToPwtCashout } = useWallet()
   const { addTransaction } = useTransactions()
+  const { vestingSchedules } = useVesting()
+  const [referralData, setReferralData] = useState([])
+  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
 
   // Sample countries for randomization
   const countries = [
@@ -28,44 +35,54 @@ export default function Referrals() {
     "Tanzania",
   ]
 
-  // Generate referral data
-  const generateReferralData = () => {
-    return Array.from({ length: 50 }).map((_, index) => {
-      // Determine progress based on index
-      let progress
-      if (index % 7 === 0) {
-        progress = "0/5" // Inactive
-      } else if (index % 7 === 6) {
-        progress = "5/5" // Completed
+  // Fetch referral data from Supabase
+  useEffect(() => {
+    async function fetchReferrals() {
+      if (!user) return
+
+      setLoading(true)
+      const supabase = createClientComponentClient()
+
+      const { data, error } = await supabase.from("referrals").select("*").eq("referrer_id", user.id)
+
+      if (error) {
+        console.error("Error fetching referrals:", error)
       } else {
-        progress = `${(index % 5) + 1}/5` // In progress
+        // Transform the data to match our UI needs
+        const transformedData = data.map((referral) => {
+          // Calculate progress based on completed schedules
+          const completedSchedules = referral.completed_schedules || 0
+          const progress = `${completedSchedules}/5`
+
+          // Determine claim status
+          let claimStatus
+          if (completedSchedules === 0) {
+            claimStatus = "pending" // Gray button - inactive
+          } else if (completedSchedules === 5) {
+            claimStatus = referral.claimed ? "claimed" : "eligible" // Green or white button
+          } else {
+            claimStatus = "pending" // Gray button - in progress
+          }
+
+          return {
+            referralId: referral.referral_id,
+            country: referral.country || "Unknown",
+            status: completedSchedules > 0 ? "Active" : "Inactive",
+            progress,
+            level: referral.level || 1,
+            claimStatus,
+            registerDate: new Date(referral.created_at).toLocaleString(),
+          }
+        })
+
+        setReferralData(transformedData)
       }
 
-      // Determine claim status based on progress
-      let claimStatus
-      if (progress === "0/5") {
-        claimStatus = "pending" // Gray button - inactive
-      } else if (progress === "5/5") {
-        claimStatus = index % 4 === 0 ? "claimed" : "eligible" // Green or white button
-      } else {
-        claimStatus = "pending" // Gray button - in progress
-      }
+      setLoading(false)
+    }
 
-      // Determine status based on progress
-      const status = progress === "0/5" ? "Inactive" : "Active"
-
-      return {
-        referralId: `RFRL-${3000288 + index}`,
-        country: countries[index % countries.length],
-        status,
-        progress,
-        claimStatus,
-        registerDate: "12 May, 5:40pm",
-      }
-    })
-  }
-
-  const referralData = generateReferralData()
+    fetchReferrals()
+  }, [user])
 
   // Filter referrals based on active filter and search query
   const filteredReferrals = referralData.filter((referral) => {
@@ -87,26 +104,49 @@ export default function Referrals() {
   })
 
   // Handle claim button click
-  const handleClaim = (referralId: string) => {
-    // Add 1 PWT to cashout balance
-    claimToPwtCashout(1)
+  const handleClaim = async (referralId: string, level: number) => {
+    if (!user) return
 
-    // Log the transaction
-    addTransaction({
-      type: "REFERRAL CLAIM",
-      account: "PWT Cashout",
-      amount: 1,
-      amountUsd: 10,
-      description: `REFERRAL CLAIM - ${referralId}`,
-    })
+    // Award PWT based on level
+    const pwtAmount = level // Level 1 = 1 PWT, Level 2 = 2 PWT, Level 3 = 3 PWT
 
-    // Show success message
-    setClaimSuccess(`Successfully claimed 1 PWT from referral ${referralId}`)
+    try {
+      // Update the database to mark the referral as claimed
+      const supabase = createClientComponentClient()
+      const { error } = await supabase.from("referrals").update({ claimed: true }).eq("referral_id", referralId)
 
-    // Clear success message after 3 seconds
-    setTimeout(() => {
-      setClaimSuccess("")
-    }, 3000)
+      if (error) {
+        console.error("Error updating referral:", error)
+        return
+      }
+
+      // Add to cashout balance
+      claimToPwtCashout(pwtAmount)
+
+      // Log the transaction
+      addTransaction({
+        type: "REFERRAL CLAIM",
+        account: "PWT Cashout",
+        amount: pwtAmount,
+        amountUsd: pwtAmount * 10,
+        description: `REFERRAL CLAIM - ${referralId} (Level ${level})`,
+      })
+
+      // Update the local state to reflect the change
+      setReferralData((prevData) =>
+        prevData.map((ref) => (ref.referralId === referralId ? { ...ref, claimStatus: "claimed" } : ref)),
+      )
+
+      // Show success message
+      setClaimSuccess(`Successfully claimed ${pwtAmount} PWT from referral ${referralId} (Level ${level})`)
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setClaimSuccess("")
+      }, 3000)
+    } catch (error) {
+      console.error("Error in claim process:", error)
+    }
   }
 
   return (
@@ -179,9 +219,10 @@ export default function Referrals() {
             <table className="w-full table-fixed">
               <thead>
                 <tr className="border-b border-gray-700 bg-[#1c1e26]">
-                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[25%]">Referral Code</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[20%]">Referral Code</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Country</th>
-                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Status</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[10%]">Status</th>
+                  <th className="text-left py-2 px-4 text-[11px] font-medium w-[10%]">Level</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Progress</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Register Date</th>
                   <th className="text-left py-2 px-4 text-[11px] font-medium w-[15%]">Claim</th>
@@ -191,55 +232,62 @@ export default function Referrals() {
 
             {/* Scrollable Body */}
             <div className="max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
-              <table className="w-full table-fixed">
-                <tbody>
-                  {filteredReferrals.map((referral, index) => (
-                    <tr key={index} className="border-b border-gray-700">
-                      <td className="py-[6px] px-4 text-[10px] w-[25%]">{referral.referralId}</td>
-                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
-                      <td className="py-[6px] px-4 text-[10px] w-[15%]">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] ${
-                            referral.status === "Active"
-                              ? "bg-green-500/20 text-green-400"
-                              : "bg-gray-500/20 text-gray-400"
-                          }`}
-                        >
-                          {referral.status}
-                        </span>
-                      </td>
-                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.progress}</td>
-                      <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
-                      <td className="py-[6px] px-4 text-[10px] w-[15%]">
-                        {referral.claimStatus === "pending" && (
-                          <button
-                            disabled
-                            className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed opacity-70"
+              {loading ? (
+                <div className="p-4 text-center">Loading referrals...</div>
+              ) : filteredReferrals.length === 0 ? (
+                <div className="p-4 text-center">No referrals found</div>
+              ) : (
+                <table className="w-full table-fixed">
+                  <tbody>
+                    {filteredReferrals.map((referral, index) => (
+                      <tr key={index} className="border-b border-gray-700">
+                        <td className="py-[6px] px-4 text-[10px] w-[20%]">{referral.referralId}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[10%]">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] ${
+                              referral.status === "Active"
+                                ? "bg-green-500/20 text-green-400"
+                                : "bg-gray-500/20 text-gray-400"
+                            }`}
                           >
-                            claim
-                          </button>
-                        )}
-                        {referral.claimStatus === "claimed" && (
-                          <button
-                            disabled
-                            className="bg-green-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed"
-                          >
-                            claimed
-                          </button>
-                        )}
-                        {referral.claimStatus === "eligible" && (
-                          <button
-                            onClick={() => handleClaim(referral.referralId)}
-                            className="bg-white text-black px-4 py-1 rounded text-[10px] w-16 hover:bg-gray-100"
-                          >
-                            claim
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            {referral.status}
+                          </span>
+                        </td>
+                        <td className="py-[6px] px-4 text-[10px] w-[10%]">{referral.level}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.progress}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[15%]">
+                          {referral.claimStatus === "pending" && (
+                            <button
+                              disabled
+                              className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed opacity-70"
+                            >
+                              claim
+                            </button>
+                          )}
+                          {referral.claimStatus === "claimed" && (
+                            <button
+                              disabled
+                              className="bg-green-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed"
+                            >
+                              claimed
+                            </button>
+                          )}
+                          {referral.claimStatus === "eligible" && (
+                            <button
+                              onClick={() => handleClaim(referral.referralId, referral.level)}
+                              className="bg-white text-black px-4 py-1 rounded text-[10px] w-16 hover:bg-gray-100"
+                            >
+                              claim
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

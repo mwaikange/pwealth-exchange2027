@@ -9,7 +9,7 @@ interface AFTPurchaseModalProps {
 }
 
 export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
-  const [amount, setAmount] = useState("100")
+  const [amount, setAmount] = useState("50")
 
   if (!isOpen) return null
 
@@ -43,7 +43,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                 <span className="bg-[#4a4d5a] rounded px-2 py-1 text-sm">USD</span>
               </div>
               <div className="flex justify-between text-xs text-gray-400">
-                <span>Min: $10.00</span>
+                <span>Min: $50.00</span>
                 <span>Max: $10,000.00</span>
               </div>
             </div>

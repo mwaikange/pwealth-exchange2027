@@ -9,6 +9,7 @@ import { VestingProvider } from "@/contexts/vesting-context"
 import { supabase } from "@/lib/supabase-singleton"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
+import { RealtimeWrapper } from "@/components/realtime-wrapper"
 
 export default function DashboardLayout({
   children,
@@ -97,13 +98,15 @@ export default function DashboardLayout({
     <WalletProvider>
       <TransactionProvider>
         <VestingProvider>
-          <div className="flex flex-col h-screen bg-[#1e2130] text-white overflow-hidden">
-            <DashboardHeader />
-            <div className="flex flex-1 overflow-hidden">
-              <DashboardSidebar />
-              <main className="flex-1 overflow-auto p-4">{children}</main>
+          <RealtimeWrapper>
+            <div className="flex flex-col h-screen bg-[#1e2130] text-white overflow-hidden">
+              <DashboardHeader />
+              <div className="flex flex-1 overflow-hidden">
+                <DashboardSidebar />
+                <main className="flex-1 overflow-auto p-4">{children}</main>
+              </div>
             </div>
-          </div>
+          </RealtimeWrapper>
         </VestingProvider>
       </TransactionProvider>
     </WalletProvider>

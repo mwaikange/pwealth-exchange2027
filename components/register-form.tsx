@@ -41,11 +41,14 @@ export function RegisterForm() {
 
     setError(null)
 
-    // Include country with the other form values
-    const formDataWithCountry = new FormData(document.querySelector("form")!)
-    formDataWithCountry.append("country", country)
+    // Include country and referrerEmail with the other form values
+    const formDataWithExtras = new FormData()
+    formDataWithExtras.append("email", email)
+    formDataWithExtras.append("password", password)
+    formDataWithExtras.append("country", country)
+    formDataWithExtras.append("referrerEmail", referrerEmail)
 
-    const result = await registerUser(formDataWithCountry)
+    const result = await registerUser(formDataWithExtras)
 
     if (result.success) {
       // Redirect to verify email page instead of login

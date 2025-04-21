@@ -13,17 +13,17 @@ export function DashboardContent() {
 
   // Calculate total OUT-Transfers in USD
   const totalOutTransfersUSD = transactions
-    .filter((tx) => tx.transaction_type === "OUT-TRANSFER")
+    .filter((tx) => tx.transaction_type === "OUT-TRANSFER" && tx.account_type === "PWT Cashout")
     .reduce((sum, tx) => sum + (tx.amount_usd || 0), 0)
 
   // Calculate total OUT-Transfers in tokens
   const totalOutTransfersTokens = transactions
-    .filter((tx) => tx.transaction_type === "OUT-TRANSFER")
+    .filter((tx) => tx.transaction_type === "OUT-TRANSFER" && tx.account_type === "PWT Cashout")
     .reduce((sum, tx) => sum + (tx.amount || 0), 0)
 
   // Calculate total Referral Claims
   const totalReferralClaims = transactions
-    .filter((tx) => tx.transaction_type === "REFERRAL CLAIM")
+    .filter((tx) => tx.transaction_type === "REFERRAL CLAIM" && tx.status === "completed")
     .reduce((sum, tx) => sum + (tx.amount || 0), 0)
 
   // Calculate expected yield from active vesting schedules

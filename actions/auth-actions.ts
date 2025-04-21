@@ -6,8 +6,8 @@ export async function registerUser(formData: FormData) {
 
   const email = formData.get("email") as string
   const password = formData.get("password") as string
-  const name = formData.get("name") as string
-  const referrerEmail = (formData.get("referrer") as string) || null
+  const referrerEmail = (formData.get("referrerEmail") as string) || null
+  const country = (formData.get("country") as string) || null
 
   try {
     // 1. Sign up using Supabase Auth
@@ -26,50 +26,63 @@ export async function registerUser(formData: FormData) {
     const displayId = generateDisplayId()
     const referralCode = generateReferralCode()
 
+    // If referrerEmail is provided, look up their referral_code
+    let referrerReferralCode = null
+    let referrerUuid = null
+
+    if (referrerEmail?.trim()) {
+      const { data: referrer } = await supabase
+        .from("app_users")
+        .select("user_uuid, referral_code")
+        .eq("email", referrerEmail)
+        .maybeSingle()
+
+      if (referrer) {
+        referrerReferralCode = referrer.referral_code
+        referrerUuid = referrer.user_uuid
+      }
+    }
+
     // 2. Insert into app_users
     const { error: appUserError } = await supabase.from("app_users").insert([
       {
         user_uuid: user.id,
         email,
-        name,
         display_id: displayId,
         created_at: new Date().toISOString(),
         status: "active",
+        country,
+        referrer_email: referrerEmail || null,
+        referral_code: referralCode, // User's own referral code
       },
     ])
     if (appUserError) throw new Error(appUserError.message)
 
-    // 3. Insert into usersettings
+    // 3. Insert into usersettings - FIXED: removed display_id field
     const { error: settingsError } = await supabase.from("usersettings").insert([
       {
         user_uuid: user.id,
-        display_id: displayId,
         referral_code: referralCode,
-        mfa_enabled: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
     ])
     if (settingsError) throw new Error(settingsError.message)
 
     // 4. Insert referral if valid referrerEmail exists
-    if (referrerEmail?.trim()) {
-      const { data: referrer, error: referrerError } = await supabase
-        .from("app_users")
-        .select("user_uuid")
-        .eq("email", referrerEmail)
-        .maybeSingle()
-
-      if (!referrerError && referrer) {
-        await supabase.from("referrals").insert([
-          {
-            user_uuid: user.id,
-            referrer_uuid: referrer.user_uuid,
-            referrer_email: referrerEmail,
-            referred_email: email,
-            referral_code: referralCode,
-            referral_date: new Date().toISOString(),
-          },
-        ])
-      }
+    if (referrerEmail?.trim() && referrerUuid) {
+      await supabase.from("referrals").insert([
+        {
+          user_uuid: referrerUuid, // The referrer's UUID
+          referrer_uuid: referrerUuid,
+          referrer_email: referrerEmail,
+          referred_email: email,
+          referred_uuid: user.id,
+          referral_code: referrerReferralCode,
+          referral_date: new Date().toISOString(),
+          status: "pending",
+        },
+      ])
     }
 
     // 5. Create initial balances

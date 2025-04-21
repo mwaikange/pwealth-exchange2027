@@ -67,7 +67,14 @@ export function DashboardHeader() {
                       <div key={notification.id} className="p-3 border-b border-gray-700 relative">
                         <button
                           className="absolute top-2 right-2 text-gray-400 hover:text-white"
-                          onClick={() => setShowNotifications(false)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Remove this notification from the list
+                            const updatedNotifications = notifications.filter((n) => n.id !== notification.id)
+                            // You would typically update this in your context
+                            // For now we'll just close the dropdown
+                            setShowNotifications(false)
+                          }}
                         >
                           <X size={16} />
                         </button>
@@ -123,14 +130,6 @@ export function DashboardHeader() {
           </button>
         </div>
       </header>
-
-      {/* Notification slider */}
-      <div className="bg-green-600 py-1.5 px-4 text-white whitespace-nowrap overflow-hidden">
-        <div className="animate-marquee">
-          Join Our Telegram Group Today | Add Our Whatsapp Channel - Check Your Settings Page | Registration Alert -
-          Namibia- Welcome! | Cashout Alert - Namibia - 50 USD - Well Done!
-        </div>
-      </div>
 
       {/* AFT Purchase Modal */}
       <AFTPurchaseModal isOpen={showAFTModal} onClose={() => setShowAFTModal(false)} />
