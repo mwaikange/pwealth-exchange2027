@@ -7,8 +7,57 @@ import { TransactionTable } from "@/components/transaction-table"
 
 export function DashboardContent() {
   const { vestingSchedules, getSchedulesByLevel } = useVesting()
+  const { transactions } = useTransactions()
   const { getRecentTransactions } = useTransactions()
   const recentTransactions = getRecentTransactions(3)
+
+  // Calculate total OUT-Transfers in USD
+  const totalOutTransfersUSD = transactions
+    .filter((tx) => tx.transaction_type === "OUT-TRANSFER")
+    .reduce((sum, tx) => sum + (tx.amount_usd || 0), 0)
+
+  // Calculate total OUT-Transfers in tokens
+  const totalOutTransfersTokens = transactions
+    .filter((tx) => tx.transaction_type === "OUT-TRANSFER")
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+
+  // Calculate total Referral Claims
+  const totalReferralClaims = transactions
+    .filter((tx) => tx.transaction_type === "REFERRAL CLAIM")
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+
+  // Calculate expected yield from active vesting schedules
+  const calculateExpectedYield = () => {
+    let totalYield = 0
+
+    // Level 1: 10 tokens per active schedule
+    const level1Schedules = getSchedulesByLevel(1)
+    level1Schedules.forEach((schedule) => {
+      if (schedule.invested && !schedule.claimed) {
+        totalYield += 10
+      }
+    })
+
+    // Level 2: 20 tokens per active schedule
+    const level2Schedules = getSchedulesByLevel(2)
+    level2Schedules.forEach((schedule) => {
+      if (schedule.invested && !schedule.claimed) {
+        totalYield += 20
+      }
+    })
+
+    // Level 3: 40 tokens per active schedule
+    const level3Schedules = getSchedulesByLevel(3)
+    level3Schedules.forEach((schedule) => {
+      if (schedule.invested && !schedule.claimed) {
+        totalYield += 40
+      }
+    })
+
+    return totalYield
+  }
+
+  const expectedVestingYield = calculateExpectedYield()
 
   // Get most active schedule for each level
   const getMostActiveSchedule = (level: number) => {
@@ -41,7 +90,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfers to date */}
         <div className="bg-green-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
-          <div className="text-3xl font-bold">300</div>
+          <div className="text-3xl font-bold">{totalOutTransfersUSD.toFixed(0)}</div>
           <div className="text-[10px]">USD</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -59,7 +108,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfer tokens */}
         <div className="bg-blue-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
-          <div className="text-3xl font-bold">30</div>
+          <div className="text-3xl font-bold">{totalOutTransfersTokens.toFixed(0)}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -77,7 +126,7 @@ export function DashboardContent() {
         {/* Total Referral Claims sum */}
         <div className="bg-yellow-500 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
-          <div className="text-3xl font-bold">9</div>
+          <div className="text-3xl font-bold">{totalReferralClaims.toFixed(0)}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -95,7 +144,7 @@ export function DashboardContent() {
         {/* Active Vesting Expected Yield */}
         <div className="bg-purple-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">45</div>
+          <div className="text-3xl font-bold">{expectedVestingYield}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">

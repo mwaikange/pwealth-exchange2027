@@ -26,7 +26,7 @@ export function TransactionTable({
             {showAccount && <th className="text-left py-2 px-4 text-[11px] font-medium">Account</th>}
             <th className="text-left py-2 px-4 text-[11px] font-medium">Date</th>
             {showReference && <th className="text-left py-2 px-4 text-[11px] font-medium">Reference</th>}
-            {showRecipient && <th className="text-left py-2 px-4 text-[11px] font-medium">Recipient</th>}
+            {showRecipient && <th className="text-left py-2 px-4 text-[11px] font-medium">Peer-Email</th>}
             <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (PWT)</th>
             <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (USD)</th>
           </tr>
@@ -55,7 +55,13 @@ export function TransactionTable({
               {showAccount && <td className="py-[6px] px-4 text-[10px]">{transaction.account}</td>}
               <td className="py-[6px] px-4 text-[10px]">{transaction.date}</td>
               {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
-              {showRecipient && <td className="py-[6px] px-4 text-[10px]">{transaction.recipient || "-"}</td>}
+              {showRecipient && (
+                <td className="py-[6px] px-4 text-[10px]">
+                  {["IN-PWT RECEIPT", "IN-AFT GIFT"].includes(transaction.type)
+                    ? transaction.sender || "-"
+                    : transaction.recipient || "-"}
+                </td>
+              )}
               <td className="py-[6px] px-4 text-[10px]">{transaction.amount} PWT</td>
               <td className="py-[6px] px-4 text-[10px]">{transaction.amountUsd} USD</td>
             </tr>
