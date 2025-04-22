@@ -1,11 +1,39 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
+import { useEffect, useState } from "react"
+import { CheckCircle, Mail } from "lucide-react"
 
 export default function VerifyEmail() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const email = searchParams.get("email") || ""
+  const [countdown, setCountdown] = useState(60)
+  const [isResending, setIsResending] = useState(false)
+
+  // Countdown timer for resend button
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [countdown])
+
+  // Function to handle resend verification email
+  const handleResendEmail = async () => {
+    if (countdown > 0 || !email) return
+
+    setIsResending(true)
+
+    // Here you would typically call your API to resend the verification email
+    // For now, we'll just simulate a delay
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    setIsResending(false)
+    setCountdown(60) // Reset countdown
+  }
 
   return (
     <div
@@ -28,36 +56,49 @@ export default function VerifyEmail() {
             />
           </div>
 
+          {/* Success Icon */}
+          <div className="flex justify-center">
+            <div className="bg-green-500/20 rounded-full p-3">
+              <CheckCircle className="h-12 w-12 text-green-500" />
+            </div>
+          </div>
+
           {/* Heading */}
           <h2 className="text-center text-2xl font-medium text-white">Verify Your Email</h2>
 
           {/* Message */}
           <div className="bg-[#3a3d4a] rounded-lg p-4 text-center">
-            <p className="text-white mb-2">We've sent a verification link to your email address.</p>
+            <p className="text-white mb-2">Registration successful!</p>
+            <p className="text-gray-300 text-sm mb-2">We've sent a verification link to:</p>
+            <p className="text-yellow-300 font-medium mb-3">{email || "your email address"}</p>
             <p className="text-gray-300 text-sm">Please check your inbox and click the link to verify your account.</p>
           </div>
 
           {/* Email icon */}
           <div className="flex justify-center py-4">
-            <svg
-              className="w-16 h-16 text-[#fff27a]"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-              />
-            </svg>
+            <Mail className="w-16 h-16 text-[#fff27a]" />
           </div>
 
           <p className="text-center text-sm text-gray-400">
             If you don't see the email, please check your spam folder.
           </p>
+
+          {/* Resend button */}
+          <div className="flex justify-center">
+            <button
+              onClick={handleResendEmail}
+              disabled={countdown > 0 || isResending}
+              className={`text-sm ${
+                countdown > 0 || isResending ? "text-gray-500 cursor-not-allowed" : "text-blue-400 hover:text-blue-300"
+              }`}
+            >
+              {isResending
+                ? "Sending..."
+                : countdown > 0
+                  ? `Resend email (${countdown}s)`
+                  : "Resend verification email"}
+            </button>
+          </div>
 
           {/* Back to login button */}
           <div className="pt-4">

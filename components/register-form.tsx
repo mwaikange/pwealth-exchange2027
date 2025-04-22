@@ -31,6 +31,7 @@ export function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [passwordsMatch, setPasswordsMatch] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(formData: FormData) {
     // Check if passwords match
@@ -40,21 +41,28 @@ export function RegisterForm() {
     }
 
     setError(null)
+    setIsSubmitting(true)
 
     // Include country and referrerEmail with the other form values
     const formDataWithExtras = new FormData()
     formDataWithExtras.append("email", email)
     formDataWithExtras.append("password", password)
-    formDataWithExtras.append("country", country)
+    formDataWithExtras.append("country", country) // Use full country name
     formDataWithExtras.append("referrerEmail", referrerEmail)
 
-    const result = await registerUser(formDataWithExtras)
+    try {
+      const result = await registerUser(formDataWithExtras)
 
-    if (result.success) {
-      // Redirect to verify email page instead of login
-      router.push("/verify-email")
-    } else {
-      setError(result.message || "Registration failed. Please try again.")
+      if (result.success) {
+        // Redirect to verify email page with the email as a query parameter
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+      } else {
+        setError(result.message || "Registration failed. Please try again.")
+      }
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred. Please try again.")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -81,7 +89,15 @@ export function RegisterForm() {
         )}
 
         {/* Form */}
-        <form action={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!isSubmitting) {
+              handleSubmit(new FormData(e.currentTarget))
+            }
+          }}
+          className="space-y-6"
+        >
           <div className="space-y-4">
             <input
               type="email"
@@ -137,7 +153,13 @@ export function RegisterForm() {
             {!passwordsMatch && <p className="text-red-500 text-sm">Passwords do not match</p>}
           </div>
 
-          <SubmitButton />
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors disabled:opacity-70"
+          >
+            {isSubmitting ? "Registering..." : "Register"}
+          </button>
         </form>
 
         {/* Divider */}

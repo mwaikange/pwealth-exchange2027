@@ -18,15 +18,18 @@ export function CountryCombobox({ value, onChange, placeholder = "Country", clas
 
   // Find the selected country name
   const selectedCountry = React.useMemo(() => {
-    return countries.find((country) => country.code === value)
+    return countries.find((country) => country.name === value)
   }, [value])
 
   // Update input value when selected country changes
   React.useEffect(() => {
     if (selectedCountry) {
       setInputValue(selectedCountry.name)
+    } else if (value) {
+      // If value is a direct country name (not a code)
+      setInputValue(value)
     }
-  }, [selectedCountry])
+  }, [selectedCountry, value])
 
   // Filter countries based on input
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,7 +51,7 @@ export function CountryCombobox({ value, onChange, placeholder = "Country", clas
 
   // Handle country selection
   const handleSelectCountry = (country: (typeof countries)[0]) => {
-    onChange(country.code)
+    onChange(country.name) // Use full country name instead of code
     setInputValue(country.name)
     setShowSuggestions(false)
     inputRef.current?.blur()

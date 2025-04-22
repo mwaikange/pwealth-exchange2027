@@ -38,6 +38,7 @@ export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLD
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
   const router = useRouter()
+  const [error, setError] = useState<string>("")
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -51,6 +52,7 @@ export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLD
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
+    setError("")
 
     try {
       await register(values.name, values.email, values.password, values.referrerEmail)
@@ -65,6 +67,33 @@ export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLD
         description: error.message,
         variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function handleSubmit(formData: FormData) {
+    setIsLoading(true)
+    setError("")
+
+    try {
+      // Assuming registerUser function exists and handles registration logic
+      // and returns { success: boolean, message?: string }
+      const name = formData.get("name") as string
+      const email = formData.get("email") as string
+      const password = formData.get("password") as string
+      const referrerEmail = formData.get("referrerEmail") as string | undefined
+
+      const result = await register(name, email, password, referrerEmail)
+
+      if (result) {
+        // Redirect to verification page with email
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+      } else {
+        setError("Registration failed")
+      }
+    } catch (error: any) {
+      setError(error.message || "Registration failed")
     } finally {
       setIsLoading(false)
     }
@@ -124,6 +153,7 @@ export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLD
             />
             <p className="text-xs text-muted-foreground">You can also add this later in settings</p>
           </div>
+          {error && <p className="text-red-500">{error}</p>}
           <Button disabled={isLoading}>
             {isLoading && (
               <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">

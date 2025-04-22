@@ -5,35 +5,37 @@ import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
-import { useVesting } from "@/contexts/vesting-context"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useAuth } from "@/contexts/auth-context"
+import { format } from "date-fns"
+
+// Define the type for referral data from the view
+interface ReferralViewData {
+  referral_id: string
+  referrer_uuid: string
+  referred_uuid: string
+  referred_email: string
+  referral_date: string
+  referred_referral_code: string
+  claimed: boolean
+  claim_date: string | null
+  country: string
+  email_confirmed_at: string | null
+  status: string
+  level: string
+  active_count: number
+}
 
 export default function Referrals() {
   const [activeFilter, setActiveFilter] = useState("All")
   const [searchQuery, setSearchQuery] = useState("")
   const [claimSuccess, setClaimSuccess] = useState("")
+  const [referralData, setReferralData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
   const { claimToPwtCashout } = useWallet()
   const { addTransaction } = useTransactions()
-  const { vestingSchedules } = useVesting()
-  const [referralData, setReferralData] = useState([])
-  const [loading, setLoading] = useState(true)
   const { user } = useAuth()
-
-  // Sample countries for randomization
-  const countries = [
-    "South Africa",
-    "Namibia",
-    "Botswana",
-    "Zimbabwe",
-    "Kenya",
-    "Nigeria",
-    "Ghana",
-    "Egypt",
-    "Morocco",
-    "Tanzania",
-  ]
 
   // Fetch referral data from Supabase
   useEffect(() => {
@@ -43,37 +45,26 @@ export default function Referrals() {
       setLoading(true)
       const supabase = createClientComponentClient()
 
-      const { data, error } = await supabase.from("referrals").select("*").eq("referrer_id", user.id)
+      // Fetch from the referral_view
+      const { data, error } = await supabase.from("referral_view").select("*").eq("referrer_uuid", user.id)
 
       if (error) {
         console.error("Error fetching referrals:", error)
-      } else {
+        setReferralData([])
+      } else if (data) {
         // Transform the data to match our UI needs
-        const transformedData = data.map((referral) => {
-          // Calculate progress based on completed schedules
-          const completedSchedules = referral.completed_schedules || 0
-          const progress = `${completedSchedules}/5`
-
-          // Determine claim status
-          let claimStatus
-          if (completedSchedules === 0) {
-            claimStatus = "pending" // Gray button - inactive
-          } else if (completedSchedules === 5) {
-            claimStatus = referral.claimed ? "claimed" : "eligible" // Green or white button
-          } else {
-            claimStatus = "pending" // Gray button - in progress
-          }
-
-          return {
-            referralId: referral.referral_id,
-            country: referral.country || "Unknown",
-            status: completedSchedules > 0 ? "Active" : "Inactive",
-            progress,
-            level: referral.level || 1,
-            claimStatus,
-            registerDate: new Date(referral.created_at).toLocaleString(),
-          }
-        })
+        const transformedData = data.map((ref: ReferralViewData) => ({
+          referralId: ref.referral_id,
+          referralCode: ref.referred_referral_code,
+          country: ref.country || "Unknown", // Use full country name directly
+          status: ref.status,
+          level: ref.level,
+          progress: `${ref.active_count}/5`,
+          claimStatus: ref.claimed ? "claimed" : ref.active_count === 5 ? "eligible" : "pending",
+          registerDate: ref.referral_date ? format(new Date(ref.referral_date), "dd MMM, h:mm a") : "Unknown",
+          referredUuid: ref.referred_uuid,
+          activeCount: ref.active_count,
+        }))
 
         setReferralData(transformedData)
       }
@@ -97,23 +88,30 @@ export default function Referrals() {
     // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
-      return referral.referralId.toLowerCase().includes(query) || referral.country.toLowerCase().includes(query)
+      return referral.referralCode?.toLowerCase().includes(query) || referral.country?.toLowerCase().includes(query)
     }
 
     return true
   })
 
   // Handle claim button click
-  const handleClaim = async (referralId: string, level: number) => {
+  const handleClaim = async (referralId: string, level: string) => {
     if (!user) return
 
     // Award PWT based on level
-    const pwtAmount = level // Level 1 = 1 PWT, Level 2 = 2 PWT, Level 3 = 3 PWT
+    const levelNum = Number.parseInt(level, 10)
+    const pwtAmount = levelNum // Level 1 = 1 PWT, Level 2 = 2 PWT, Level 3 = 3 PWT
 
     try {
       // Update the database to mark the referral as claimed
       const supabase = createClientComponentClient()
-      const { error } = await supabase.from("referrals").update({ claimed: true }).eq("referral_id", referralId)
+      const { error } = await supabase
+        .from("referrals")
+        .update({
+          claimed: true,
+          claim_date: new Date().toISOString(),
+        })
+        .eq("referral_id", referralId)
 
       if (error) {
         console.error("Error updating referral:", error)
@@ -138,7 +136,7 @@ export default function Referrals() {
       )
 
       // Show success message
-      setClaimSuccess(`Successfully claimed ${pwtAmount} PWT from referral ${referralId} (Level ${level})`)
+      setClaimSuccess(`Successfully claimed ${pwtAmount} PWT from referral (Level ${level})`)
 
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -241,7 +239,7 @@ export default function Referrals() {
                   <tbody>
                     {filteredReferrals.map((referral, index) => (
                       <tr key={index} className="border-b border-gray-700">
-                        <td className="py-[6px] px-4 text-[10px] w-[20%]">{referral.referralId}</td>
+                        <td className="py-[6px] px-4 text-[10px] w-[20%]">{referral.referralCode}</td>
                         <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
                         <td className="py-[6px] px-4 text-[10px] w-[10%]">
                           <span
@@ -263,7 +261,7 @@ export default function Referrals() {
                               disabled
                               className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed opacity-70"
                             >
-                              claim
+                              locked
                             </button>
                           )}
                           {referral.claimStatus === "claimed" && (
