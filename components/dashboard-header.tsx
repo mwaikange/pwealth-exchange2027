@@ -12,11 +12,22 @@ export function DashboardHeader() {
   const { transactions } = useTransactions()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAFTModal, setShowAFTModal] = useState(false)
+  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([])
 
   // Filter notifications - IN-PWT RECEIPT, IN-AFT GIFT, and BUY-AFT RECEIPT transactions
+  // And exclude dismissed notifications
   const notifications = transactions
-    .filter((tx) => tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT" || tx.type === "BUY-AFT RECEIPT")
+    .filter(
+      (tx) =>
+        (tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT" || tx.type === "BUY-AFT RECEIPT") &&
+        !dismissedNotifications.includes(tx.id),
+    )
     .slice(0, 5) // Show only the 5 most recent
+
+  // Function to dismiss a notification
+  const dismissNotification = (id: string) => {
+    setDismissedNotifications((prev) => [...prev, id])
+  }
 
   return (
     <div className="w-full">
@@ -61,7 +72,7 @@ export function DashboardHeader() {
                   </button>
                 </div>
 
-                <div className="max-h-96 overflow-y-auto">
+                <div>
                   {notifications.length > 0 ? (
                     notifications.map((notification) => (
                       <div key={notification.id} className="p-3 border-b border-gray-700 relative">
@@ -69,11 +80,7 @@ export function DashboardHeader() {
                           className="absolute top-2 right-2 text-gray-400 hover:text-white"
                           onClick={(e) => {
                             e.stopPropagation()
-                            // Remove this notification from the list
-                            const updatedNotifications = notifications.filter((n) => n.id !== notification.id)
-                            // You would typically update this in your context
-                            // For now we'll just close the dropdown
-                            setShowNotifications(false)
+                            dismissNotification(notification.id)
                           }}
                         >
                           <X size={16} />

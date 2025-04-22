@@ -13,17 +13,24 @@ export function DashboardContent() {
 
   // Calculate total OUT-Transfers in USD
   const totalOutTransfersUSD = transactions
-    .filter((tx) => tx.transaction_type === "OUT-TRANSFER" && tx.account_type === "PWT Cashout")
+    .filter((tx) => tx.transaction_type === "OUT-PWT Transfer" && tx.account_type === "PWT Cashout")
     .reduce((sum, tx) => sum + (tx.amount_usd || 0), 0)
 
   // Calculate total OUT-Transfers in tokens
   const totalOutTransfersTokens = transactions
-    .filter((tx) => tx.transaction_type === "OUT-TRANSFER" && tx.account_type === "PWT Cashout")
+    .filter((tx) => tx.transaction_type === "OUT-PWT Transfer" && tx.account_type === "PWT Cashout")
     .reduce((sum, tx) => sum + (tx.amount || 0), 0)
 
-  // Calculate total Referral Claims
+  // Calculate total Referral Claims in tokens
   const totalReferralClaims = transactions
-    .filter((tx) => tx.transaction_type === "REFERRAL CLAIM" && tx.status === "completed")
+    .filter(
+      (tx) =>
+        (tx.transaction_type === "REFERRAL CLAIM-LvL1" ||
+          tx.transaction_type === "REFERRAL CLAIM-LvL2" ||
+          tx.transaction_type === "REFERRAL CLAIM-LvL3" ||
+          (tx.transaction_type && tx.transaction_type.startsWith("REFERRAL CLAIM"))) &&
+        tx.status === "completed",
+    )
     .reduce((sum, tx) => sum + (tx.amount || 0), 0)
 
   // Calculate expected yield from active vesting schedules
@@ -148,13 +155,7 @@ export function DashboardContent() {
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
-              <path
-                fill="none"
-                stroke="white"
-                strokeWidth="1"
-                d="M0,10 Q10,5 20,15 T40,5 T60,15 T80,5 T100,10"
-                className="animate-pulse"
-              />
+              <path fill="none" stroke="white" strokeWidth="1" d="M0,10 Q10,5 20,15 T40,5 T60,15 T80,5 T100,10" />
             </svg>
           </div>
         </div>
