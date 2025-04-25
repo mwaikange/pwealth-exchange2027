@@ -4,86 +4,42 @@ import { ChevronRight } from "lucide-react"
 import { useVesting } from "@/contexts/vesting-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
+import { useState, useEffect } from "react"
 
 export function DashboardContent() {
-  const { vestingSchedules, getSchedulesByLevel } = useVesting()
+  const { vestingSchedules } = useVesting()
   const { transactions } = useTransactions()
   const { getRecentTransactions } = useTransactions()
   const recentTransactions = getRecentTransactions(3)
 
-  // Calculate total OUT-Transfers in USD
-  const totalOutTransfersUSD = transactions
-    .filter((tx) => tx.transaction_type === "OUT-PWT Transfer" && tx.account_type === "PWT Cashout")
-    .reduce((sum, tx) => sum + (tx.amount_usd || 0), 0)
+  // State for the stat cards
+  const [totalOutTransfersUSD, setTotalOutTransfersUSD] = useState(0)
+  const [totalOutTransfersTokens, setTotalOutTransfersTokens] = useState(0)
 
-  // Calculate total OUT-Transfers in tokens
-  const totalOutTransfersTokens = transactions
-    .filter((tx) => tx.transaction_type === "OUT-PWT Transfer" && tx.account_type === "PWT Cashout")
-    .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+  // Add this useEffect to calculate the sums
+  useEffect(() => {
+    // Filter transactions to get only OUT-TRANSFER types
+    const outTransfers = transactions.filter((tx) => tx.type === "OUT-TRANSFER")
 
-  // Calculate total Referral Claims in tokens
-  const totalReferralClaims = transactions
-    .filter(
-      (tx) =>
-        (tx.transaction_type === "REFERRAL CLAIM-LvL1" ||
-          tx.transaction_type === "REFERRAL CLAIM-LvL2" ||
-          tx.transaction_type === "REFERRAL CLAIM-LvL3" ||
-          (tx.transaction_type && tx.transaction_type.startsWith("REFERRAL CLAIM"))) &&
-        tx.status === "completed",
-    )
-    .reduce((sum, tx) => sum + (tx.amount || 0), 0)
+    // Sum up the USD values
+    const totalUSD = outTransfers.reduce((sum, tx) => sum + tx.amountUsd, 0)
 
-  // Calculate expected yield from active vesting schedules
-  const calculateExpectedYield = () => {
-    let totalYield = 0
+    // Sum up the token amounts
+    const totalTokens = outTransfers.reduce((sum, tx) => sum + tx.amount, 0)
 
-    // Level 1: 10 tokens per active schedule
-    const level1Schedules = getSchedulesByLevel(1)
-    level1Schedules.forEach((schedule) => {
-      if (schedule.invested && !schedule.claimed) {
-        totalYield += 10
-      }
-    })
+    // Update the states
+    setTotalOutTransfersUSD(totalUSD)
+    setTotalOutTransfersTokens(totalTokens)
+  }, [transactions])
 
-    // Level 2: 20 tokens per active schedule
-    const level2Schedules = getSchedulesByLevel(2)
-    level2Schedules.forEach((schedule) => {
-      if (schedule.invested && !schedule.claimed) {
-        totalYield += 20
-      }
-    })
+  // Placeholder values for other stat cards
+  const totalReferralClaims = 0
+  const expectedVestingYield = 0
 
-    // Level 3: 40 tokens per active schedule
-    const level3Schedules = getSchedulesByLevel(3)
-    level3Schedules.forEach((schedule) => {
-      if (schedule.invested && !schedule.claimed) {
-        totalYield += 40
-      }
-    })
-
-    return totalYield
-  }
-
-  const expectedVestingYield = calculateExpectedYield()
-
-  // Get most active schedule for each level
-  const getMostActiveSchedule = (level: number) => {
-    const levelSchedules = getSchedulesByLevel(level)
-
-    // Filter for active schedules (invested but not claimed)
-    const activeSchedules = levelSchedules.filter((s) => s.invested && !s.claimed)
-
-    if (activeSchedules.length === 0) {
-      return null // No active schedules
-    }
-
-    // Sort by progress (highest first)
-    return activeSchedules.sort((a, b) => b.progress - a.progress)[0]
-  }
-
-  const level1Schedule = getMostActiveSchedule(1)
-  const level2Schedule = getMostActiveSchedule(2)
-  const level3Schedule = getMostActiveSchedule(3)
+  // Placeholder for level schedules
+  const level1Schedule = null
+  const level2Schedule = null
+  const level3Schedule = null
 
   return (
     <div className="h-full bg-[#1c1e26]">
@@ -97,7 +53,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfers to date */}
         <div className="bg-green-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
-          <div className="text-3xl font-bold">{totalOutTransfersUSD.toFixed(0)}</div>
+          <div className="text-3xl font-bold">{Math.floor(totalOutTransfersUSD)}</div>
           <div className="text-[10px]">USD</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -115,7 +71,7 @@ export function DashboardContent() {
         {/* Total OUT-Transfer tokens */}
         <div className="bg-blue-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
-          <div className="text-3xl font-bold">{totalOutTransfersTokens.toFixed(0)}</div>
+          <div className="text-3xl font-bold">{Math.floor(totalOutTransfersTokens)}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -133,7 +89,7 @@ export function DashboardContent() {
         {/* Total Referral Claims sum */}
         <div className="bg-yellow-500 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
-          <div className="text-3xl font-bold">{totalReferralClaims.toFixed(0)}</div>
+          <div className="text-3xl font-bold">0</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -151,7 +107,7 @@ export function DashboardContent() {
         {/* Active Vesting Expected Yield */}
         <div className="bg-purple-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">{expectedVestingYield}</div>
+          <div className="text-3xl font-bold">0</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -182,43 +138,25 @@ export function DashboardContent() {
             {/* Level 1 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 1</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
-                {level1Schedule ? "2" : "-"}
-              </div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
-                {level1Schedule && (
-                  <div className="h-full bg-green-500" style={{ width: `${level1Schedule.progress}%` }}></div>
-                )}
-              </div>
-              <div className="w-12 text-right text-xs">{level1Schedule ? `${level1Schedule.progress}%` : "0%"}</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
+              <div className="w-12 text-right text-xs">0%</div>
             </div>
 
             {/* Level 2 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 2</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
-                {level2Schedule ? "4" : "-"}
-              </div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
-                {level2Schedule && (
-                  <div className="h-full bg-green-500" style={{ width: `${level2Schedule.progress}%` }}></div>
-                )}
-              </div>
-              <div className="w-12 text-right text-xs">{level2Schedule ? `${level2Schedule.progress}%` : "0%"}</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
+              <div className="w-12 text-right text-xs">0%</div>
             </div>
 
             {/* Level 3 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 3</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">
-                {level3Schedule ? "8" : "-"}
-              </div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
-                {level3Schedule && (
-                  <div className="h-full bg-green-500" style={{ width: `${level3Schedule.progress}%` }}></div>
-                )}
-              </div>
-              <div className="w-12 text-right text-xs">{level3Schedule ? `${level3Schedule.progress}%` : "0%"}</div>
+              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
+              <div className="w-12 text-right text-xs">0%</div>
             </div>
           </div>
         </div>

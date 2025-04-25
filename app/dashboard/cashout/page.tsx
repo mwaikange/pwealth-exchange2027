@@ -190,7 +190,7 @@ export default function Cashout() {
         token_type: "PWT",
         amount: tokenAmount,
         transaction_type: "OUT-TRANSFER",
-        description: "PWT Transfer",
+        description: "OUT-PWT Transfer",
       })
 
       if (error) {

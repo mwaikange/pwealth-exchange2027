@@ -26,8 +26,9 @@ export function TransactionTable({
   const formatTransactionType = (transaction: Transaction): string => {
     const type = transaction.type || transaction.transaction_type || "Unknown"
 
-    if (type === "AFT Gift") return "OUT-PWT Transfer"
-    if (type === "PWT Transfer") return "OUT-AFT GIFT"
+    // Standardize display names
+    if (type === "AFT Gift" || type === "OUT-AFT GIFT") return "OUT-AFT GIFT"
+    if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return "OUT-PWT Transfer"
 
     if (typeof type === "string" && type.startsWith("REFERRAL CLAIM")) {
       if (type.includes("Level 1")) return "REFERRAL CLAIM-LvL1"
@@ -39,7 +40,7 @@ export function TransactionTable({
     return transaction.description || type
   }
 
-  // List of transaction types that should show a plus sign
+  // List of transaction types that should show a plus sign (incoming transactions)
   const positiveTypes = [
     "IN-PWT RECEIPT",
     "REFERRAL CLAIM-LvL1",
@@ -50,6 +51,23 @@ export function TransactionTable({
     "IN-AFT GIFT",
     "CLAIM",
   ]
+
+  // Check if a transaction is positive (incoming)
+  const isPositiveTransaction = (transaction: Transaction): boolean => {
+    const type = transaction.type || transaction.transaction_type
+
+    if (!type) return false
+
+    // Check if it's in our positive types list
+    if (positiveTypes.includes(type)) return true
+
+    // Check if it starts with any of our positive prefixes
+    if (type.startsWith("REFERRAL CLAIM") || type.startsWith("IN-") || type === "CLAIM" || type === "BUY-AFT RECEIPT") {
+      return true
+    }
+
+    return false
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -67,8 +85,7 @@ export function TransactionTable({
         </thead>
         <tbody>
           {transactions.map((transaction) => {
-            const transactionType = transaction.type || transaction.transaction_type || "Unknown"
-            const isPositive = isTypeInList(transactionType, positiveTypes)
+            const isPositive = isPositiveTransaction(transaction)
 
             return (
               <tr key={transaction.id} className="border-b border-gray-700">
@@ -81,7 +98,7 @@ export function TransactionTable({
                 {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
                 {showRecipient && (
                   <td className="py-[6px] px-4 text-[10px]">
-                    {isTypeInList(transactionType, ["IN-PWT RECEIPT", "IN-AFT GIFT"])
+                    {isTypeInList(transaction.type || transaction.transaction_type, ["IN-PWT RECEIPT", "IN-AFT GIFT"])
                       ? transaction.sender || "-"
                       : transaction.recipient || "-"}
                   </td>
