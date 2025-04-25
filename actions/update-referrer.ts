@@ -67,21 +67,30 @@ export async function updateReferrer(formData: FormData) {
       throw new Error(settingsError.message)
     }
 
-    // Create a new referral record
-    const { data: userData } = await supabase.from("app_users").select("email").eq("user_uuid", user.id).single()
+    // Get the user's country
+    const { data: userData } = await supabase
+      .from("app_users")
+      .select("email, country")
+      .eq("user_uuid", user.id)
+      .single()
 
     if (!userData) {
       return { success: false, message: "User data not found" }
     }
 
+    // Create a new referral record
     const { error: referralError } = await supabase.from("referrals").insert({
       user_uuid: referrer.user_uuid,
       referred_uuid: user.id,
       referrer_email: referrerEmail,
       referred_email: userData.email,
       referral_date: new Date().toISOString(),
-      status: "active",
-      referral_code: referrer.referral_code,
+      status: "pending", // Start as pending
+      referred_referral_code: referrer.referral_code,
+      country: userData.country || "Unknown", // Include country
+      claimed: false,
+      claim_date: null,
+      active_count: 0, // Initialize with 0 active vesting schedules
     })
 
     if (referralError) {
