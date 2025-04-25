@@ -15,8 +15,9 @@ export function DashboardContent() {
   // State for the stat cards
   const [totalOutTransfersUSD, setTotalOutTransfersUSD] = useState(0)
   const [totalOutTransfersTokens, setTotalOutTransfersTokens] = useState(0)
+  const [expectedVestingYield, setExpectedVestingYield] = useState(0)
 
-  // Add this useEffect to calculate the sums
+  // Add this useEffect to calculate the sums for OUT-TRANSFER transactions
   useEffect(() => {
     // Filter transactions to get only OUT-TRANSFER types
     const outTransfers = transactions.filter((tx) => tx.type === "OUT-TRANSFER")
@@ -32,14 +33,82 @@ export function DashboardContent() {
     setTotalOutTransfersTokens(totalTokens)
   }, [transactions])
 
-  // Placeholder values for other stat cards
-  const totalReferralClaims = 0
-  const expectedVestingYield = 0
+  // Calculate expected yield from active vesting schedules
+  useEffect(() => {
+    const expectedYield = calculateExpectedYield(vestingSchedules)
+    setExpectedVestingYield(expectedYield)
+  }, [vestingSchedules])
 
-  // Placeholder for level schedules
-  const level1Schedule = null
-  const level2Schedule = null
-  const level3Schedule = null
+  // Placeholder value for referral claims
+  const totalReferralClaims = 0
+
+  // Get most active schedule for each level
+  const level1Schedule = getMostActiveSchedule(vestingSchedules, 1)
+  const level2Schedule = getMostActiveSchedule(vestingSchedules, 2)
+  const level3Schedule = getMostActiveSchedule(vestingSchedules, 3)
+
+  // Function to calculate expected yield from vesting schedules
+  function calculateExpectedYield(schedules) {
+    if (!schedules || schedules.length === 0) return 0
+
+    let totalYield = 0
+
+    schedules.forEach((schedule) => {
+      if (schedule.invested && !schedule.claimed) {
+        // Calculate potential reward based on level and progress
+        let baseReward = 0
+
+        if (schedule.progress >= 20) baseReward = 2
+        if (schedule.progress >= 40) baseReward = 4
+        if (schedule.progress >= 60) baseReward = 6
+        if (schedule.progress >= 80) baseReward = 8
+        if (schedule.progress >= 100) baseReward = 10
+
+        // Multiply by level factor
+        const levelMultiplier = schedule.level === 1 ? 1 : schedule.level === 2 ? 2 : 4
+        const potentialReward = baseReward * levelMultiplier
+
+        // Subtract any previous claims
+        const previousClaim = calculateRewardForProgress(schedule.level, schedule.lastClaimPercentage)
+        const netReward = potentialReward - previousClaim
+
+        totalYield += netReward
+      }
+    })
+
+    return totalYield
+  }
+
+  // Helper function to calculate reward for a given progress
+  function calculateRewardForProgress(level, progress) {
+    let baseReward = 0
+
+    if (progress >= 20) baseReward = 2
+    if (progress >= 40) baseReward = 4
+    if (progress >= 60) baseReward = 6
+    if (progress >= 80) baseReward = 8
+    if (progress >= 100) baseReward = 10
+
+    // Multiply by level factor
+    const levelMultiplier = level === 1 ? 1 : level === 2 ? 2 : 4
+    return baseReward * levelMultiplier
+  }
+
+  // Function to get the most active schedule for a level
+  function getMostActiveSchedule(schedules, level) {
+    if (!schedules || schedules.length === 0) return null
+
+    // Filter schedules by level
+    const levelSchedules = schedules.filter((s) => s.level === level)
+    if (levelSchedules.length === 0) return null
+
+    // Find the most active schedule (invested but not claimed, with highest progress)
+    const activeSchedules = levelSchedules.filter((s) => s.invested && !s.claimed)
+    if (activeSchedules.length === 0) return null
+
+    // Sort by progress (descending) and return the first one
+    return activeSchedules.sort((a, b) => b.progress - a.progress)[0]
+  }
 
   return (
     <div className="h-full bg-[#1c1e26]">
@@ -107,7 +176,7 @@ export function DashboardContent() {
         {/* Active Vesting Expected Yield */}
         <div className="bg-purple-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-purple-200">Active Vesting Expected Yield</div>
-          <div className="text-3xl font-bold">0</div>
+          <div className="text-3xl font-bold">{Math.floor(expectedVestingYield)}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
@@ -138,25 +207,58 @@ export function DashboardContent() {
             {/* Level 1 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 1</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
-              <div className="w-12 text-right text-xs">0%</div>
+              <div
+                className={`w-8 h-8 rounded-full ${level1Schedule ? `bg-${level1Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+              >
+                {level1Schedule ? level1Schedule.position : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level1Schedule && (
+                  <div
+                    className={`h-full bg-${level1Schedule.color}`}
+                    style={{ width: `${level1Schedule.progress}%` }}
+                  ></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level1Schedule ? `${level1Schedule.progress}%` : "0%"}</div>
             </div>
 
             {/* Level 2 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 2</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
-              <div className="w-12 text-right text-xs">0%</div>
+              <div
+                className={`w-8 h-8 rounded-full ${level2Schedule ? `bg-${level2Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+              >
+                {level2Schedule ? level2Schedule.position : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level2Schedule && (
+                  <div
+                    className={`h-full bg-${level2Schedule.color}`}
+                    style={{ width: `${level2Schedule.progress}%` }}
+                  ></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level2Schedule ? `${level2Schedule.progress}%` : "0%"}</div>
             </div>
 
             {/* Level 3 */}
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 3</div>
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs mr-2">-</div>
-              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">{/* Progress bar removed */}</div>
-              <div className="w-12 text-right text-xs">0%</div>
+              <div
+                className={`w-8 h-8 rounded-full ${level3Schedule ? `bg-${level3Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+              >
+                {level3Schedule ? level3Schedule.position : "-"}
+              </div>
+              <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
+                {level3Schedule && (
+                  <div
+                    className={`h-full bg-${level3Schedule.color}`}
+                    style={{ width: `${level3Schedule.progress}%` }}
+                  ></div>
+                )}
+              </div>
+              <div className="w-12 text-right text-xs">{level3Schedule ? `${level3Schedule.progress}%` : "0%"}</div>
             </div>
           </div>
         </div>
