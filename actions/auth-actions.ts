@@ -69,22 +69,9 @@ export async function registerUser(formData: FormData) {
     ])
     if (settingsError) throw new Error(settingsError.message)
 
-    // 4. Create initial balances - FIXED: removed created_at field
-    // The id column should have a default value set in the database (uuid_generate_v4())
-    const { error: balanceError } = await supabase.from("balances").insert({
-      user_uuid: user.id,
-      display_id: displayId,
-      pwt_invest_balance: 0,
-      pwt_cashout_balance: 0,
-      activation_fee_balance: 10, // Give them some starting tokens
-      updated_at: new Date().toISOString(),
-    })
-
-    if (balanceError) throw new Error(`Balance creation error: ${balanceError.message}`)
-
-    // 5. Insert referral if valid referrerEmail exists
+    // 4. Insert referral if valid referrerEmail exists
     if (referrerEmail?.trim() && referrerUuid) {
-      // Match the referrals table schema exactly, including display_id
+      // Match the referrals table schema exactly
       const { error: referralError } = await supabase.from("referrals").insert([
         {
           user_uuid: referrerUuid, // The referrer's UUID
@@ -94,7 +81,7 @@ export async function registerUser(formData: FormData) {
           referral_code: referrerReferralCode,
           referral_date: new Date().toISOString(),
           status: "pending",
-          display_id: displayId, // FIXED: Added display_id for the referred user
+          display_id: displayId,
           claimed: false,
           claim_date: null,
         },
@@ -106,7 +93,9 @@ export async function registerUser(formData: FormData) {
       }
     }
 
-    // 6. Create vesting schedules - FIXED: removed custom schedule_id
+    // REMOVED: Balance creation code - now handled by Supabase backend triggers
+
+    // 5. Create vesting schedules - FIXED: removed custom schedule_id
     const vestingSchedules = Array.from({ length: 15 }).map((_, index) => {
       const level = Math.ceil((index + 1) / 5) // 1,2,3
       const positionIndex = index % 5
