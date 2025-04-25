@@ -17,6 +17,7 @@ export type TransactionType =
   | "IN-AFT GIFT"
   | "VESTING"
   | "CLAIM"
+  | "AFT-TopUP" // Added new transaction type for AFT top-up
 
 // Define wallet types
 export type WalletType = "PWT Invest" | "PWT Cashout" | "AFT Wallet"
@@ -198,7 +199,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
     if (type === "Earnings") {
       return transactions.filter((t) =>
-        ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM"].includes(t.type),
+        ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM", "AFT-TopUP"].includes(t.type),
       )
     }
 

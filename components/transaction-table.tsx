@@ -10,6 +10,19 @@ interface TransactionTableProps {
   compact?: boolean
 }
 
+type TransactionType =
+  | "IN-PWT RECEIPT"
+  | "REFERRAL CLAIM"
+  | "BUY-AFT RECEIPT"
+  | "IN-AFT GIFT"
+  | "CLAIM"
+  | "AFT-TopUP"
+  | "OUT-TRANSFER"
+  | "OUT-AFT GIFT"
+  | "ACTIVATE FEE"
+  | "VESTING"
+  | string
+
 export function TransactionTable({
   transactions,
   showRecipient = true,
@@ -67,6 +80,26 @@ export function TransactionTable({
     }
 
     return false
+  }
+
+  // Update the getTransactionColor function to add color for AFT-TopUP transactions
+  const getTransactionColor = (type: TransactionType) => {
+    switch (type) {
+      case "IN-PWT RECEIPT":
+      case "REFERRAL CLAIM":
+      case "BUY-AFT RECEIPT":
+      case "IN-AFT GIFT":
+      case "CLAIM":
+      case "AFT-TopUP": // <-- Add this case to show AFT-TopUP as green
+        return "bg-green-500"
+      case "OUT-TRANSFER":
+      case "OUT-AFT GIFT":
+      case "ACTIVATE FEE":
+      case "VESTING":
+        return "bg-red-500"
+      default:
+        return "bg-gray-500"
+    }
   }
 
   return (
