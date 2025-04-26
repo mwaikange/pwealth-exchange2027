@@ -12,20 +12,17 @@ import { format } from "date-fns"
 // Define the type for referral data from the view
 interface ReferralViewData {
   referral_id: string
-  referrer_uuid: string
   referred_uuid: string
   referred_email: string
   referral_date: string
   referred_referral_code: string
-  actual_referral_code: string // Added this field
   claimed: boolean
   claim_date: string | null
   country: string
-  email_confirmed_at: string | null
   status: string
   level: string
   active_count: number
-  invested_schedules_count: number // Added field to track invested schedules
+  invested_schedules_count: number
 }
 
 interface FormattedReferral {
@@ -72,17 +69,17 @@ export default function Referrals() {
       // Transform the data to match our UI needs
       const transformedData = data.map((ref: ReferralViewData) => ({
         referralId: ref.referral_id,
-        referralCode: ref.referred_referral_code || ref.referral_id || "Unknown", // Use referred_referral_code as primary source
+        referralCode: ref.referred_referral_code || ref.referral_id || "Unknown",
         email: ref.referred_email || "Unknown",
         country: ref.country || "Unknown",
         status: ref.status || "pending",
         level: ref.level || "1",
-        progress: `${ref.invested_schedules_count ?? 0}/5`, // Use invested_schedules_count instead of active_count
-        claimStatus: ref.claimed ? "claimed" : ref.invested_schedules_count >= 5 ? "eligible" : "pending", // Use invested_schedules_count
+        progress: `${ref.invested_schedules_count ?? 0}/5`,
+        claimStatus: ref.claimed ? "claimed" : ref.invested_schedules_count >= 5 ? "eligible" : "pending",
         registerDate: ref.referral_date ? format(new Date(ref.referral_date), "dd MMM, h:mm a") : "Unknown",
         referredUuid: ref.referred_uuid,
         activeCount: ref.active_count ?? 0,
-        investedSchedulesCount: ref.invested_schedules_count ?? 0, // Store the invested schedules count
+        investedSchedulesCount: ref.invested_schedules_count ?? 0,
       }))
 
       setReferralData(transformedData)
@@ -341,7 +338,7 @@ export default function Referrals() {
                         // For non-active status, just display one row
                         return renderReferralRow(referral, index.toString(), false)
                       }
-                    })}{" "}
+                    })}
                     {/* Flatten the array since we might have arrays of rows */}
                   </tbody>
                 </table>

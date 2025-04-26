@@ -16,6 +16,9 @@ export default function Vesting() {
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
+  // Add a new state variable to track when any action is being processed
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const { pwtInvestBalance, aftBalance, updateAftBalance, addTransaction } = useWallet()
   const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
 
@@ -110,8 +113,11 @@ export default function Vesting() {
     }
   }
 
-  // Handle activate button click
+  // Update the handleActivate function to use the processing state
   const handleActivate = (scheduleId: string) => {
+    // Prevent action if already processing something
+    if (isProcessing) return
+
     const level = getActiveLevel()
     const cost = getActivationCost()
 
@@ -125,10 +131,11 @@ export default function Vesting() {
     setShowActivateConfirmation(true)
   }
 
-  // New function to handle confirmation
+  // Update the confirmActivate function to use the processing state
   const confirmActivate = async () => {
     if (pendingScheduleId) {
       try {
+        setIsProcessing(true) // Set processing to true at the start
         const level = getActiveLevel()
         const cost = getActivationCost()
 
@@ -176,12 +183,17 @@ export default function Vesting() {
         setActivateError(`Activation failed: ${error.message || "Unknown error"}`)
         setShowActivateConfirmation(false)
         setPendingScheduleId(null)
+      } finally {
+        setIsProcessing(false) // Set processing to false when done
       }
     }
   }
 
-  // Handle invest button click
+  // Update the handleInvest function to use the processing state
   const handleInvest = (scheduleId: string) => {
+    // Prevent action if already processing something
+    if (isProcessing) return
+
     const level = getActiveLevel()
     const cost = getInvestmentCost()
 
@@ -195,10 +207,11 @@ export default function Vesting() {
     setShowInvestConfirmation(true)
   }
 
-  // New function to handle confirmation
+  // Update the confirmInvest function to use the processing state
   const confirmInvest = async () => {
     if (pendingScheduleId) {
       try {
+        setIsProcessing(true) // Set processing to true at the start
         // Call the investInSchedule function and handle any errors
         await investInSchedule(pendingScheduleId)
         console.log("Schedule invested successfully")
@@ -209,12 +222,17 @@ export default function Vesting() {
         setInvestError(`Investment failed: ${error.message || "Unknown error"}`)
         setShowInvestConfirmation(false)
         setPendingScheduleId(null)
+      } finally {
+        setIsProcessing(false) // Set processing to false when done
       }
     }
   }
 
-  // Handle claim button click
-  const handleClaim = (scheduleId, progress) => {
+  // Update the handleClaim function to use the processing state
+  const handleClaim = async (scheduleId, progress) => {
+    // Prevent action if already processing something
+    if (isProcessing) return
+
     const level = getActiveLevel()
 
     if (progress < 20) {
@@ -222,11 +240,19 @@ export default function Vesting() {
       return
     }
 
-    claimSchedule(scheduleId)
+    try {
+      setIsProcessing(true) // Set processing to true at the start
+      await claimSchedule(scheduleId)
 
-    // Show success message
-    const yieldAmount = getYieldAmount(level, progress)
-    setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
+      // Show success message
+      const yieldAmount = getYieldAmount(level, progress)
+      setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
+    } catch (error) {
+      console.error("Claim failed:", error)
+      setClaimError(`Claim failed: ${error.message || "Unknown error"}`)
+    } finally {
+      setIsProcessing(false) // Set processing to false when done
+    }
   }
 
   // Format maturity date
@@ -392,9 +418,12 @@ export default function Vesting() {
                           <div className="w-4 mr-1.5"></div>
                           <button
                             onClick={() => handleActivate(schedule.id)}
-                            className="w-20 py-0.5 rounded text-[10px] bg-white text-black"
+                            disabled={isProcessing}
+                            className={`w-20 py-0.5 rounded text-[10px] ${
+                              isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-white text-black"
+                            }`}
                           >
-                            Activate
+                            {isProcessing ? "Wait..." : "Activate"}
                           </button>
                         </>
                       )}
@@ -416,12 +445,14 @@ export default function Vesting() {
                           <div className="w-4 mr-1.5"></div>
                           <button
                             onClick={() => handleInvest(schedule.id)}
-                            disabled={!schedule.activated}
+                            disabled={!schedule.activated || isProcessing}
                             className={`w-20 py-0.5 rounded text-[10px] ${
-                              schedule.activated ? "bg-white text-black" : "bg-gray-600 text-white cursor-not-allowed"
+                              !schedule.activated || isProcessing
+                                ? "bg-gray-600 text-white cursor-not-allowed"
+                                : "bg-white text-black"
                             }`}
                           >
-                            Invest
+                            {isProcessing ? "Wait..." : "Invest"}
                           </button>
                         </>
                       )}
@@ -443,14 +474,14 @@ export default function Vesting() {
                           <div className="w-4 mr-1.5"></div>
                           <button
                             onClick={() => handleClaim(schedule.id, schedule.progress)}
-                            disabled={!schedule.invested || schedule.progress < 20}
+                            disabled={!schedule.invested || schedule.progress < 20 || isProcessing}
                             className={`w-20 py-0.5 rounded text-[10px] ${
-                              schedule.invested && schedule.progress >= 20
-                                ? "bg-white text-black"
-                                : "bg-gray-600 text-white cursor-not-allowed"
+                              !schedule.invested || schedule.progress < 20 || isProcessing
+                                ? "bg-gray-600 text-white cursor-not-allowed"
+                                : "bg-white text-black"
                             }`}
                           >
-                            Claim
+                            {isProcessing ? "Wait..." : "Claim"}
                           </button>
                         </>
                       )}
@@ -498,9 +529,12 @@ export default function Vesting() {
               </button>
               <button
                 onClick={confirmActivate}
-                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
+                disabled={isProcessing}
+                className={`flex-1 py-2 rounded-md font-medium transition-colors ${
+                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#34a853] hover:bg-green-600 text-white"
+                }`}
               >
-                Proceed
+                {isProcessing ? "Processing..." : "Proceed"}
               </button>
             </div>
           </div>
@@ -543,9 +577,12 @@ export default function Vesting() {
               </button>
               <button
                 onClick={confirmInvest}
-                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
+                disabled={isProcessing}
+                className={`flex-1 py-2 rounded-md font-medium transition-colors ${
+                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#34a853] hover:bg-green-600 text-white"
+                }`}
               >
-                Proceed
+                {isProcessing ? "Processing..." : "Proceed"}
               </button>
             </div>
           </div>
