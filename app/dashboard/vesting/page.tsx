@@ -4,40 +4,32 @@ import { useState, useEffect } from "react"
 import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
-import { useTransactions } from "@/contexts/transaction-context"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
   const [claimSuccess, setClaimSuccess] = useState("")
-  const [activateSuccess, setActivateSuccess] = useState("")
-  const [investSuccess, setInvestSuccess] = useState("")
   const [activateError, setActivateError] = useState("")
   const [investError, setInvestError] = useState("")
   const [claimError, setClaimError] = useState("")
-  const [isActivating, setIsActivating] = useState(false)
-  const [isInvesting, setIsInvesting] = useState(false)
 
   const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
-  const { pwtInvestBalance, aftBalance, updateAftBalance, updatePwtInvestBalance } = useWallet()
+  const { pwtInvestBalance, aftBalance, updateAftBalance, addTransaction } = useWallet()
   const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
-  const { addTransaction } = useTransactions()
 
   // Clear messages after 5 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
       if (claimSuccess) setClaimSuccess("")
-      if (activateSuccess) setActivateSuccess("")
-      if (investSuccess) setInvestSuccess("")
       if (activateError) setActivateError("")
       if (investError) setInvestError("")
       if (claimError) setClaimError("")
     }, 5000)
 
     return () => clearTimeout(timer)
-  }, [claimSuccess, activateSuccess, investSuccess, activateError, investError, claimError])
+  }, [claimSuccess, activateError, investError, claimError])
 
   // Get active level number
   const getActiveLevel = () => {
@@ -135,48 +127,56 @@ export default function Vesting() {
 
   // New function to handle confirmation
   const confirmActivate = async () => {
-    if (!pendingScheduleId) return
+    if (pendingScheduleId) {
+      try {
+        const level = getActiveLevel()
+        const cost = getActivationCost()
 
-    setIsActivating(true)
-    try {
-      const level = getActiveLevel()
-      const cost = getActivationCost()
+        // First activate the schedule
+        await activateSchedule(pendingScheduleId)
+        console.log("Schedule activated successfully")
 
-      console.log("Starting activation process for schedule:", pendingScheduleId)
-      console.log("Activation cost:", cost)
+        try {
+          // Update the AFT balance in a separate try/catch
+          await updateAftBalance(cost, "subtract")
+          console.log("AFT balance updated successfully")
+        } catch (balanceError) {
+          console.error("Error updating AFT balance:", balanceError)
+          setActivateError(
+            `Activation succeeded but failed to update balance: ${balanceError.message || "Unknown error"}`,
+          )
+          setShowActivateConfirmation(false)
+          setPendingScheduleId(null)
+          return
+        }
 
-      // First activate the schedule
-      await activateSchedule(pendingScheduleId)
-      console.log("Schedule activated successfully")
+        try {
+          // Check if addTransaction exists and is a function before calling it
+          if (typeof addTransaction === "function") {
+            await addTransaction({
+              type: "ACTIVATE FEE",
+              account: "AFT Wallet",
+              amount: cost,
+              amountUsd: cost,
+              description: `ACTIVATE FEE -${pendingScheduleId}`,
+            })
+            console.log("Transaction recorded successfully")
+          } else {
+            console.warn("addTransaction is not a function:", typeof addTransaction)
+          }
+        } catch (transactionError) {
+          console.error("Error recording transaction:", transactionError)
+          // Don't show an error to the user since the activation and balance update succeeded
+        }
 
-      // Update the AFT balance
-      await updateAftBalance(cost, "subtract")
-      console.log("AFT balance updated successfully")
-
-      // Record the transaction
-      const transactionData = {
-        type: "ACTIVATE FEE",
-        account: "AFT Wallet",
-        amount: cost,
-        amountUsd: cost,
-        description: `ACTIVATE FEE -${pendingScheduleId}`,
+        setShowActivateConfirmation(false)
+        setPendingScheduleId(null)
+      } catch (error) {
+        console.error("Activation failed:", error)
+        setActivateError(`Activation failed: ${error.message || "Unknown error"}`)
+        setShowActivateConfirmation(false)
+        setPendingScheduleId(null)
       }
-      console.log("Recording transaction:", transactionData)
-
-      await addTransaction(transactionData)
-      console.log("Transaction recorded successfully")
-
-      // Show success message
-      setActivateSuccess(`Successfully activated schedule ${pendingScheduleId}`)
-
-      // Close the confirmation dialog
-      setShowActivateConfirmation(false)
-      setPendingScheduleId(null)
-    } catch (error) {
-      console.error("Activation process failed:", error)
-      setActivateError(`Activation failed: ${error.message || "Unknown error"}`)
-    } finally {
-      setIsActivating(false)
     }
   }
 
@@ -197,48 +197,19 @@ export default function Vesting() {
 
   // New function to handle confirmation
   const confirmInvest = async () => {
-    if (!pendingScheduleId) return
-
-    setIsInvesting(true)
-    try {
-      const level = getActiveLevel()
-      const cost = getInvestmentCost()
-
-      console.log("Starting investment process for schedule:", pendingScheduleId)
-      console.log("Investment cost:", cost)
-
-      // First invest in the schedule
-      await investInSchedule(pendingScheduleId)
-      console.log("Schedule invested successfully")
-
-      // Update the PWT Invest balance
-      await updatePwtInvestBalance(cost, "subtract")
-      console.log("PWT Invest balance updated successfully")
-
-      // Record the transaction
-      const transactionData = {
-        type: "VESTING",
-        account: "PWT Invest",
-        amount: cost,
-        amountUsd: cost * 10,
-        description: `VESTING - ${pendingScheduleId}`,
+    if (pendingScheduleId) {
+      try {
+        // Call the investInSchedule function and handle any errors
+        await investInSchedule(pendingScheduleId)
+        console.log("Schedule invested successfully")
+        setShowInvestConfirmation(false)
+        setPendingScheduleId(null)
+      } catch (error) {
+        console.error("Investment failed:", error)
+        setInvestError(`Investment failed: ${error.message || "Unknown error"}`)
+        setShowInvestConfirmation(false)
+        setPendingScheduleId(null)
       }
-      console.log("Recording transaction:", transactionData)
-
-      await addTransaction(transactionData)
-      console.log("Transaction recorded successfully")
-
-      // Show success message
-      setInvestSuccess(`Successfully invested in schedule ${pendingScheduleId}`)
-
-      // Close the confirmation dialog
-      setShowInvestConfirmation(false)
-      setPendingScheduleId(null)
-    } catch (error) {
-      console.error("Investment process failed:", error)
-      setInvestError(`Investment failed: ${error.message || "Unknown error"}`)
-    } finally {
-      setIsInvesting(false)
     }
   }
 
@@ -288,10 +259,6 @@ export default function Vesting() {
 
       {/* Success and error messages */}
       {claimSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{claimSuccess}</div>}
-      {activateSuccess && (
-        <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{activateSuccess}</div>
-      )}
-      {investSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{investSuccess}</div>}
       {activateError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{activateError}</div>}
       {investError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{investError}</div>}
       {claimError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{claimError}</div>}
@@ -334,7 +301,19 @@ export default function Vesting() {
             {activeSchedules.map((schedule) => (
               <div
                 key={schedule.id}
-                className={`border-l-4 border-${schedule.color} bg-[#1c1e26] relative border-b-2 border-b-${schedule.color}`}
+                className={`border-l-4 ${
+                  schedule.color === "green-500"
+                    ? "border-green-500 border-b-green-500"
+                    : schedule.color === "blue-500"
+                      ? "border-blue-500 border-b-blue-500"
+                      : schedule.color === "pink-500"
+                        ? "border-pink-500 border-b-pink-500"
+                        : schedule.color === "yellow-500"
+                          ? "border-yellow-500 border-b-yellow-500"
+                          : schedule.color === "red-500"
+                            ? "border-red-500 border-b-red-500"
+                            : "border-gray-500 border-b-gray-500"
+                } bg-[#1c1e26] relative border-b-2`}
               >
                 <div className="flex py-2 px-4">
                   <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
@@ -359,7 +338,9 @@ export default function Vesting() {
 
                     <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
                       <div
-                        className={`bg-${schedule.progress > 0 ? "green-500" : "white"} h-2 rounded-full`}
+                        className={
+                          schedule.progress > 0 ? "bg-green-500 h-2 rounded-full" : "bg-white h-2 rounded-full"
+                        }
                         style={{ width: `${schedule.progress}%` }}
                       ></div>
                     </div>
@@ -488,11 +469,7 @@ export default function Vesting() {
           <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-white">Confirm Activation</h3>
-              <button
-                onClick={() => setShowActivateConfirmation(false)}
-                className="text-gray-400 hover:text-white"
-                disabled={isActivating}
-              >
+              <button onClick={() => setShowActivateConfirmation(false)} className="text-gray-400 hover:text-white">
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -516,42 +493,14 @@ export default function Vesting() {
               <button
                 onClick={() => setShowActivateConfirmation(false)}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
-                disabled={isActivating}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmActivate}
-                className={`flex-1 ${isActivating ? "bg-gray-500" : "bg-[#34a853] hover:bg-green-600"} text-white py-2 rounded-md font-medium transition-colors flex justify-center items-center`}
-                disabled={isActivating}
+                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
               >
-                {isActivating ? (
-                  <>
-                    <svg
-                      className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Processing...
-                  </>
-                ) : (
-                  "Proceed"
-                )}
+                Proceed
               </button>
             </div>
           </div>
@@ -564,11 +513,7 @@ export default function Vesting() {
           <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-white">Confirm Investment</h3>
-              <button
-                onClick={() => setShowInvestConfirmation(false)}
-                className="text-gray-400 hover:text-white"
-                disabled={isInvesting}
-              >
+              <button onClick={() => setShowInvestConfirmation(false)} className="text-gray-400 hover:text-white">
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -593,42 +538,14 @@ export default function Vesting() {
               <button
                 onClick={() => setShowInvestConfirmation(false)}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
-                disabled={isInvesting}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmInvest}
-                className={`flex-1 ${isInvesting ? "bg-gray-500" : "bg-[#34a853] hover:bg-green-600"} text-white py-2 rounded-md font-medium transition-colors flex justify-center items-center`}
-                disabled={isInvesting}
+                className="flex-1 bg-[#34a853] hover:bg-green-600 text-white py-2 rounded-md font-medium transition-colors"
               >
-                {isInvesting ? (
-                  <>
-                    <svg
-                      className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Processing...
-                  </>
-                ) : (
-                  "Proceed"
-                )}
+                Proceed
               </button>
             </div>
           </div>

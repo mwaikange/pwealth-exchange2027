@@ -8,6 +8,23 @@ const config: Config = {
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    "bg-green-500",
+    "bg-blue-500",
+    "bg-pink-500",
+    "bg-yellow-500",
+    "bg-red-500",
+    "border-green-500",
+    "border-blue-500",
+    "border-pink-500",
+    "border-yellow-500",
+    "border-red-500",
+    "text-green-500",
+    "text-blue-500",
+    "text-pink-500",
+    "text-yellow-500",
+    "text-red-500",
+  ],
   theme: {
     extend: {
       colors: {

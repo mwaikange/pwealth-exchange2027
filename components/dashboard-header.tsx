@@ -1,18 +1,64 @@
 "use client"
 
+import type React from "react"
+
 import { Bell, ChevronLeft, X } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
+
+// Add the import for the Supabase client and useRouter
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter } from "next/navigation"
 
 export function DashboardHeader() {
   const { pwtInvestBalance, pwtCashoutBalance, aftBalance, loading } = useWallet()
   const { transactions } = useTransactions()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAFTModal, setShowAFTModal] = useState(false)
-  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([])
+  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>(() => {
+    // Load dismissed notifications from localStorage on initial render
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("dismissedNotifications")
+      return saved ? JSON.parse(saved) : []
+    }
+    return []
+  })
+
+  // Add the router and handleSecretLogout function inside the DashboardHeader component, right after the state declarations
+  const router = useRouter()
+  const supabase = createClientComponentClient()
+
+  // Secret logout function
+  const handleSecretLogout = async (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent the Link navigation
+    e.preventDefault()
+
+    // Add a subtle visual feedback (optional)
+    const target = e.currentTarget as HTMLElement
+    target.style.opacity = "0.5"
+
+    // Small delay to make it less obvious
+    setTimeout(async () => {
+      try {
+        await supabase.auth.signOut()
+        router.push("/login")
+      } catch (error) {
+        console.error("Error logging out:", error)
+        // Reset the opacity if logout fails
+        target.style.opacity = "1"
+      }
+    }, 300)
+  }
+
+  // Persist dismissed notifications to localStorage
+  useEffect(() => {
+    if (dismissedNotifications.length > 0) {
+      localStorage.setItem("dismissedNotifications", JSON.stringify(dismissedNotifications))
+    }
+  }, [dismissedNotifications])
 
   // Filter notifications - IN-PWT RECEIPT, IN-AFT GIFT, and BUY-AFT RECEIPT transactions
   // And exclude dismissed notifications
@@ -26,7 +72,11 @@ export function DashboardHeader() {
 
   // Function to dismiss a notification
   const dismissNotification = (id: string) => {
-    setDismissedNotifications((prev) => [...prev, id])
+    setDismissedNotifications((prev) => {
+      const updated = [...prev, id]
+      localStorage.setItem("dismissedNotifications", JSON.stringify(updated))
+      return updated
+    })
   }
 
   return (
@@ -42,7 +92,11 @@ export function DashboardHeader() {
             />
           </div>
           <Link href="/dashboard" className="flex items-center">
-            <ChevronLeft className="h-5 w-5 mr-2" />
+            <ChevronLeft
+              className="h-5 w-5 mr-2 cursor-pointer"
+              onClick={handleSecretLogout}
+              title="Back to Dashboard"
+            />
             <h1 className="text-xl font-bold">OVERVIEW</h1>
           </Link>
         </div>

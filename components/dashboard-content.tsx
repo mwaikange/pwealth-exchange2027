@@ -208,14 +208,40 @@ export function DashboardContent() {
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 1</div>
               <div
-                className={`w-8 h-8 rounded-full ${level1Schedule ? `bg-${level1Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+                className={`w-8 h-8 rounded-full ${
+                  level1Schedule
+                    ? level1Schedule.color === "green-500"
+                      ? "bg-green-500"
+                      : level1Schedule.color === "blue-500"
+                        ? "bg-blue-500"
+                        : level1Schedule.color === "pink-500"
+                          ? "bg-pink-500"
+                          : level1Schedule.color === "yellow-500"
+                            ? "bg-yellow-500"
+                            : level1Schedule.color === "red-500"
+                              ? "bg-red-500"
+                              : "bg-gray-700"
+                    : "bg-gray-700"
+                } flex items-center justify-center text-xs mr-2`}
               >
                 {level1Schedule ? level1Schedule.position : "-"}
               </div>
               <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
                 {level1Schedule && (
                   <div
-                    className={`h-full bg-${level1Schedule.color}`}
+                    className={
+                      level1Schedule.color === "green-500"
+                        ? "h-full bg-green-500"
+                        : level1Schedule.color === "blue-500"
+                          ? "h-full bg-blue-500"
+                          : level1Schedule.color === "pink-500"
+                            ? "h-full bg-pink-500"
+                            : level1Schedule.color === "yellow-500"
+                              ? "h-full bg-yellow-500"
+                              : level1Schedule.color === "red-500"
+                                ? "h-full bg-red-500"
+                                : "h-full bg-gray-500"
+                    }
                     style={{ width: `${level1Schedule.progress}%` }}
                   ></div>
                 )}
@@ -227,14 +253,40 @@ export function DashboardContent() {
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 2</div>
               <div
-                className={`w-8 h-8 rounded-full ${level2Schedule ? `bg-${level2Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+                className={`w-8 h-8 rounded-full ${
+                  level2Schedule
+                    ? level2Schedule.color === "green-500"
+                      ? "bg-green-500"
+                      : level2Schedule.color === "blue-500"
+                        ? "bg-blue-500"
+                        : level2Schedule.color === "pink-500"
+                          ? "bg-pink-500"
+                          : level2Schedule.color === "yellow-500"
+                            ? "bg-yellow-500"
+                            : level2Schedule.color === "red-500"
+                              ? "bg-red-500"
+                              : "bg-gray-700"
+                    : "bg-gray-700"
+                } flex items-center justify-center text-xs mr-2`}
               >
                 {level2Schedule ? level2Schedule.position : "-"}
               </div>
               <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
                 {level2Schedule && (
                   <div
-                    className={`h-full bg-${level2Schedule.color}`}
+                    className={
+                      level2Schedule.color === "green-500"
+                        ? "h-full bg-green-500"
+                        : level2Schedule.color === "blue-500"
+                          ? "h-full bg-blue-500"
+                          : level2Schedule.color === "pink-500"
+                            ? "h-full bg-pink-500"
+                            : level2Schedule.color === "yellow-500"
+                              ? "h-full bg-yellow-500"
+                              : level2Schedule.color === "red-500"
+                                ? "h-full bg-red-500"
+                                : "h-full bg-gray-500"
+                    }
                     style={{ width: `${level2Schedule.progress}%` }}
                   ></div>
                 )}
@@ -246,14 +298,40 @@ export function DashboardContent() {
             <div className="flex items-center">
               <div className="w-16 text-xs">Level 3</div>
               <div
-                className={`w-8 h-8 rounded-full ${level3Schedule ? `bg-${level3Schedule.color}` : "bg-gray-700"} flex items-center justify-center text-xs mr-2`}
+                className={`w-8 h-8 rounded-full ${
+                  level3Schedule
+                    ? level3Schedule.color === "green-500"
+                      ? "bg-green-500"
+                      : level3Schedule.color === "blue-500"
+                        ? "bg-blue-500"
+                        : level3Schedule.color === "pink-500"
+                          ? "bg-pink-500"
+                          : level3Schedule.color === "yellow-500"
+                            ? "bg-yellow-500"
+                            : level3Schedule.color === "red-500"
+                              ? "bg-red-500"
+                              : "bg-gray-700"
+                    : "bg-gray-700"
+                } flex items-center justify-center text-xs mr-2`}
               >
                 {level3Schedule ? level3Schedule.position : "-"}
               </div>
               <div className="flex-1 bg-gray-700 h-2 rounded-full overflow-hidden">
                 {level3Schedule && (
                   <div
-                    className={`h-full bg-${level3Schedule.color}`}
+                    className={
+                      level3Schedule.color === "green-500"
+                        ? "h-full bg-green-500"
+                        : level3Schedule.color === "blue-500"
+                          ? "h-full bg-blue-500"
+                          : level3Schedule.color === "pink-500"
+                            ? "h-full bg-pink-500"
+                            : level3Schedule.color === "yellow-500"
+                              ? "h-full bg-yellow-500"
+                              : level3Schedule.color === "red-500"
+                                ? "h-full bg-red-500"
+                                : "h-full bg-gray-500"
+                    }
                     style={{ width: `${level3Schedule.progress}%` }}
                   ></div>
                 )}

@@ -75,9 +75,9 @@ const getLevelAndPosition = (rank: number): { level: number; position: string } 
 }
 
 // Helper function to ensure valid UUID or null
-const ensureValidUuidOrNull = (uuid: string | undefined | null): string | null => {
-  if (!uuid || uuid.trim() === "") return null
-  return uuid
+const ensureValidUuidOrNull = (id: string | null | undefined): string | null => {
+  if (!id) return null
+  return id
 }
 
 // Provider component
@@ -411,7 +411,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       // Use the schedule_id directly without validation or casting
       const params = {
         p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
-        p_user_uuid: ensureValidUuidOrNull(user.id),
+        p_user_uuid: user.id,
       }
 
       console.log("RPC parameters:", JSON.stringify(params))
@@ -469,6 +469,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     const schedule = vestingSchedules[scheduleIndex]
     if (!schedule.activated || schedule.invested) return
 
+    const investmentCost = getInvestmentCost(schedule.level)
     const startTime = new Date()
 
     try {
@@ -479,16 +480,19 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         schedule.schedule_id_text || schedule.schedule_id,
       )
 
+      // Create a new Supabase client to clear any cached schema information
+      const freshSupabase = supabase
+
       // Use the schedule_id directly without validation or casting
       const params = {
         p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
         p_start_time: startTime.toISOString(),
       }
 
-      console.log("RPC parameters:", JSON.stringify(params))
+      console.log("RPC parameters for invest_schedule:", JSON.stringify(params))
 
-      // Use the invest_in_schedule function with correct parameter names
-      const { data, error } = await supabase.rpc("invest_in_schedule", params)
+      // Use the invest_schedule function with correct parameter names
+      const { data, error } = await freshSupabase.rpc("invest_schedule", params)
 
       if (error) {
         console.error("Error investing in schedule:", error)
@@ -514,11 +518,20 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         return updatedSchedules
       })
 
-      // Note: Balance update and transaction recording are now handled in the page component
-      return data
+      // Update wallet balance
+      await updatePwtInvestBalance(investmentCost, "subtract")
+
+      // Add transaction
+      await addTransaction({
+        type: "VESTING",
+        account: "PWT Invest",
+        amount: investmentCost,
+        amountUsd: investmentCost * 10,
+        description: `VESTING - ${scheduleId}`,
+      })
     } catch (error) {
       console.error("Error investing in schedule:", error)
-      throw error
+      throw error // Re-throw the error so it can be caught by the UI
     }
   }
 

@@ -45,7 +45,22 @@ export function VestingSchedules() {
               maturity: "15/04/2023 | 5:55:50 pm",
             },
           ].map((item, index) => (
-            <div key={index} className={`border-l-4 ${item.color} bg-[#1c1e26] p-4 rounded-r-lg`}>
+            <div
+              key={index}
+              className={`border-l-4 ${
+                item.color === "bg-green-500"
+                  ? "bg-green-500"
+                  : item.color === "bg-blue-500"
+                    ? "bg-blue-500"
+                    : item.color === "bg-pink-500"
+                      ? "bg-pink-500"
+                      : item.color === "bg-yellow-500"
+                        ? "bg-yellow-500"
+                        : item.color === "bg-red-500"
+                          ? "bg-red-500"
+                          : "bg-gray-500"
+              } bg-[#1c1e26] p-4 rounded-r-lg`}
+            >
               <div className="flex items-start">
                 <div className="mr-4">
                   <div className="text-sm text-gray-400">Maturity Date - {item.maturity}</div>
