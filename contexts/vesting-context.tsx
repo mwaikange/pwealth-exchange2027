@@ -74,6 +74,12 @@ const getLevelAndPosition = (rank: number): { level: number; position: string } 
   return { level, position }
 }
 
+// Helper function to ensure valid UUID or null
+const ensureValidUuidOrNull = (uuid: string | undefined | null): string | null => {
+  if (!uuid || uuid.trim() === "") return null
+  return uuid
+}
+
 // Provider component
 export function VestingProvider({ children }: { children: React.ReactNode }) {
   const { updatePwtInvestBalance, updatePwtCashoutBalance, updateAftBalance } = useWallet()
@@ -404,8 +410,8 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       // Use the schedule_id directly without validation or casting
       const params = {
-        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
-        p_user_uuid: user.id,
+        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
+        p_user_uuid: ensureValidUuidOrNull(user.id),
       }
 
       console.log("RPC parameters:", JSON.stringify(params))
@@ -435,20 +441,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         return updatedSchedules
       })
 
-      // Deduct AFT tokens upon successful activation
-      const activationCost = getActivationCost(schedule.level)
-      await updateAftBalance(activationCost, "subtract")
-
-      // Add transaction record
-      await addTransaction({
-        type: "ACTIVATION",
-        account: "AFT",
-        amount: activationCost,
-        amountUsd: activationCost * 10, // Assuming 1 AFT = $10 USD
-        description: `ACTIVATION - ${scheduleId}`,
-      })
-
-      return data
+      // Note: AFT balance update and transaction recording are now handled in the page component
     } catch (error) {
       console.error("Activation error:", {
         error,
@@ -476,7 +469,6 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     const schedule = vestingSchedules[scheduleIndex]
     if (!schedule.activated || schedule.invested) return
 
-    const investmentCost = getInvestmentCost(schedule.level)
     const startTime = new Date()
 
     try {
@@ -489,14 +481,14 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       // Use the schedule_id directly without validation or casting
       const params = {
-        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
+        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
         p_start_time: startTime.toISOString(),
       }
 
       console.log("RPC parameters:", JSON.stringify(params))
 
-      // Use the invest_schedule function with correct parameter names
-      const { data, error } = await supabase.rpc("invest_schedule", params)
+      // Use the invest_in_schedule function with correct parameter names
+      const { data, error } = await supabase.rpc("invest_in_schedule", params)
 
       if (error) {
         console.error("Error investing in schedule:", error)
@@ -522,19 +514,11 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         return updatedSchedules
       })
 
-      // Update wallet balance
-      await updatePwtInvestBalance(investmentCost, "subtract")
-
-      // Add transaction
-      await addTransaction({
-        type: "VESTING",
-        account: "PWT Invest",
-        amount: investmentCost,
-        amountUsd: investmentCost * 10,
-        description: `VESTING - ${scheduleId}`,
-      })
+      // Note: Balance update and transaction recording are now handled in the page component
+      return data
     } catch (error) {
       console.error("Error investing in schedule:", error)
+      throw error
     }
   }
 
@@ -576,7 +560,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       // Use the schedule_id directly without validation or casting
       const params = {
-        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
+        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
         p_claim_time: claimTime.toISOString(),
         p_claim_percentage: schedule.progress,
         p_is_premature: isPremature,
