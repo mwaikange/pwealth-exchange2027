@@ -5,7 +5,6 @@ import type React from "react"
 import { Bell, ChevronLeft, X } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
-import Link from "next/link"
 import { useState, useEffect } from "react"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
 
@@ -31,26 +30,17 @@ export function DashboardHeader() {
   const router = useRouter()
   const supabase = createClientComponentClient()
 
-  // Secret logout function
-  const handleSecretLogout = async (e: React.MouseEvent) => {
+  // Logout function
+  const handleLogout = async (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent the Link navigation
     e.preventDefault()
 
-    // Add a subtle visual feedback (optional)
-    const target = e.currentTarget as HTMLElement
-    target.style.opacity = "0.5"
-
-    // Small delay to make it less obvious
-    setTimeout(async () => {
-      try {
-        await supabase.auth.signOut()
-        router.push("/login")
-      } catch (error) {
-        console.error("Error logging out:", error)
-        // Reset the opacity if logout fails
-        target.style.opacity = "1"
-      }
-    }, 300)
+    try {
+      await supabase.auth.signOut()
+      router.push("/login")
+    } catch (error) {
+      console.error("Error logging out:", error)
+    }
   }
 
   // Persist dismissed notifications to localStorage
@@ -91,14 +81,10 @@ export function DashboardHeader() {
               className="absolute inset-0 rounded-full w-full h-full object-cover"
             />
           </div>
-          <Link href="/dashboard" className="flex items-center">
-            <ChevronLeft
-              className="h-5 w-5 mr-2 cursor-pointer"
-              onClick={handleSecretLogout}
-              title="Back to Dashboard"
-            />
+          <div className="flex items-center">
+            <ChevronLeft className="h-5 w-5 mr-2 cursor-pointer" onClick={handleLogout} title="Back to Dashboard" />
             <h1 className="text-xl font-bold">OVERVIEW</h1>
-          </Link>
+          </div>
         </div>
 
         <div className="ml-auto flex items-center space-x-3">

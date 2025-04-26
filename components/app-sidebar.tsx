@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 interface AppSidebarProps {
   open: boolean
@@ -12,6 +13,7 @@ interface AppSidebarProps {
 export function AppSidebar({ open }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const supabase = createClientComponentClient()
 
   const navItems = [
     {
@@ -52,8 +54,13 @@ export function AppSidebar({ open }: AppSidebarProps) {
     },
   ]
 
-  const handleSignOut = () => {
-    router.push("/login")
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut()
+      router.push("/login")
+    } catch (error) {
+      console.error("Error signing out:", error)
+    }
   }
 
   return (
