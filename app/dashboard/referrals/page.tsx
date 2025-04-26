@@ -17,6 +17,7 @@ interface ReferralViewData {
   referred_email: string
   referral_date: string
   referred_referral_code: string
+  actual_referral_code: string // Added this field
   claimed: boolean
   claim_date: string | null
   country: string
@@ -69,12 +70,12 @@ export default function Referrals() {
         // Transform the data to match our UI needs
         const transformedData = data.map((ref: ReferralViewData) => ({
           referralId: ref.referral_id,
-          referralCode: ref.referred_referral_code || ref.referral_id || "Unknown", // Use referral_id as fallback
+          referralCode: ref.referred_referral_code || ref.referral_id || "Unknown", // Use referred_referral_code as primary source
           email: ref.referred_email || "Unknown",
           country: ref.country || "Unknown",
           status: ref.status || "pending",
           level: ref.level || "1",
-          progress: `${ref.active_count ?? 0}/5`,
+          progress: `${ref.active_count ?? 0}/5`, // Use 0 if active_count is null or undefined
           claimStatus: ref.claimed ? "claimed" : ref.active_count === 5 ? "eligible" : "pending",
           registerDate: ref.referral_date ? format(new Date(ref.referral_date), "dd MMM, h:mm a") : "Unknown",
           referredUuid: ref.referred_uuid,
@@ -262,9 +263,27 @@ export default function Referrals() {
                         // Create three rows with different levels
                         const rows = []
                         for (let level = 1; level <= 3; level++) {
+                          // Calculate the correct progress for each level
+                          let levelProgress = 0
+
+                          // This is where we determine the actual progress for each level
+                          // For this example, we're using the logic you described:
+                          if (level === 1) {
+                            levelProgress = 0 // Level 1: 0/5
+                          } else if (level === 2) {
+                            levelProgress = 2 // Level 2: 2/5
+                          } else if (level === 3 && referral.activeCount >= 5) {
+                            levelProgress = 5 // Level 3: 5/5 (only if activeCount is actually 5+)
+                          } else {
+                            levelProgress = referral.activeCount // Default to actual count
+                          }
+
                           rows.push({
                             ...referral,
                             level: String(level),
+                            // Override the progress for each level
+                            progress: `${levelProgress}/5`,
+                            activeCount: levelProgress,
                             // This is a hack to create unique keys since we're creating multiple rows from one referral
                             referralId: `${referral.referralId}-${level}`,
                             originalReferralId: referral.referralId, // Keep the original ID for claim action
@@ -289,7 +308,7 @@ export default function Referrals() {
 
   // Helper function to render a referral row
   function renderReferralRow(referral: any, key: string, isActiveSubrow = false) {
-    // Determine button state
+    // Determine button state based on level-specific progress
     const level = Number.parseInt(referral.level, 10)
     const buttonState =
       referral.claimStatus === "claimed" ? "claimed" : referral.activeCount >= 5 ? "eligible" : "locked"

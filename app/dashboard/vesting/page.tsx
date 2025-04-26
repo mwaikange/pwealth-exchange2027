@@ -16,7 +16,7 @@ export default function Vesting() {
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
-  const { pwtInvestBalance, aftBalance } = useWallet()
+  const { pwtInvestBalance, aftBalance, updateAftBalance, addTransaction } = useWallet()
   const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
 
   // Clear messages after 5 seconds
@@ -126,11 +126,35 @@ export default function Vesting() {
   }
 
   // New function to handle confirmation
-  const confirmActivate = () => {
+  const confirmActivate = async () => {
     if (pendingScheduleId) {
-      activateSchedule(pendingScheduleId)
-      setShowActivateConfirmation(false)
-      setPendingScheduleId(null)
+      try {
+        const level = getActiveLevel()
+        const cost = getActivationCost()
+
+        // First activate the schedule
+        await activateSchedule(pendingScheduleId)
+
+        // Only if activation was successful, update the AFT balance
+        await updateAftBalance(cost, "subtract")
+
+        // Add transaction record
+        await addTransaction({
+          type: "ACTIVATE FEE",
+          account: "AFT Wallet",
+          amount: cost,
+          amountUsd: cost,
+          description: `ACTIVATE FEE -${pendingScheduleId}`,
+        })
+
+        setShowActivateConfirmation(false)
+        setPendingScheduleId(null)
+      } catch (error) {
+        console.error("Activation failed:", error)
+        setActivateError(`Activation failed: ${error.message || "Unknown error"}`)
+        setShowActivateConfirmation(false)
+        setPendingScheduleId(null)
+      }
     }
   }
 

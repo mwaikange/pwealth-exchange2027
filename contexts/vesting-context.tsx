@@ -24,6 +24,7 @@ export type VestingScheduleState = {
   lastClaimPercentage: number
   prematurelyClaimed: boolean
   schedule_id?: string // Supabase ID
+  schedule_id_text?: string // Text representation of UUID
 }
 
 // Define the context type
@@ -168,6 +169,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
             lastClaimPercentage: schedule.last_claim_percentage,
             prematurelyClaimed: schedule.prematurely_claimed,
             schedule_id: schedule.schedule_id,
+            schedule_id_text: schedule.schedule_id_text, // Add the text representation
           }))
 
           setVestingSchedules(formattedSchedules)
@@ -212,8 +214,10 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       for (let level = 1; level <= 3; level++) {
         for (const position of ["A", "B", "C", "D", "E"]) {
           const level_rank = getLevelRank(level, position)
+          const scheduleId = uuidv4()
           schedules.push({
-            schedule_id: uuidv4(),
+            schedule_id: scheduleId,
+            schedule_id_text: scheduleId, // Add the text representation
             user_uuid: userId, // This must match auth.uid() for RLS
             level,
             position,
@@ -390,17 +394,36 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     const schedule = vestingSchedules[scheduleIndex]
     if (schedule.activated) return
 
-    const activationCost = getActivationCost(schedule.level)
-
     try {
-      // Update schedule in Supabase
-      const { error } = await supabase
-        .from("vesting_schedules")
-        .update({ activated: true })
-        .eq("schedule_id", schedule.schedule_id)
-        .eq("user_uuid", user.id) // Ensure RLS compliance
+      console.log("Activating schedule:", {
+        scheduleId: schedule.id,
+        schedule_id: schedule.schedule_id,
+        schedule_id_text: schedule.schedule_id_text,
+        userId: user.id,
+      })
 
-      if (error) throw error
+      // Use the schedule_id directly without validation or casting
+      const params = {
+        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
+        p_user_uuid: user.id,
+      }
+
+      console.log("RPC parameters:", JSON.stringify(params))
+
+      // Call the stored procedure using rpc with the correct parameter names
+      const { data, error } = await supabase.rpc("activate_schedule_final", params)
+
+      if (error) {
+        console.error("Supabase error:", error)
+        throw error
+      }
+
+      if (!data?.success) {
+        console.error("Activation failed:", data?.error || "Unknown error")
+        throw new Error(data?.error || "Activation failed")
+      }
+
+      console.log("Activation successful:", data)
 
       // Update local state
       setVestingSchedules((prevSchedules) => {
@@ -412,19 +435,28 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         return updatedSchedules
       })
 
-      // Update wallet balance
+      // Deduct AFT tokens upon successful activation
+      const activationCost = getActivationCost(schedule.level)
       await updateAftBalance(activationCost, "subtract")
 
-      // Add transaction
+      // Add transaction record
       await addTransaction({
-        type: "ACTIVATE FEE",
-        account: "AFT Wallet",
+        type: "ACTIVATION",
+        account: "AFT",
         amount: activationCost,
-        amountUsd: activationCost,
-        description: `ACTIVATE FEE -${scheduleId}`,
+        amountUsd: activationCost * 10, // Assuming 1 AFT = $10 USD
+        description: `ACTIVATION - ${scheduleId}`,
       })
+
+      return data
     } catch (error) {
-      console.error("Error activating schedule:", error)
+      console.error("Activation error:", {
+        error,
+        scheduleId: schedule.schedule_id,
+        userId: user.id,
+        timestamp: new Date().toISOString(),
+      })
+      throw error
     }
   }
 
@@ -448,17 +480,36 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     const startTime = new Date()
 
     try {
-      // Update schedule in Supabase
-      const { error } = await supabase
-        .from("vesting_schedules")
-        .update({
-          invested: true,
-          start_time: startTime.toISOString(),
-        })
-        .eq("schedule_id", schedule.schedule_id)
-        .eq("user_uuid", user.id) // Ensure RLS compliance
+      console.log(
+        "Investing in schedule:",
+        schedule.id,
+        "with schedule_id:",
+        schedule.schedule_id_text || schedule.schedule_id,
+      )
 
-      if (error) throw error
+      // Use the schedule_id directly without validation or casting
+      const params = {
+        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
+        p_start_time: startTime.toISOString(),
+      }
+
+      console.log("RPC parameters:", JSON.stringify(params))
+
+      // Use the invest_schedule function with correct parameter names
+      const { data, error } = await supabase.rpc("invest_schedule", params)
+
+      if (error) {
+        console.error("Error investing in schedule:", error)
+        throw error
+      }
+
+      console.log("Investment result:", data)
+
+      // Check if the operation was successful
+      if (data && data.success === false) {
+        console.error("Failed to invest in schedule:", data.error)
+        throw new Error(data.error)
+      }
 
       // Update local state
       setVestingSchedules((prevSchedules) => {
@@ -516,19 +567,38 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     const claimTime = new Date()
 
     try {
-      // Update schedule in Supabase
-      const { error } = await supabase
-        .from("vesting_schedules")
-        .update({
-          claimed: true,
-          last_claim_time: claimTime.toISOString(),
-          last_claim_percentage: schedule.progress,
-          prematurely_claimed: isPremature,
-        })
-        .eq("schedule_id", schedule.schedule_id)
-        .eq("user_uuid", user.id) // Ensure RLS compliance
+      console.log(
+        "Claiming schedule:",
+        schedule.id,
+        "with schedule_id:",
+        schedule.schedule_id_text || schedule.schedule_id,
+      )
 
-      if (error) throw error
+      // Use the schedule_id directly without validation or casting
+      const params = {
+        p_schedule_id: schedule.schedule_id_text || schedule.schedule_id, // Use text version if available
+        p_claim_time: claimTime.toISOString(),
+        p_claim_percentage: schedule.progress,
+        p_is_premature: isPremature,
+      }
+
+      console.log("RPC parameters:", JSON.stringify(params))
+
+      // Call the claim_schedule function with correct parameter names
+      const { data, error } = await supabase.rpc("claim_schedule", params)
+
+      if (error) {
+        console.error("Error claiming schedule:", error)
+        throw error
+      }
+
+      console.log("Claim result:", data)
+
+      // Check if the operation was successful
+      if (data && data.success === false) {
+        console.error("Failed to claim schedule:", data.error)
+        throw new Error(data.error)
+      }
 
       // Update local state
       setVestingSchedules((prevSchedules) => {
@@ -585,23 +655,30 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     if (!session) return
 
     try {
-      // Update schedules in Supabase
-      const { error } = await supabase
-        .from("vesting_schedules")
-        .update({
-          activated: false,
-          invested: false,
-          claimed: false,
-          progress: 0,
-          start_time: null,
-          last_claim_time: null,
-          last_claim_percentage: 0,
-          prematurely_claimed: false,
-        })
-        .eq("user_uuid", user.id)
-        .eq("level", level)
+      console.log("Resetting schedules for level:", level)
 
-      if (error) throw error
+      // Create the parameters object and log it
+      const params = {
+        p_level: level,
+      }
+
+      console.log("RPC parameters:", JSON.stringify(params))
+
+      // Use the reset_schedules_by_level function with correct parameter name
+      const { data, error } = await supabase.rpc("reset_schedules_by_level", params)
+
+      if (error) {
+        console.error("Error resetting schedules:", error)
+        throw error
+      }
+
+      console.log("Reset result:", data)
+
+      // Check if the operation was successful
+      if (data && data.success === false) {
+        console.error("Failed to reset schedules:", data.error)
+        throw new Error(data.error)
+      }
 
       // Update local state
       setVestingSchedules((prevSchedules) => {
