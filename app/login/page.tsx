@@ -196,6 +196,13 @@ export default function Login() {
             </button>
           </div>
 
+          {/* Resend Verification Link */}
+          <div className="text-center mt-4 mb-2">
+            <Link href="/resend-verification" className="text-sm text-white hover:text-gray-300">
+              Resend Verification Email
+            </Link>
+          </div>
+
           {/* Register Link */}
           <div className="text-center">
             <p className="text-sm text-gray-300">Not a member yet?</p>

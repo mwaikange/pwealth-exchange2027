@@ -153,6 +153,19 @@ export function RegisterForm() {
             {!passwordsMatch && <p className="text-red-500 text-sm">Passwords do not match</p>}
           </div>
 
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="terms"
+              name="terms"
+              required
+              className="rounded border-gray-600 bg-[#3a3d4a] text-[#fff27a] focus:ring-[#fff27a]"
+            />
+            <label htmlFor="terms" className="text-white text-sm">
+              I have read and accept the Terms & Conditions
+            </label>
+          </div>
+
           <button
             type="submit"
             disabled={isSubmitting}
