@@ -25,6 +25,17 @@ interface ReferralViewData {
   invested_schedules_count: number
 }
 
+// Define the type for button state data from the SQL function
+interface ButtonStateData {
+  button_state: string
+  button_text: string
+  button_color: string
+  text_color: string
+  is_clickable: boolean
+  progress_text: string
+  reset_timer_seconds: number
+}
+
 interface FormattedReferral {
   referralId: string
   referralCode: string
@@ -37,7 +48,8 @@ interface FormattedReferral {
   registerDate: string
   referredUuid: string
   activeCount: number
-  investedSchedulesCount: number // Added field
+  investedSchedulesCount: number
+  buttonState?: ButtonStateData
 }
 
 export default function Referrals() {
@@ -51,6 +63,7 @@ export default function Referrals() {
   const { addTransaction } = useTransactions()
   const { user } = useAuth()
   const [claimingReferralId, setClaimingReferralId] = useState<string | null>(null)
+  const [resetTimers, setResetTimers] = useState<Record<string, NodeJS.Timeout>>({})
 
   // Fetch referral data from Supabase
   const fetchReferrals = async () => {
@@ -65,26 +78,93 @@ export default function Referrals() {
     if (error) {
       console.error("Error fetching referrals:", error)
       setReferralData([])
-    } else if (data) {
-      // Transform the data to match our UI needs
-      const transformedData = data.map((ref: ReferralViewData) => ({
+      setLoading(false)
+      return
+    }
+
+    if (!data || data.length === 0) {
+      setReferralData([])
+      setLoading(false)
+      return
+    }
+
+    // Get button states for all referrals
+    const referralIds = data.map((ref: ReferralViewData) => ref.referral_id)
+    const buttonStates: Record<string, ButtonStateData> = {}
+
+    // Fetch button states for each referral
+    for (const refId of referralIds) {
+      const { data: buttonData, error: buttonError } = await supabase.rpc("get_referral_button_state", {
+        p_referral_id: refId,
+      })
+
+      if (buttonError) {
+        console.error(`Error fetching button state for referral ${refId}:`, buttonError)
+        continue
+      }
+
+      if (buttonData && buttonData.length > 0) {
+        buttonStates[refId] = buttonData[0]
+
+        // Set up reset timer if needed
+        if (buttonData[0].reset_timer_seconds > 0) {
+          // Clear existing timer if any
+          if (resetTimers[refId]) {
+            clearTimeout(resetTimers[refId])
+          }
+
+          // Set new timer
+          const timerId = setTimeout(() => {
+            fetchReferrals() // Refresh data when timer expires
+          }, buttonData[0].reset_timer_seconds * 1000)
+
+          setResetTimers((prev) => ({
+            ...prev,
+            [refId]: timerId,
+          }))
+        }
+      }
+    }
+
+    // Transform the data to match our UI needs
+    const transformedData = data.map((ref: ReferralViewData) => {
+      const buttonState = buttonStates[ref.referral_id]
+
+      // Map button_state to claimStatus for backward compatibility
+      let claimStatus: "claimed" | "eligible" | "pending" = "pending"
+      if (buttonState) {
+        if (buttonState.button_state === "claimed") {
+          claimStatus = "claimed"
+        } else if (buttonState.button_state === "claimable") {
+          claimStatus = "eligible"
+        }
+      } else {
+        // Fallback to old logic if button state not available
+        claimStatus = ref.claimed ? "claimed" : ref.active_count >= 5 ? "eligible" : "pending"
+      }
+
+      // Ensure progress never exceeds 5/5
+      const activeCount = Math.min(ref.active_count ?? 0, 5)
+      const progressText = buttonState ? buttonState.progress_text : `${activeCount}/5`
+
+      return {
         referralId: ref.referral_id,
         referralCode: ref.referred_referral_code || ref.referral_id || "Unknown",
         email: ref.referred_email || "Unknown",
         country: ref.country || "Unknown",
         status: ref.status || "pending",
         level: ref.level || "1",
-        progress: `${ref.invested_schedules_count ?? 0}/5`,
-        claimStatus: ref.claimed ? "claimed" : ref.invested_schedules_count >= 5 ? "eligible" : "pending",
+        progress: progressText,
+        claimStatus,
         registerDate: ref.referral_date ? format(new Date(ref.referral_date), "dd MMM, h:mm a") : "Unknown",
         referredUuid: ref.referred_uuid,
-        activeCount: ref.active_count ?? 0,
-        investedSchedulesCount: ref.invested_schedules_count ?? 0,
-      }))
+        activeCount: activeCount,
+        investedSchedulesCount: Math.min(ref.invested_schedules_count ?? 0, 5),
+        buttonState,
+      }
+    })
 
-      setReferralData(transformedData)
-    }
-
+    setReferralData(transformedData)
     setLoading(false)
   }
 
@@ -99,8 +179,12 @@ export default function Referrals() {
       fetchReferrals()
     }, 30000) // Check every 30 seconds
 
-    return () => clearInterval(intervalId)
-  }, [user])
+    return () => {
+      clearInterval(intervalId)
+      // Clear all reset timers
+      Object.values(resetTimers).forEach((timerId) => clearTimeout(timerId))
+    }
+  }, [user, resetTimers])
 
   // Filter referrals based on active filter and search query
   const filteredReferrals = referralData.filter((referral) => {
@@ -124,6 +208,19 @@ export default function Referrals() {
 
     return true
   })
+
+  // Group referrals by referred_uuid to avoid duplication
+  const groupedReferrals = filteredReferrals.reduce(
+    (acc, referral) => {
+      const key = referral.referredUuid
+      if (!acc[key]) {
+        acc[key] = []
+      }
+      acc[key].push(referral)
+      return acc
+    },
+    {} as Record<string, FormattedReferral[]>,
+  )
 
   // Handle claim button click
   const handleClaim = async (referralId: string, level: string) => {
@@ -164,21 +261,6 @@ export default function Referrals() {
         amountUsd: pwtAmount * 10,
         description: `REFERRAL CLAIM - Level ${level}`,
       })
-
-      // Update the local state to reflect the change immediately
-      setReferralData((prevData) =>
-        prevData.map((ref) => {
-          // Update both the main referral and any sub-referrals with the same original ID
-          if (
-            ref.referralId === referralId ||
-            ref.referralId.startsWith(`${referralId}-`) ||
-            (ref.originalReferralId && ref.originalReferralId === referralId)
-          ) {
-            return { ...ref, claimStatus: "claimed" }
-          }
-          return ref
-        }),
-      )
 
       // Show success message
       setClaimSuccess(`Successfully claimed ${pwtAmount} PWT from referral (Level ${level})`)
@@ -284,62 +366,40 @@ export default function Referrals() {
             <div className="max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
               {loading ? (
                 <div className="p-4 text-center">Loading referrals...</div>
-              ) : filteredReferrals.length === 0 ? (
+              ) : Object.values(groupedReferrals).length === 0 ? (
                 <div className="p-4 text-center">No referrals found</div>
               ) : (
                 <table className="w-full table-fixed">
                   <tbody>
-                    {filteredReferrals.flatMap((referral, index) => {
-                      // For Active status, we need to display three rows (one for each level)
-                      if (referral.status.toLowerCase() === "active" && !Array.isArray(referral)) {
-                        // Create three rows with different levels
+                    {Object.values(groupedReferrals).flatMap((referrals, index) => {
+                      // Get the first referral in the group
+                      const firstReferral = referrals[0]
+
+                      // If status is active, create 3 rows (one for each level)
+                      if (firstReferral.status.toLowerCase() === "active") {
                         const rows = []
                         for (let level = 1; level <= 3; level++) {
-                          // Calculate the correct progress for each level
-                          let levelProgress = 0
-                          let investedCount = 0
+                          // Find if there's already a referral with this level
+                          const existingReferral = referrals.find((r) => r.level === String(level))
 
-                          // This is where we determine the actual progress for each level
-                          if (level === 1) {
-                            levelProgress = 0 // Level 1: 0/5
-                            investedCount = 0
-                          } else if (level === 2) {
-                            levelProgress = 2 // Level 2: 2/5
-                            investedCount = 2
-                          } else if (level === 3 && referral.investedSchedulesCount >= 5) {
-                            levelProgress = 5 // Level 3: 5/5 (only if investedSchedulesCount is actually 5+)
-                            investedCount = 5
-                          } else {
-                            levelProgress = referral.activeCount // Default to actual count
-                            investedCount = referral.investedSchedulesCount
+                          // Use existing referral or create a new one based on the first referral
+                          const levelReferral = existingReferral || {
+                            ...firstReferral,
+                            level: String(level),
+                            referralId: `${firstReferral.referralId}-${level}`,
+                            originalReferralId: firstReferral.referralId,
                           }
 
-                          rows.push({
-                            ...referral,
-                            level: String(level),
-                            // Override the progress for each level
-                            progress: `${levelProgress}/5`,
-                            activeCount: levelProgress,
-                            investedSchedulesCount: investedCount,
-                            // This is a hack to create unique keys since we're creating multiple rows from one referral
-                            referralId: `${referral.referralId}-${level}`,
-                            originalReferralId: referral.referralId, // Keep the original ID for claim action
-                            // Update claim status based on invested schedules count
-                            claimStatus:
-                              referral.claimStatus === "claimed"
-                                ? "claimed"
-                                : investedCount >= 5
-                                  ? "eligible"
-                                  : "pending",
-                          })
+                          rows.push(levelReferral)
                         }
                         return rows.map((row, subIndex) => renderReferralRow(row, `${index}-${subIndex}`, true))
                       } else {
-                        // For non-active status, just display one row
-                        return renderReferralRow(referral, index.toString(), false)
+                        // For non-active status, just display one row per referral
+                        return referrals.map((referral, subIndex) =>
+                          renderReferralRow(referral, `${index}-${subIndex}`, false),
+                        )
                       }
                     })}
-                    {/* Flatten the array since we might have arrays of rows */}
                   </tbody>
                 </table>
               )}
@@ -351,10 +411,97 @@ export default function Referrals() {
   )
 
   // Helper function to render a referral row
-  function renderReferralRow(referral: any, key: string, isActiveSubrow = false) {
-    // Determine button state based on claimed status and progress
-    const buttonState =
-      referral.claimStatus === "claimed" ? "claimed" : referral.investedSchedulesCount >= 5 ? "eligible" : "locked"
+  function renderReferralRow(referral: FormattedReferral, key: string, isActiveSubrow = false) {
+    // Use button state from SQL function if available
+    const buttonState = referral.buttonState
+
+    // Determine button appearance and behavior based on button state
+    let buttonAppearance = {
+      text: "locked",
+      bgColor: "bg-gray-500",
+      textColor: "text-white",
+      isClickable: false,
+      additionalClasses: "cursor-not-allowed opacity-70",
+    }
+
+    if (buttonState) {
+      // Use button state from SQL function
+      switch (buttonState.button_state) {
+        case "locked":
+          buttonAppearance = {
+            text: buttonState.button_text,
+            bgColor: "bg-gray-500",
+            textColor: "text-white",
+            isClickable: false,
+            additionalClasses: "cursor-not-allowed opacity-70",
+          }
+          break
+        case "claimable":
+          buttonAppearance = {
+            text: buttonState.button_text,
+            bgColor: "bg-white",
+            textColor: "text-black",
+            isClickable: true,
+            additionalClasses: "hover:bg-gray-100",
+          }
+          break
+        case "claimed":
+          buttonAppearance = {
+            text: buttonState.button_text,
+            bgColor: "bg-gray-700",
+            textColor: "text-green-400",
+            isClickable: false,
+            additionalClasses: "cursor-not-allowed",
+          }
+          break
+        default:
+          // Fallback to default
+          break
+      }
+    } else {
+      // Fallback to old logic if button state not available
+      const oldButtonState =
+        referral.claimStatus === "claimed" ? "claimed" : referral.activeCount >= 5 ? "eligible" : "locked"
+
+      switch (oldButtonState) {
+        case "locked":
+          buttonAppearance = {
+            text: "locked",
+            bgColor: "bg-gray-500",
+            textColor: "text-white",
+            isClickable: false,
+            additionalClasses: "cursor-not-allowed opacity-70",
+          }
+          break
+        case "eligible":
+          buttonAppearance = {
+            text: "claim",
+            bgColor: "bg-white",
+            textColor: "text-black",
+            isClickable: true,
+            additionalClasses: "hover:bg-gray-100",
+          }
+          break
+        case "claimed":
+          buttonAppearance = {
+            text: "claimed",
+            bgColor: "bg-gray-700",
+            textColor: "text-green-400",
+            isClickable: false,
+            additionalClasses: "cursor-not-allowed",
+          }
+          break
+      }
+    }
+
+    // Override text if currently claiming
+    if (claimingReferralId === (referral.originalReferralId || referral.referralId)) {
+      buttonAppearance.text = "..."
+      buttonAppearance.bgColor = "bg-gray-400"
+      buttonAppearance.textColor = "text-gray-800"
+      buttonAppearance.isClickable = false
+      buttonAppearance.additionalClasses = ""
+    }
 
     return (
       <tr key={key} className="border-b border-gray-700">
@@ -375,35 +522,16 @@ export default function Referrals() {
         <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.progress}</td>
         <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
         <td className="py-[6px] px-4 text-[10px] w-[15%]">
-          {buttonState === "locked" && (
-            <button
-              disabled
-              className="bg-gray-500 text-white px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed opacity-70"
-            >
-              locked
-            </button>
-          )}
-          {buttonState === "claimed" && (
-            <button
-              disabled
-              className="bg-gray-700 text-green-400 px-4 py-1 rounded text-[10px] w-16 cursor-not-allowed"
-            >
-              claimed
-            </button>
-          )}
-          {buttonState === "eligible" && (
-            <button
-              onClick={() => handleClaim(referral.originalReferralId || referral.referralId, referral.level)}
-              disabled={claimingReferralId === (referral.originalReferralId || referral.referralId)}
-              className={`${
-                claimingReferralId === (referral.originalReferralId || referral.referralId)
-                  ? "bg-gray-400 text-gray-800"
-                  : "bg-white text-black hover:bg-gray-100"
-              } px-4 py-1 rounded text-[10px] w-16 transition-colors`}
-            >
-              {claimingReferralId === (referral.originalReferralId || referral.referralId) ? "..." : "claim"}
-            </button>
-          )}
+          <button
+            onClick={() =>
+              buttonAppearance.isClickable &&
+              handleClaim(referral.originalReferralId || referral.referralId, referral.level)
+            }
+            disabled={!buttonAppearance.isClickable}
+            className={`${buttonAppearance.bgColor} ${buttonAppearance.textColor} px-4 py-1 rounded text-[10px] w-16 transition-colors ${buttonAppearance.additionalClasses}`}
+          >
+            {buttonAppearance.text}
+          </button>
         </td>
       </tr>
     )
