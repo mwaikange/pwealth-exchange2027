@@ -5,11 +5,32 @@ import Link from "next/link"
 import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase-singleton"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, signOut } = useAuth()
+  const [referralCode, setReferralCode] = useState<string>("")
+
+  useEffect(() => {
+    const fetchReferralCode = async () => {
+      if (user?.id) {
+        const { data, error } = await supabase
+          .from("usersettings")
+          .select("referral_code")
+          .eq("user_uuid", user.id)
+          .single()
+
+        if (data && !error) {
+          setReferralCode(data.referral_code)
+        }
+      }
+    }
+
+    fetchReferralCode()
+  }, [user])
 
   const navItems = [
     {
@@ -95,7 +116,7 @@ export function DashboardSidebar() {
             {user?.email ? user.email.charAt(0).toUpperCase() : "M"}
           </div>
           <div>
-            <div className="text-[9px]">user :</div>
+            <div className="text-[9px]">User: {referralCode || "RFRL-XXXXXX"}</div>
             <div className="text-[8px] text-gray-400">{user?.email || "loading..."}</div>
           </div>
         </div>

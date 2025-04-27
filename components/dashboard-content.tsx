@@ -121,7 +121,7 @@ export function DashboardContent() {
       <div className="px-6 grid grid-cols-5 gap-3">
         {/* Total OUT-Transfers to date */}
         <div className="bg-green-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
-          <div className="text-[10px] text-green-200">Total OUT-Transfers to date</div>
+          <div className="text-[10px] text-green-200">Total Cashouts to Date</div>
           <div className="text-3xl font-bold">{Math.floor(totalOutTransfersUSD)}</div>
           <div className="text-[10px]">USD</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
@@ -139,7 +139,7 @@ export function DashboardContent() {
 
         {/* Total OUT-Transfer tokens */}
         <div className="bg-blue-600 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
-          <div className="text-[10px] text-blue-200">Total OUT-Transfer tokens</div>
+          <div className="text-[10px] text-blue-200">Total Cashouts to Date</div>
           <div className="text-3xl font-bold">{Math.floor(totalOutTransfersTokens)}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
@@ -157,7 +157,7 @@ export function DashboardContent() {
 
         {/* Total Referral Claims sum */}
         <div className="bg-yellow-500 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
-          <div className="text-[10px] text-yellow-800">Total Referral Claims sum</div>
+          <div className="text-[10px] text-yellow-800">Total Referral Claims to Date</div>
           <div className="text-3xl font-bold">0</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
