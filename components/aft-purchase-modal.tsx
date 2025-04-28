@@ -9,6 +9,7 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
 import Image from "next/image"
+import { getFriendlyErrorMessage } from "@/utils/error-handling"
 
 interface AFTPurchaseModalProps {
   isOpen: boolean
@@ -19,6 +20,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const [amount, setAmount] = useState("50")
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBelowMinimum, setIsBelowMinimum] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { user } = useAuth()
   const { aftBalance, receiveAft } = useWallet()
   const { addTransaction } = useTransactions()
@@ -51,6 +53,9 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
       return
     }
 
+    // Clear any previous error messages
+    setErrorMessage(null)
+
     // Show payment options instead of processing payment
     setCurrentView("paymentOptions")
   }
@@ -58,6 +63,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const handleCardPayment = async () => {
     try {
       setIsProcessing(true)
+      setErrorMessage(null)
       console.log("Starting card payment process...")
 
       if (!user || !user.email) {
@@ -102,22 +108,30 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
       onClose()
     } catch (error) {
       console.error("Payment initiation error:", error)
-      alert(`Payment error: ${error instanceof Error ? error.message : "Unknown error"}`)
+
+      // Use our friendly error message utility
+      const friendlyMessage = getFriendlyErrorMessage(error)
+      setErrorMessage(friendlyMessage)
     } finally {
       setIsProcessing(false)
     }
   }
 
   const handleQRCodePayment = () => {
+    // Clear any previous error messages
+    setErrorMessage(null)
+
     // Show QR code view
     setCurrentView("qrCode")
   }
 
   const handleBackToForm = () => {
+    setErrorMessage(null)
     setCurrentView("form")
   }
 
   const handleBackToPaymentOptions = () => {
+    setErrorMessage(null)
     setCurrentView("paymentOptions")
   }
 
@@ -134,6 +148,13 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
             <X size={20} />
           </button>
         </div>
+
+        {/* Error message display */}
+        {errorMessage && (
+          <div className="bg-red-500/20 border border-red-500 mx-4 mt-4 px-3 py-2 rounded text-white text-sm">
+            {errorMessage}
+          </div>
+        )}
 
         {currentView === "form" && (
           <div className="p-4">
@@ -259,7 +280,8 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
 
             <div className="bg-white p-4 rounded-lg w-64 flex flex-col items-center mb-6">
               <div className="mb-2">
-                <Image src="/abstract-qr-code.png" alt="QR Code for payment" width={200} height={200} />
+                {/* Using the standard black and white QR code */}
+                <Image src="/telkom-qr-code.png" alt="QR Code for payment" width={200} height={200} priority />
               </div>
               <div className="text-black text-lg font-medium">{referenceNumber}</div>
             </div>

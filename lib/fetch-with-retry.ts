@@ -1,3 +1,5 @@
+import { getFriendlyErrorMessage } from "@/utils/error-handling"
+
 /**
  * Utility function to retry a fetch operation with exponential backoff
  * @param fetchFn The fetch function to retry
@@ -17,7 +19,11 @@ export async function fetchWithRetry<T>(fetchFn: () => Promise<T>, maxRetries = 
 
       // If this was the last attempt, throw the error
       if (attempt === maxRetries) {
-        throw error
+        // Convert to a friendly error message before throwing
+        const friendlyMessage = getFriendlyErrorMessage(error)
+        const friendlyError = new Error(friendlyMessage)
+        friendlyError.cause = error // Preserve the original error as the cause
+        throw friendlyError
       }
 
       // Wait before retrying with exponential backoff
