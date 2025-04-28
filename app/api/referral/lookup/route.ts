@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     // Get the referral code from the query parameters
     const { searchParams } = new URL(request.url)
@@ -16,32 +16,20 @@ export async function GET(request: NextRequest) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Look up the user with this referral code
-    const { data: userData, error: userError } = await supabase
-      .from("usersettings")
-      .select("user_uuid")
-      .eq("referral_code", code)
-      .single()
+    // Look up the user with this referral code in app_users table
+    const { data, error } = await supabase.from("app_users").select("email").eq("referral_code", code).single()
 
-    if (userError || !userData) {
-      console.error("Error looking up referral code:", userError)
+    if (error) {
+      console.error("Error looking up referral code:", error)
+      return NextResponse.json({ error: "Failed to look up referral code" }, { status: 500 })
+    }
+
+    if (!data) {
       return NextResponse.json({ error: "Invalid referral code" }, { status: 404 })
     }
 
-    // Get the user's email
-    const { data: userEmail, error: emailError } = await supabase
-      .from("app_users")
-      .select("email")
-      .eq("user_uuid", userData.user_uuid)
-      .single()
-
-    if (emailError || !userEmail) {
-      console.error("Error getting user email:", emailError)
-      return NextResponse.json({ error: "User email not found" }, { status: 404 })
-    }
-
     // Return the referrer's email
-    return NextResponse.json({ email: userEmail.email })
+    return NextResponse.json({ email: data.email })
   } catch (error) {
     console.error("Error in referral lookup API:", error)
     return NextResponse.json({ error: "Server error" }, { status: 500 })

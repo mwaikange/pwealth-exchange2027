@@ -146,15 +146,6 @@ export default function Settings() {
     )
   }
 
-  // Get the site URL from environment variable or use default
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"
-
-  // Construct the referral link
-  const referralUrl = `${siteUrl}/ref/${userData?.referral_code || ""}`
-
-  // For display purposes, remove the https:// prefix
-  const displayUrl = `www.peer-wealth.com/ref/${userData?.referral_code || ""}`
-
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title */}
@@ -388,19 +379,19 @@ export default function Settings() {
                 </p>
                 <div className="flex items-center">
                   <button
-                    onClick={() => copyToClipboard(referralUrl)}
+                    onClick={() => copyToClipboard(`www.peer-wealth.com/register?ref=${userData?.referral_code || ""}`)}
                     className="mr-2 p-1 hover:bg-gray-700 rounded"
                     title="Copy to clipboard"
                   >
                     <Copy size={16} className={copied ? "text-green-500" : "text-gray-400"} />
                   </button>
                   <a
-                    href={referralUrl}
+                    href={`https://www.peer-wealth.com/register?ref=${userData?.referral_code || ""}`}
                     className="text-[#4285f4] text-sm break-all hover:underline cursor-pointer"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {displayUrl}
+                    www.peer-wealth.com/register?ref={userData?.referral_code || ""}
                   </a>
                   {showCopyNotification && (
                     <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">

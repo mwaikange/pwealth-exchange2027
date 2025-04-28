@@ -41,10 +41,10 @@ export function RegisterForm() {
   useEffect(() => {
     const ref = searchParams.get("ref")
     if (ref) {
-      setIsLookingUpReferral(true)
       setReferralCode(ref)
+      setIsLookingUpReferral(true)
 
-      // Call the API to look up the referrer's email
+      // Look up the referrer's email from the referral code
       fetch(`/api/referral/lookup?code=${ref}`)
         .then((response) => {
           if (!response.ok) {
@@ -138,18 +138,19 @@ export function RegisterForm() {
                 name="referrerEmail"
                 placeholder="Referrer's Email Address"
                 value={referrerEmail}
-                onChange={(e) => !referralCode && setReferrerEmail(e.target.value)}
+                onChange={(e) => setReferrerEmail(e.target.value)}
                 className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
                   referralCode ? "opacity-80" : ""
                 }`}
+                disabled={!!referralCode || isLookingUpReferral}
                 readOnly={!!referralCode}
-                disabled={!!referralCode}
               />
               {isLookingUpReferral && (
                 <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
                   <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
                 </div>
               )}
+              {referralCode && <p className="text-xs text-gray-400 mt-1 ml-4">Referral code applied: {referralCode}</p>}
             </div>
 
             <div className="relative">
@@ -177,7 +178,9 @@ export function RegisterForm() {
                   setPasswordsMatch(e.target.value === confirmPassword)
                 }
               }}
-              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                !passwordsMatch ? "border border-red-500" : ""
+              }`}
               required
             />
 
@@ -190,7 +193,9 @@ export function RegisterForm() {
                 setConfirmPassword(e.target.value)
                 setPasswordsMatch(password === e.target.value)
               }}
-              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                !passwordsMatch ? "border border-red-500" : ""
+              }`}
               required
             />
 
