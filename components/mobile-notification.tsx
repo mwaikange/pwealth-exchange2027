@@ -1,38 +1,28 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { X } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export function MobileNotification() {
   const [isVisible, setIsVisible] = useState(true)
-  const [hasSeenNotification, setHasSeenNotification] = useState(false)
-
-  useEffect(() => {
-    // Check if user has already seen the notification
-    const hasSeenNotif = localStorage.getItem("hasSeenMobileNotification")
-    if (hasSeenNotif) {
-      setHasSeenNotification(true)
-      setIsVisible(false)
-    }
-  }, [])
-
-  const dismissNotification = () => {
-    setIsVisible(false)
-    // Save to localStorage so we don't show it again
-    localStorage.setItem("hasSeenMobileNotification", "true")
-    setHasSeenNotification(true)
-  }
 
   if (!isVisible) return null
 
   return (
-    <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black p-3 z-50">
-      <div className="flex items-start">
-        <div className="flex-1 text-sm">To experience full features, please login from a Desktop or Laptop device.</div>
-        <button onClick={dismissNotification} className="ml-2 p-1">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+    <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg p-3 mb-4 relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-1 right-1 h-6 w-6 text-yellow-500/70 hover:text-yellow-500 hover:bg-transparent"
+        onClick={() => setIsVisible(false)}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+      <p className="text-yellow-500 text-sm pr-6">
+        Welcome to the mobile version! Some features may be limited. For full functionality, please use the desktop
+        version.
+      </p>
     </div>
   )
 }

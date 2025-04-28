@@ -65,7 +65,8 @@
     "@vercel/postgres": "latest",
     "@supabase/ssr": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
-    "uuid": "latest"
+    "uuid": "latest",
+    "react-hot-toast": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

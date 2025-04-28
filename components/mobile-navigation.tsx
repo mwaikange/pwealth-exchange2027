@@ -1,99 +1,75 @@
 "use client"
 
-import { useState } from "react"
-import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, Clock, DollarSign, BarChart3, Settings, LogOut } from "lucide-react"
+import type React from "react"
 
-export function MobileNavigation() {
-  const pathname = usePathname()
+import { useRouter } from "next/navigation"
+import { X, Home, Wallet, RefreshCw, Users, Settings, LogOut } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+
+interface MobileNavigationProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+export function MobileNavigation({ isOpen, onClose }: MobileNavigationProps) {
   const router = useRouter()
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const supabase = createClientComponentClient()
 
-  const handleLogout = async () => {
-    // Import supabase dynamically to avoid SSR issues
-    const { supabase } = await import("@/lib/supabase-singleton")
+  const handleNavigation = (path: string) => {
+    router.push(path)
+    onClose()
+  }
+
+  const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push("/login")
   }
 
-  const navItems = [
-    {
-      name: "Dashboard",
-      href: "/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      name: "Vesting",
-      href: "/dashboard/vesting",
-      icon: Clock,
-    },
-    {
-      name: "Cashout",
-      href: "/dashboard/cashout",
-      icon: DollarSign,
-    },
-    {
-      name: "Transactions",
-      href: "/dashboard/transactions",
-      icon: BarChart3,
-    },
-    {
-      name: "Settings",
-      href: "/dashboard/settings",
-      icon: Settings,
-    },
-  ]
+  if (!isOpen) return null
 
   return (
-    <>
-      <div className="fixed bottom-0 left-0 right-0 bg-[#1e2130] border-t border-gray-800 flex justify-around items-center h-16 z-50">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href
-          return (
-            <button
-              key={item.name}
-              onClick={() => router.push(item.href)}
-              className={`flex flex-col items-center justify-center w-full h-full ${
-                isActive ? "text-yellow-400" : "text-gray-400"
-              }`}
-            >
-              <item.icon className="h-5 w-5" />
-              <span className="text-[10px] mt-1">{item.name}</span>
-            </button>
-          )
-        })}
-        <button
-          onClick={() => setShowLogoutConfirm(true)}
-          className="flex flex-col items-center justify-center w-full h-full text-gray-400"
-        >
-          <LogOut className="h-5 w-5" />
-          <span className="text-[10px] mt-1">Logout</span>
-        </button>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col">
+      <div className="flex justify-end p-4">
+        <Button variant="ghost" size="icon" className="text-white" onClick={onClose}>
+          <X className="h-6 w-6" />
+        </Button>
       </div>
 
-      {/* Logout confirmation modal */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#2a2d3a] rounded-lg p-5 w-full max-w-xs">
-            <h3 className="text-lg font-medium mb-3">Confirm Logout</h3>
-            <p className="text-sm text-gray-300 mb-4">Are you sure you want to log out?</p>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded text-white text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex-1 py-2 bg-red-600 hover:bg-red-700 rounded text-white text-sm"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+      <div className="flex-1 flex flex-col justify-center px-8 space-y-6">
+        <NavItem icon={<Home />} label="Dashboard" onClick={() => handleNavigation("/dashboard")} />
+        <NavItem icon={<Wallet />} label="Cashout" onClick={() => handleNavigation("/dashboard/cashout")} />
+        <NavItem
+          icon={<RefreshCw />}
+          label="Transactions"
+          onClick={() => handleNavigation("/dashboard/transactions")}
+        />
+        <NavItem icon={<Users />} label="Referrals" onClick={() => handleNavigation("/dashboard/referrals")} />
+        <NavItem icon={<Settings />} label="Settings" onClick={() => handleNavigation("/dashboard/settings")} />
+      </div>
+
+      <div className="p-8">
+        <Button
+          variant="outline"
+          className="w-full border-white/20 text-white hover:bg-white/10"
+          onClick={handleSignOut}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign Out
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function NavItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      className="flex items-center space-x-4 text-white text-xl font-medium hover:text-yellow-400 transition-colors"
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   )
 }
