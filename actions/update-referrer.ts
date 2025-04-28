@@ -1,33 +1,32 @@
 "use server"
 
-import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { revalidatePath } from "next/cache"
+import { createClient } from "@supabase/supabase-js"
+import { env } from "@/lib/env"
 
 export async function updateReferrer(formData: FormData) {
   const referrerEmail = formData.get("referrerEmail") as string
-
-  if (!referrerEmail?.trim()) {
-    return { success: false, message: "Referrer email is required" }
-  }
+  // Get the session token and user ID from the form data
+  const sessionToken = formData.get("sessionToken") as string
+  const userId = formData.get("userId") as string
 
   try {
-    const supabase = createServerSupabaseClient()
+    console.log("Updating referrer for user:", userId)
 
-    // Get the current user
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return { success: false, message: "You must be logged in to update your referrer" }
+    if (!sessionToken || !userId) {
+      console.error("Missing session token or user ID in updateReferrer")
+      return { success: false, message: "Authentication required. Please log in again." }
     }
 
+    if (!referrerEmail?.trim()) {
+      return { success: false, message: "Referrer email is required" }
+    }
+
+    // Create a new Supabase client with the service role key
+    const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+
     // Check if the user already has a referrer
-    const { data: existingReferral } = await supabase
-      .from("referrals")
-      .select("*")
-      .eq("referred_uuid", user.id)
-      .single()
+    const { data: existingReferral } = await supabase.from("referrals").select("*").eq("referred_uuid", userId).single()
 
     if (existingReferral) {
       return { success: false, message: "You already have a referrer and cannot change it" }
@@ -48,7 +47,7 @@ export async function updateReferrer(formData: FormData) {
     const { error: updateError } = await supabase
       .from("app_users")
       .update({ referrer_email: referrerEmail })
-      .eq("user_uuid", user.id)
+      .eq("user_uuid", userId)
 
     if (updateError) {
       throw new Error(updateError.message)
@@ -61,7 +60,7 @@ export async function updateReferrer(formData: FormData) {
         referral_code: referrer.referral_code,
         updated_at: new Date().toISOString(),
       })
-      .eq("user_uuid", user.id)
+      .eq("user_uuid", userId)
 
     if (settingsError) {
       throw new Error(settingsError.message)
@@ -71,7 +70,7 @@ export async function updateReferrer(formData: FormData) {
     const { data: userData } = await supabase
       .from("app_users")
       .select("email, country")
-      .eq("user_uuid", user.id)
+      .eq("user_uuid", userId)
       .single()
 
     if (!userData) {
@@ -81,7 +80,7 @@ export async function updateReferrer(formData: FormData) {
     // Create a new referral record
     const { error: referralError } = await supabase.from("referrals").insert({
       user_uuid: referrer.user_uuid,
-      referred_uuid: user.id,
+      referred_uuid: userId,
       referrer_email: referrerEmail,
       referred_email: userData.email,
       referral_date: new Date().toISOString(),

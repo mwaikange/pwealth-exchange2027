@@ -1,245 +1,530 @@
 "use client"
 
-import type React from "react"
-
+import { useRouter } from "next/navigation"
+import { Copy } from "lucide-react"
 import { useState, useEffect } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { MobileHeader } from "@/components/mobile-header"
-import { MobileNotification } from "@/components/mobile-notification"
-import { useMobileDetectionContext } from "@/contexts/mobile-detection-context"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { updatePassword, updateReferrerEmail } from "@/actions/user-actions"
+import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase-singleton"
+// Import the updateReferrer action
+import { updateReferrer } from "@/actions/update-referrer"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Clipboard, Check, Eye, EyeOff, Loader2 } from "lucide-react"
-import { toast } from "react-hot-toast"
 
-export default function SettingsPage() {
-  const { isMobile } = useMobileDetectionContext()
-  const supabase = createClientComponentClient()
-  const [loading, setLoading] = useState(true)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userReferralCode, setUserReferralCode] = useState<string | null>(null)
-  const [currentPassword, setCurrentPassword] = useState("")
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
-  const [showNewPassword, setShowNewPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [changingPassword, setChangingPassword] = useState(false)
+export default function Settings() {
+  const router = useRouter()
   const [copied, setCopied] = useState(false)
+  const [showCopyNotification, setShowCopyNotification] = useState(false)
+  const [userData, setUserData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
+  const [referrerError, setReferrerError] = useState<string | null>(null)
+  const [referrerSuccess, setReferrerSuccess] = useState<string | null>(null)
+  const { user } = useAuth()
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
 
+  // Get the session token
+  useEffect(() => {
+    async function getSessionToken() {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        setSessionToken(data.session.access_token)
+      }
+    }
+    getSessionToken()
+  }, [])
+
+  // Fetch user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      if (!user) return
 
-      if (user) {
-        setUserEmail(user.email)
+      setLoading(true)
 
-        // Fetch referral code
-        const { data: profileData } = await supabase.from("profiles").select("referral_id").eq("id", user.id).single()
+      try {
+        const { data: userProfile, error } = await supabase
+          .from("app_users")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .single()
 
-        if (profileData) {
-          setUserReferralCode(profileData.referral_id)
+        if (error) {
+          console.error("Error fetching user data:", error)
+          return
         }
-      }
 
-      setLoading(false)
+        // Also fetch referral code
+        const { data: settingsData } = await supabase
+          .from("usersettings")
+          .select("referral_code")
+          .eq("user_uuid", user.id)
+          .single()
+
+        // Check if the user has a referrer by querying the referral_view table
+        const { data: referralViewData } = await supabase
+          .from("referral_view")
+          .select("referred_user_referral_code, referrer_referral_code")
+          .eq("referred_referral_code", settingsData?.referral_code)
+          .single()
+
+        // Determine if user has a referrer based on referred_user_referral_code
+        const hasReferrer = referralViewData?.referred_user_referral_code ? true : false
+        const referrerCode = referralViewData?.referrer_referral_code || null
+
+        // Then merge this with your user data:
+        const userData = {
+          ...userProfile,
+          referral_code: settingsData?.referral_code,
+          hasReferrer: hasReferrer,
+          referrerCode: referrerCode,
+        }
+
+        setUserData(userData)
+      } catch (error) {
+        console.error("Error in fetchUserData:", error)
+      } finally {
+        setLoading(false)
+      }
     }
 
     fetchUserData()
-  }, [supabase])
+  }, [user])
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setShowCopyNotification(true)
+    setTimeout(() => {
+      setCopied(false)
+      setShowCopyNotification(false)
+    }, 2000)
+  }
 
-    if (newPassword !== confirmPassword) {
-      toast.error("New passwords do not match")
-      return
+  async function handlePasswordUpdate(formData: FormData) {
+    setPasswordError(null)
+    setPasswordSuccess(null)
+
+    // Add the session token to the form data
+    if (sessionToken) {
+      formData.append("sessionToken", sessionToken)
+      formData.append("userId", user?.id || "")
     }
 
-    setChangingPassword(true)
+    const result = await updatePassword(formData)
 
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      })
-
-      if (error) throw error
-
-      toast.success("Password updated successfully")
-      setCurrentPassword("")
-      setNewPassword("")
-      setConfirmPassword("")
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update password")
-    } finally {
-      setChangingPassword(false)
+    if (result.success) {
+      setPasswordSuccess(result.message)
+      // Clear form
+      const form = document.getElementById("password-form") as HTMLFormElement
+      if (form) form.reset()
+    } else {
+      setPasswordError(result.message)
     }
   }
 
-  const copyReferralLink = () => {
-    if (userReferralCode) {
-      const referralLink = `${window.location.origin}/ref/${userReferralCode}`
-      navigator.clipboard.writeText(referralLink)
-      setCopied(true)
-      toast.success("Referral link copied to clipboard")
+  async function handleReferrerUpdate(formData: FormData) {
+    setReferrerError(null)
+    setReferrerSuccess(null)
 
-      setTimeout(() => setCopied(false), 3000)
+    // Add the session token to the form data
+    if (sessionToken) {
+      formData.append("sessionToken", sessionToken)
+      formData.append("userId", user?.id || "")
     }
+
+    const result = await updateReferrerEmail(formData)
+
+    if (result.success) {
+      setReferrerSuccess(result.message)
+      // Clear form
+      const form = document.getElementById("referrer-form") as HTMLFormElement
+      if (form) form.reset()
+    } else {
+      setReferrerError(result.message)
+    }
+  }
+
+  // New function to handle the updateReferrer action in the Card component
+  async function handleCardReferrerUpdate(formData: FormData) {
+    // Add the session token to the form data
+    if (sessionToken) {
+      formData.append("sessionToken", sessionToken)
+      formData.append("userId", user?.id || "")
+    }
+
+    return updateReferrer(formData)
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
-        <Loader2 className="h-8 w-8 text-yellow-500 animate-spin" />
+      <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden p-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-gray-400 text-sm">Loading your settings...</p>
+
+        <div className="mt-8 grid grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-[#2a2d3a] rounded-lg p-6 h-80 animate-pulse">
+              <div className="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
+              <div className="h-4 bg-gray-700 rounded w-1/2 mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-full mb-6"></div>
+              <div className="h-10 bg-gray-700 rounded w-full mb-4"></div>
+              <div className="h-10 bg-gray-700 rounded w-full"></div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className={`min-h-screen ${isMobile ? "bg-[url(/background.jpg)] bg-cover bg-center" : "bg-gray-900"}`}>
-      {isMobile ? (
-        <>
-          <MobileHeader email={userEmail} referralCode={userReferralCode} />
+    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
+      {/* Page Title */}
+      <div className="px-6 pt-4 pb-2">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-gray-400 text-sm">Change your Password, Setup MFA and Connect with our Groups</p>
+      </div>
 
-          <div className="p-4 pb-20">
-            <MobileNotification />
+      {/* Settings Grid */}
+      <div className="px-6">
+        <div
+          className="grid gap-5 h-[calc(100vh-200px)]"
+          style={{
+            transform: "scale(0.85)",
+            transformOrigin: "top left",
+            width: "118%", // Compensate for the scale to maintain proper sizing
+            marginTop: "0.5rem",
+            gridTemplateColumns: "1fr 1fr 1fr", // Equal width columns
+          }}
+        >
+          {/* Block 1 (Left): Setup MFA + Change Password */}
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
+            {/* Setup MFA Section */}
+            <div className="mb-6">
+              <h2 className="text-xl font-bold mb-4 text-center">SETUP MFA</h2>
+              <div className="flex justify-center mb-8">
+                <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm">
+                  start
+                </button>
+              </div>
+            </div>
 
-            <Card className="bg-gray-800/70 border-gray-700 mb-4">
-              <CardHeader>
-                <CardTitle className="text-white text-lg">Change Password</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleChangePassword} className="space-y-4">
-                  <div>
-                    <label htmlFor="currentPassword" className="text-white text-sm">
-                      Current Password
-                    </label>
-                    <div className="relative">
-                      <Input
-                        id="currentPassword"
-                        type={showCurrentPassword ? "text" : "password"}
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="bg-gray-700 border-gray-600 text-white"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
-                      >
-                        {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                  </div>
+            {/* Divider */}
+            <div className="border-t border-gray-700 my-4"></div>
 
-                  <div>
-                    <label htmlFor="newPassword" className="text-white text-sm">
-                      New Password
-                    </label>
-                    <div className="relative">
-                      <Input
-                        id="newPassword"
-                        type={showNewPassword ? "text" : "password"}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="bg-gray-700 border-gray-600 text-white"
-                        required
-                        minLength={8}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
-                      >
-                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="confirmPassword" className="text-white text-sm">
-                      Confirm New Password
-                    </label>
-                    <div className="relative">
-                      <Input
-                        id="confirmPassword"
-                        type={showConfirmPassword ? "text" : "password"}
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="bg-gray-700 border-gray-600 text-white"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400"
-                      >
-                        {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    disabled={changingPassword}
-                  >
-                    {changingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : "Change Password"}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gray-800/70 border-gray-700">
-              <CardHeader>
-                <CardTitle className="text-white text-lg">Referral Programme</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-white text-sm">Your Referral ID</label>
-                    <div className="flex items-center mt-1">
-                      <Input
-                        value={userReferralCode ? `RFRL-${userReferralCode}` : "Loading..."}
-                        readOnly
-                        className="bg-gray-700 border-gray-600 text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-white text-sm">Your Referral Link</label>
-                    <div className="flex items-center mt-1">
-                      <Input
-                        value={userReferralCode ? `${window.location.origin}/ref/${userReferralCode}` : "Loading..."}
-                        readOnly
-                        className="bg-gray-700 border-gray-600 text-white"
-                      />
-                      <Button
-                        onClick={copyReferralLink}
-                        className="ml-2 bg-yellow-600 hover:bg-yellow-700 text-white"
-                        disabled={!userReferralCode}
-                      >
-                        {copied ? <Check size={18} /> : <Clipboard size={18} />}
-                      </Button>
-                    </div>
-                  </div>
+            {/* Change Password Section */}
+            <div className="mt-2">
+              <div className="flex justify-between mb-4">
+                <div>
+                  <div className="text-sm text-gray-400">Email :</div>
+                  <div className="text-sm text-gray-400">Country :</div>
                 </div>
-              </CardContent>
-            </Card>
+                <div>
+                  <div className="text-sm text-green-500">{userData?.email || user?.email}</div>
+                  <div className="text-sm text-green-500">{userData?.country || "Not set"}</div>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-medium mb-3">Change Password</h3>
+
+              {passwordError && (
+                <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {passwordError}
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="bg-green-500/20 border border-green-500 text-green-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <form id="password-form" action={handlePasswordUpdate} className="space-y-3 mb-4">
+                <input
+                  type="password"
+                  name="oldPassword"
+                  placeholder="Old Password"
+                  className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
+                  required
+                />
+                <input
+                  type="password"
+                  name="newPassword"
+                  placeholder="New Password"
+                  className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
+                  required
+                />
+
+                <div className="flex-grow"></div>
+
+                <div className="flex justify-center mt-6">
+                  <button
+                    type="submit"
+                    className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </>
-      ) : (
-        // Desktop view (use existing implementation)
-        <div>
-          {/* Your existing desktop settings component */}
-          <h1>Settings (Desktop View)</h1>
+
+          {/* Block 2 (Center): Referral Email Input + Customer Service Agents */}
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
+            {/* Referral Email Input Section */}
+            <div className="mb-6">
+              {referrerError && (
+                <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {referrerError}
+                </div>
+              )}
+
+              {referrerSuccess && (
+                <div className="bg-green-500/20 border border-green-500 text-green-300 px-3 py-2 rounded-md text-xs mb-3">
+                  {referrerSuccess}
+                </div>
+              )}
+
+              <form id="referrer-form" action={handleReferrerUpdate}>
+                {userData?.hasReferrer ? (
+                  <>
+                    <div className="bg-gray-700 p-2 rounded text-center mb-2">
+                      <p className="text-xs text-gray-300">You're Referrer is: {userData?.referrerCode}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2">
+                      **NB once completed this can't be changed for this account
+                    </p>
+                    <div className="flex justify-center mt-4 mb-4">
+                      <button
+                        type="submit"
+                        disabled
+                        className="bg-gray-500 text-gray-300 px-6 py-2 rounded-md text-sm cursor-not-allowed"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      name="referrerEmail"
+                      placeholder="pwt@example.com"
+                      className="w-full p-2 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0 mb-2 text-xs"
+                    />
+                    <p className="text-xs text-gray-400 mb-1">
+                      Paste email address OR REFERRAL CODE of your Referral here.
+                    </p>
+                    <p className="text-xs text-gray-400 mb-2">
+                      **NB once completed this cant be changed for this account
+                    </p>
+                    <div className="flex justify-center mt-4 mb-4">
+                      <button
+                        type="submit"
+                        className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  </>
+                )}
+              </form>
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-gray-700 my-4"></div>
+
+            {/* Customer Service Agents Section */}
+            <div className="mt-2">
+              <h2 className="text-lg font-bold text-center mb-4">Go Like, Follow & Subscribe for Alerts!</h2>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* X (Twitter) */}
+                <div className="flex flex-col items-center">
+                  <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center mb-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-white"
+                    >
+                      <path d="M4 4l11.733 16h4.267l-11.733 -16z"></path>
+                      <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772"></path>
+                    </svg>
+                  </div>
+                  <a
+                    href="https://x.com/peer_wealth?t=Y6CviijA7H_volZEsJVmDQ&s=09"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-100"
+                  >
+                    Follow us on X
+                  </a>
+                </div>
+
+                {/* YouTube */}
+                <div className="flex flex-col items-center">
+                  <div className="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center mb-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="white"
+                      stroke="none"
+                      className="text-white"
+                    >
+                      <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
+                    </svg>
+                  </div>
+                  <a
+                    href="https://www.youtube.com/@PeerWealth"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-100"
+                  >
+                    Watch us on Youtube
+                  </a>
+                </div>
+
+                {/* TikTok */}
+                <div className="flex flex-col items-center">
+                  <div className="w-10 h-10 rounded-full overflow-hidden mb-3">
+                    <img
+                      src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/2_tk.jpg-tbde9UAoBe4IMbD8Rii4XzD8T4C6nw.jpeg"
+                      alt="TikTok"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <a
+                    href="https://www.tiktok.com/@peerwealth?_t=ZM-8vnIxZ6McVD&_r=1"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-100"
+                  >
+                    Find us on Tik Tok
+                  </a>
+                </div>
+
+                {/* WhatsApp */}
+                <div className="flex flex-col items-center">
+                  <div className="w-10 h-10 rounded-full bg-[#34a853] flex items-center justify-center mb-3">
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm0 22c-5.523 0-10-4.477-10-10S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
+                    </svg>
+                  </div>
+                  <a
+                    href="https://www.whatsapp.com/channel/0029Vb6FKcACBtxMB0awaA40"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-100"
+                  >
+                    Join Whatsapp Channel
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Block 3 (Right): Referral Programme (unchanged) */}
+          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
+            <h2 className="text-xl font-bold mb-4 text-center underline">REFERRAL PROGRAMME</h2>
+
+            <div className="space-y-4 flex-1">
+              <p className="text-sm">
+                You can claim 1 x PWT Cashout Token once your referral has completed (claimed) on all vesting schedules
+                on level 1.
+              </p>
+
+              <p className="text-sm">So basically, whenn your referral has unlocked level 2.</p>
+
+              <div className="mt-4">
+                <p className="text-sm mb-2">You can claim here</p>
+                <button
+                  onClick={() => router.push("/dashboard/referrals")}
+                  className="w-full bg-[#d9d9d9] hover:bg-gray-300 text-black py-2 rounded-md text-sm font-medium"
+                >
+                  claim now
+                </button>
+              </div>
+
+              <div className="mt-4 relative">
+                <p className="text-sm mb-2">
+                  This is your referral link - share it on your socials to refer and benefit from the referral
+                  programme:
+                </p>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => copyToClipboard(`www.peer-wealth.com/register?ref=${userData?.referral_code || ""}`)}
+                    className="mr-2 p-1 hover:bg-gray-700 rounded"
+                    title="Copy to clipboard"
+                  >
+                    <Copy size={16} className={copied ? "text-green-500" : "text-gray-400"} />
+                  </button>
+                  <a
+                    href={`https://www.peer-wealth.com/register?ref=${userData?.referral_code || ""}`}
+                    className="text-[#4285f4] text-sm break-all hover:underline cursor-pointer"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    www.peer-wealth.com/register?ref={userData?.referral_code || ""}
+                  </a>
+                  {showCopyNotification && (
+                    <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">
+                      Copied to clipboard!
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-auto pt-10">
+                <p className="text-sm mb-1">This is your Referral Code / ID</p>
+                <p className="text-2xl font-bold">{userData?.referral_code || "Loading..."}</p>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+      {/* Add a new section for updating referrer in the settings page */}
+      {/* Find a suitable location in the settings page and add: */}
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Referrer Information</CardTitle>
+          <CardDescription>Update your referrer if you didn't provide one during registration</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {userData?.hasReferrer ? (
+            <div className="bg-gray-700 p-4 rounded text-center">
+              <p className="text-gray-300">You're Referrer is: {userData?.referrerCode}</p>
+              <p className="text-gray-400 text-sm mt-2">This cannot be changed for this account</p>
+            </div>
+          ) : (
+            <form action={handleCardReferrerUpdate} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="referrerEmail">Referrer Email</Label>
+                <Input
+                  id="referrerEmail"
+                  name="referrerEmail"
+                  type="email"
+                  placeholder="Enter your referrer's email"
+                  defaultValue={userData?.referrer_email || ""}
+                />
+              </div>
+              <Button type="submit">Update Referrer</Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
