@@ -23,28 +23,20 @@ function SubmitButton() {
   )
 }
 
-export function RegisterForm() {
-  const router = useRouter()
+// Create a client component wrapper for the search params functionality
+function ReferralCodeHandler({
+  onReferralFound,
+}: {
+  onReferralFound: (email: string, code: string) => void
+}) {
   const searchParams = useSearchParams()
-  const [referrerEmail, setReferrerEmail] = useState("")
-  const [country, setCountry] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [passwordsMatch, setPasswordsMatch] = useState(true)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isLookingUpReferral, setIsLookingUpReferral] = useState(false)
-  const [referralCode, setReferralCode] = useState<string | null>(null)
+  const [isLookingUp, setIsLookingUp] = useState(false)
 
-  // Check for referral code in URL and look up the referrer's email
   useEffect(() => {
     const ref = searchParams.get("ref")
     if (ref) {
-      setReferralCode(ref)
-      setIsLookingUpReferral(true)
+      setIsLookingUp(true)
 
-      // Look up the referrer's email from the referral code
       fetch(`/api/referral/lookup?code=${ref}`)
         .then((response) => {
           if (!response.ok) {
@@ -54,17 +46,37 @@ export function RegisterForm() {
         })
         .then((data) => {
           if (data.email) {
-            setReferrerEmail(data.email)
+            onReferralFound(data.email, ref)
           }
         })
         .catch((err) => {
           console.error("Error looking up referral code:", err)
         })
         .finally(() => {
-          setIsLookingUpReferral(false)
+          setIsLookingUp(false)
         })
     }
-  }, [searchParams])
+  }, [searchParams, onReferralFound])
+
+  return isLookingUp ? <Loader2 className="animate-spin h-4 w-4 text-gray-400" /> : null
+}
+
+export function RegisterForm() {
+  const router = useRouter()
+  const [referrerEmail, setReferrerEmail] = useState("")
+  const [country, setCountry] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [passwordsMatch, setPasswordsMatch] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [referralCode, setReferralCode] = useState<string | null>(null)
+
+  const handleReferralFound = (email: string, code: string) => {
+    setReferrerEmail(email)
+    setReferralCode(code)
+  }
 
   async function handleSubmit(formData: FormData) {
     // Check if passwords match
@@ -116,6 +128,9 @@ export function RegisterForm() {
         {/* Heading */}
         <h2 className="text-center text-2xl font-medium text-white">Peer-2-Peer Wealth Creation!</h2>
 
+        {/* Referral code handler - this component uses useSearchParams */}
+        <ReferralCodeHandler onReferralFound={handleReferralFound} />
+
         {/* Error message */}
         {error && (
           <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-2 rounded-md text-sm">{error}</div>
@@ -142,14 +157,9 @@ export function RegisterForm() {
                 className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
                   referralCode ? "opacity-80" : ""
                 }`}
-                disabled={!!referralCode || isLookingUpReferral}
+                disabled={!!referralCode}
                 readOnly={!!referralCode}
               />
-              {isLookingUpReferral && (
-                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                  <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
-                </div>
-              )}
               {referralCode && <p className="text-xs text-gray-400 mt-1 ml-4">Referral code applied: {referralCode}</p>}
             </div>
 

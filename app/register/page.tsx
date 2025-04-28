@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { RegisterForm } from "@/components/register-form"
 
 export default function Register() {
@@ -10,7 +11,9 @@ export default function Register() {
       }}
     >
       <div className="w-full max-w-md flex items-center justify-center">
-        <RegisterForm />
+        <Suspense fallback={<div className="p-4 bg-white/80 rounded-lg">Loading registration form...</div>}>
+          <RegisterForm />
+        </Suspense>
       </div>
     </div>
   )
