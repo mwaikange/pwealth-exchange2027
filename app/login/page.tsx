@@ -14,7 +14,6 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [referralCode, setReferralCode] = useState<string | null>(null)
 
   // Check if already logged in
   useEffect(() => {
@@ -42,16 +41,6 @@ export default function Login() {
     redirectIfLoggedIn()
   }, [router])
 
-  useEffect(() => {
-    // Get referral code from URL if present
-    const params = new URLSearchParams(window.location.search)
-    const ref = params.get("ref")
-    if (ref) {
-      setReferralCode(ref)
-      console.log("Referral code detected:", ref)
-    }
-  }, [])
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setIsLoading(true)
@@ -59,11 +48,6 @@ export default function Login() {
 
     try {
       console.log("[CLIENT] Attempting login with email:", email)
-
-      // If we have a referral code, store it in localStorage for later use
-      if (referralCode) {
-        localStorage.setItem("referralCode", referralCode)
-      }
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -180,8 +164,6 @@ export default function Login() {
                 Forgot password?
               </a>
             </div>
-
-            {referralCode && <input type="hidden" name="referralCode" value={referralCode} />}
 
             <button
               type="submit"

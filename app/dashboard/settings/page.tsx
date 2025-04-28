@@ -26,6 +26,9 @@ export default function Settings() {
   const [referrerSuccess, setReferrerSuccess] = useState<string | null>(null)
   const { user } = useAuth()
 
+  // Get the site URL from environment variable
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"
+
   // Fetch user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
@@ -145,6 +148,9 @@ export default function Settings() {
       </div>
     )
   }
+
+  // Construct the referral URL
+  const referralUrl = `${siteUrl}/ref/${userData?.referral_code || ""}`
 
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
@@ -379,19 +385,19 @@ export default function Settings() {
                 </p>
                 <div className="flex items-center">
                   <button
-                    onClick={() => copyToClipboard(`www.peer-wealth.com/ref/${userData?.referral_code || ""}`)}
+                    onClick={() => copyToClipboard(referralUrl)}
                     className="mr-2 p-1 hover:bg-gray-700 rounded"
                     title="Copy to clipboard"
                   >
                     <Copy size={16} className={copied ? "text-green-500" : "text-gray-400"} />
                   </button>
                   <a
-                    href={`/login?ref=${userData?.referral_code || ""}`}
+                    href={referralUrl}
                     className="text-[#4285f4] text-sm break-all hover:underline cursor-pointer"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    www.peer-wealth.com/ref/{userData?.referral_code || ""}
+                    {referralUrl.replace("https://", "")}
                   </a>
                   {showCopyNotification && (
                     <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">
