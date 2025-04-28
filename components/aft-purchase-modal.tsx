@@ -8,7 +8,6 @@ import { v4 as uuidv4 } from "uuid"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
-import Image from "next/image"
 import { getFriendlyErrorMessage } from "@/utils/error-handling"
 
 interface AFTPurchaseModalProps {
@@ -280,8 +279,14 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
 
             <div className="bg-white p-4 rounded-lg w-64 flex flex-col items-center mb-6">
               <div className="mb-2">
-                {/* Using the standard black and white QR code */}
-                <Image src="/telkom-qr-code.png" alt="QR Code for payment" width={200} height={200} priority />
+                {/* Using direct img tag instead of Next.js Image component */}
+                <img
+                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-dv1HKx1lO7KdTR9lpRajqDovCQAckU.png"
+                  alt="QR Code for payment"
+                  width="200"
+                  height="200"
+                  style={{ display: "block", maxWidth: "100%" }}
+                />
               </div>
               <div className="text-black text-lg font-medium">{referenceNumber}</div>
             </div>
