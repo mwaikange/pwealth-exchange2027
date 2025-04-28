@@ -106,7 +106,7 @@ export default function Login() {
       }}
     >
       {showPopup && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-11/12 max-w-md bg-[#2e3137] rounded-xl shadow-lg overflow-hidden z-50 border border-gray-700">
+        <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-11/12 max-w-md bg-[#2e3137] rounded-xl shadow-lg overflow-hidden z-50 border border-gray-700">
           <div className="relative p-5">
             <button
               onClick={() => setShowPopup(false)}
