@@ -30,6 +30,11 @@ export default function Cashout() {
   // Add loading states for transfers
   const [isTransferring, setIsTransferring] = useState(false)
   const [isGifting, setIsGifting] = useState(false)
+  // Add confirmation modal states
+  const [showTransferConfirmation, setShowTransferConfirmation] = useState(false)
+  const [showGiftConfirmation, setShowGiftConfirmation] = useState(false)
+  const [pendingTransferAmount, setPendingTransferAmount] = useState(0)
+  const [pendingGiftAmount, setPendingGiftAmount] = useState(0)
 
   // Get current user from auth context
   const { user } = useAuth()
@@ -179,16 +184,23 @@ export default function Cashout() {
       return
     }
 
-    // If all validations pass, proceed with transfer using the RPC function
+    // Show confirmation modal instead of alert
+    setPendingTransferAmount(tokenAmount)
+    setShowTransferConfirmation(true)
+  }
+
+  // New function to handle the actual transfer after confirmation
+  const processTransfer = async () => {
     try {
       setIsTransferring(true)
+      setShowTransferConfirmation(false)
 
       // Call the transfer_tokens RPC function
       const { data, error } = await supabase.rpc("transfer_tokens", {
         sender_uuid: user?.id,
         recipient_email: emailTransfer,
         token_type: "PWT",
-        amount: tokenAmount,
+        amount: pendingTransferAmount,
         transaction_type: "OUT-TRANSFER",
         description: "OUT-PWT Transfer",
       })
@@ -205,7 +217,7 @@ export default function Cashout() {
       }
 
       // Show success message
-      setTransferSuccess(`Successfully transferred ${tokenAmount} PWT to ${emailTransfer}`)
+      setTransferSuccess(`Successfully transferred ${pendingTransferAmount} PWT to ${emailTransfer}`)
 
       // Clear form after successful transfer
       setPwtTokens("")
@@ -253,16 +265,23 @@ export default function Cashout() {
       return
     }
 
-    // If all validations pass, proceed with gift using the RPC function
+    // Show confirmation modal instead of alert
+    setPendingGiftAmount(usdAmount)
+    setShowGiftConfirmation(true)
+  }
+
+  // New function to handle the actual gift after confirmation
+  const processGift = async () => {
     try {
       setIsGifting(true)
+      setShowGiftConfirmation(false)
 
       // Call the transfer_tokens RPC function
       const { data, error } = await supabase.rpc("transfer_tokens", {
         sender_uuid: user?.id,
         recipient_email: emailGift,
         token_type: "AFT",
-        amount: usdAmount,
+        amount: pendingGiftAmount,
         transaction_type: "OUT-AFT GIFT",
         description: "AFT Gift",
       })
@@ -279,7 +298,7 @@ export default function Cashout() {
       }
 
       // Show success message
-      setGiftSuccess(`Successfully gifted ${usdAmount} AFT to ${emailGift}`)
+      setGiftSuccess(`Successfully gifted ${pendingGiftAmount} AFT to ${emailGift}`)
 
       // Clear form after successful transfer
       setUsdValueGift("")
@@ -459,6 +478,55 @@ export default function Cashout() {
           </div>
         </div>
       </div>
+      {/* Confirmation Modals */}
+      {showTransferConfirmation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#2a2d3a] rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Confirm Transfer</h3>
+            <p className="mb-6">
+              Please ensure that this email - <span className="font-bold text-yellow-300">{emailTransfer}</span> - is
+              the correct email address to which the transfer is being made. This transaction is irreversible.
+            </p>
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => setShowTransferConfirmation(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processTransfer}
+                className="px-4 py-2 bg-[#34a853] hover:bg-green-600 rounded text-white"
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGiftConfirmation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#2a2d3a] rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Confirm Gift</h3>
+            <p className="mb-6">
+              Please ensure that this email - <span className="font-bold text-yellow-300">{emailGift}</span> - is the
+              correct email address to which the gift is being made. This transaction is irreversible.
+            </p>
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => setShowGiftConfirmation(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white"
+              >
+                Cancel
+              </button>
+              <button onClick={processGift} className="px-4 py-2 bg-[#34a853] hover:bg-green-600 rounded text-white">
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

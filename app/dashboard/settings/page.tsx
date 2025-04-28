@@ -385,9 +385,14 @@ export default function Settings() {
                   >
                     <Copy size={16} className={copied ? "text-green-500" : "text-gray-400"} />
                   </button>
-                  <p className="text-[#4285f4] text-sm break-all">
+                  <a
+                    href={`/login?ref=${userData?.referral_code || ""}`}
+                    className="text-[#4285f4] text-sm break-all hover:underline cursor-pointer"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     www.peer-wealth.com/ref/{userData?.referral_code || ""}
-                  </p>
+                  </a>
                   {showCopyNotification && (
                     <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">
                       Copied to clipboard!
