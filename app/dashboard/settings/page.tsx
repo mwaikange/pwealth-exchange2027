@@ -26,9 +26,6 @@ export default function Settings() {
   const [referrerSuccess, setReferrerSuccess] = useState<string | null>(null)
   const { user } = useAuth()
 
-  // Get the site URL from environment variable
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"
-
   // Fetch user data from Supabase
   useEffect(() => {
     async function fetchUserData() {
@@ -149,8 +146,14 @@ export default function Settings() {
     )
   }
 
-  // Construct the referral URL
+  // Get the site URL from environment variable or use default
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"
+
+  // Construct the referral link
   const referralUrl = `${siteUrl}/ref/${userData?.referral_code || ""}`
+
+  // For display purposes, remove the https:// prefix
+  const displayUrl = `www.peer-wealth.com/ref/${userData?.referral_code || ""}`
 
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
@@ -397,7 +400,7 @@ export default function Settings() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {referralUrl.replace("https://", "")}
+                    {displayUrl}
                   </a>
                   {showCopyNotification && (
                     <div className="absolute ml-6 mt-6 bg-green-500 text-white px-2 py-1 rounded text-xs">

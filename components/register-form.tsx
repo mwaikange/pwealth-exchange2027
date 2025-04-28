@@ -1,43 +1,57 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { register } from "@/lib/auth"
-import { CountryCombobox } from "./country-combobox"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2 } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
+import { registerUser } from "@/actions/auth-actions"
+import { useFormStatus } from "react-dom"
+import { useRouter, useSearchParams } from "next/navigation"
+import { CountryCombobox } from "./country-combobox"
+import { Loader2 } from "lucide-react"
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+    >
+      {pending ? "Registering..." : "Register"}
+    </button>
+  )
+}
 
 export function RegisterForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [name, setName] = useState("")
+  const [referrerEmail, setReferrerEmail] = useState("")
+  const [country, setCountry] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [country, setCountry] = useState("")
-  const [referrerEmail, setReferrerEmail] = useState("")
-  const [referralCode, setReferralCode] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [passwordsMatch, setPasswordsMatch] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLookingUpReferral, setIsLookingUpReferral] = useState(false)
+  const [referralCode, setReferralCode] = useState<string | null>(null)
 
-  // Check for referral code in URL
+  // Check for referral code in URL and look up the referrer's email
   useEffect(() => {
     const ref = searchParams.get("ref")
     if (ref) {
       setIsLookingUpReferral(true)
       setReferralCode(ref)
 
-      // Look up the referrer's email from the referral code
+      // Call the API to look up the referrer's email
       fetch(`/api/referral/lookup?code=${ref}`)
-        .then((response) => response.json())
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to look up referral code")
+          }
+          return response.json()
+        })
         .then((data) => {
           if (data.email) {
             setReferrerEmail(data.email)
@@ -52,176 +66,193 @@ export function RegisterForm() {
     }
   }, [searchParams])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!termsAccepted) {
-      setError("You must accept the Terms & Conditions")
-      return
-    }
-
+  async function handleSubmit(formData: FormData) {
+    // Check if passwords match
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
+      setPasswordsMatch(false)
       return
     }
 
-    setIsLoading(true)
-    setError("")
+    setError(null)
+    setIsSubmitting(true)
+
+    // Include country and referrerEmail with the other form values
+    const formDataWithExtras = new FormData()
+    formDataWithExtras.append("email", email)
+    formDataWithExtras.append("password", password)
+    formDataWithExtras.append("country", country) // Use full country name
+    formDataWithExtras.append("referrerEmail", referrerEmail)
 
     try {
-      const user = await register(name, email, password, referrerEmail)
-      if (user) {
-        router.push("/verify-email")
+      const result = await registerUser(formDataWithExtras)
+
+      if (result.success) {
+        // Redirect to verify email page with the email as a query parameter
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+      } else {
+        setError(result.message || "Registration failed. Please try again.")
       }
-    } catch (error: any) {
-      setError(error.message || "Registration failed")
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
-      setIsLoading(false)
+      setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="w-full max-w-md p-8 space-y-8 bg-[#1c1e26] rounded-lg shadow-lg">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">Peer-2-Peer Wealth Creation!</h1>
-      </div>
-
-      {error && <div className="p-3 bg-red-500/20 border border-red-500 text-red-300 rounded-md text-sm">{error}</div>}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="referrerEmail" className="text-gray-300">
-            Referrer's Email Address
-          </Label>
-          <Input
-            id="referrerEmail"
-            type="email"
-            value={referrerEmail}
-            onChange={(e) => setReferrerEmail(e.target.value)}
-            className="bg-[#2a2d3a] border-gray-700 text-white"
-            disabled={!!referralCode}
-            readOnly={!!referralCode}
-          />
-          {isLookingUpReferral && (
-            <div className="text-xs text-gray-400 flex items-center">
-              <Loader2 className="animate-spin h-3 w-3 mr-2" />
-              Looking up referrer...
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="country" className="text-gray-300">
-            Country
-          </Label>
-          <CountryCombobox onSelect={setCountry} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="name" className="text-gray-300">
-            Your Name
-          </Label>
-          <Input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="bg-[#2a2d3a] border-gray-700 text-white"
+    <div className="w-full max-w-md mx-auto rounded-2xl overflow-hidden shadow-lg transform scale-75 origin-center">
+      <div className="bg-[#2e3137] p-6 space-y-4">
+        {/* Logo */}
+        <div className="flex justify-center">
+          <Image
+            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Frame%203491%20%281%29%2013-abVgGwfyDhrdu9TeQuBQhPA6OCXAKz.png"
+            alt="Peer Wealth Token"
+            width={64}
+            height={64}
+            className="rounded-full"
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-gray-300">
-            Your email address
-          </Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="bg-[#2a2d3a] border-gray-700 text-white"
-          />
-        </div>
+        {/* Heading */}
+        <h2 className="text-center text-2xl font-medium text-white">Peer-2-Peer Wealth Creation!</h2>
 
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-gray-300">
-            Password
-          </Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="bg-[#2a2d3a] border-gray-700 text-white"
-          />
-        </div>
+        {/* Error message */}
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-2 rounded-md text-sm">{error}</div>
+        )}
 
-        <div className="space-y-2">
-          <Label htmlFor="confirmPassword" className="text-gray-300">
-            Confirm Password
-          </Label>
-          <Input
-            id="confirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            className="bg-[#2a2d3a] border-gray-700 text-white"
-          />
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="terms"
-            checked={termsAccepted}
-            onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
-          />
-          <label
-            htmlFor="terms"
-            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-300"
-          >
-            I have read and accept the Terms & Conditions
-          </label>
-        </div>
-
-        <Button
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-bold"
+        {/* Form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!isSubmitting) {
+              handleSubmit(new FormData(e.currentTarget))
+            }
+          }}
+          className="space-y-6"
         >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Registering...
-            </>
-          ) : (
-            "Register"
-          )}
-        </Button>
-      </form>
+          <div className="space-y-4">
+            <div className="relative">
+              <input
+                type="email"
+                name="referrerEmail"
+                placeholder="Referrer's Email Address"
+                value={referrerEmail}
+                onChange={(e) => !referralCode && setReferrerEmail(e.target.value)}
+                className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                  referralCode ? "opacity-80" : ""
+                }`}
+                readOnly={!!referralCode}
+                disabled={!!referralCode}
+              />
+              {isLookingUpReferral && (
+                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                  <Loader2 className="animate-spin h-4 w-4 text-gray-400" />
+                </div>
+              )}
+            </div>
 
-      <div className="text-center text-gray-400">OR</div>
+            <div className="relative">
+              <CountryCombobox value={country} onChange={setCountry} placeholder="Country" />
+            </div>
 
-      <div className="flex flex-col space-y-4">
-        <button className="flex items-center justify-center space-x-2 p-2 border border-gray-700 rounded-md hover:bg-gray-800">
-          <Image src="/apple-logo.png" alt="Apple" width={20} height={20} />
-          <span className="text-white">Sign up with Apple</span>
-        </button>
+            <input
+              type="email"
+              name="email"
+              placeholder="Your email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+              required
+            />
 
-        <button className="flex items-center justify-center space-x-2 p-2 border border-gray-700 rounded-md hover:bg-gray-800">
-          <Image src="/google-logo.png" alt="Google" width={20} height={20} />
-          <span className="text-white">Sign up with Google</span>
-        </button>
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (confirmPassword) {
+                  setPasswordsMatch(e.target.value === confirmPassword)
+                }
+              }}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
+              required
+            />
+
+            <input
+              type="password"
+              name="confirmPassword"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value)
+                setPasswordsMatch(password === e.target.value)
+              }}
+              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${!passwordsMatch ? "border border-red-500" : ""}`}
+              required
+            />
+
+            {!passwordsMatch && <p className="text-red-500 text-sm">Passwords do not match</p>}
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="terms"
+              name="terms"
+              required
+              className="rounded border-gray-600 bg-[#3a3d4a] text-[#fff27a] focus:ring-[#fff27a]"
+            />
+            <label htmlFor="terms" className="text-white text-sm">
+              I have read and accept the Terms & Conditions
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors disabled:opacity-70"
+          >
+            {isSubmitting ? "Registering..." : "Register"}
+          </button>
+        </form>
+
+        {/* Divider */}
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-600"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-[#2e3137] text-gray-400">OR</span>
+          </div>
+        </div>
+
+        {/* Social Login */}
+        <div className="flex justify-center gap-4">
+          <button className="flex items-center justify-center py-2.5 px-5 bg-[#1c1e26] rounded-full text-white text-xs border border-gray-700 hover:bg-[#2a2d3a] transition-colors whitespace-nowrap">
+            <Image src="/apple-logo.png" alt="Apple logo" width={20} height={20} className="mr-2" />
+            Sign up with Apple
+          </button>
+          <button className="flex items-center justify-center py-2.5 px-5 bg-[#1c1e26] rounded-full text-white text-xs border border-gray-700 hover:bg-[#2a2d3a] transition-colors whitespace-nowrap">
+            <Image src="/google-logo.png" alt="Google logo" width={20} height={20} className="mr-2" />
+            Sign up with Google
+          </button>
+        </div>
+
+        {/* Sign in Link */}
+        <div className="text-center">
+          <p className="text-sm text-gray-300">Already a Member - Sign in?</p>
+        </div>
       </div>
 
-      <div className="text-center">
-        <a href="/login" className="text-blue-400 hover:underline">
-          Already a Member - Sign in?
-        </a>
-      </div>
+      {/* Sign in Button */}
+      <Link href="/login" className="block">
+        <button className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 text-black font-medium transition-colors">
+          Sign In
+        </button>
+      </Link>
     </div>
   )
 }
