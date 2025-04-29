@@ -269,8 +269,8 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
         if (schedule.invested && schedule.startTime && !schedule.claimed) {
           const elapsedTime = Date.now() - schedule.startTime
-          // For testing: 10 minutes to reach 100%
-          const totalTime = 10 * 60 * 1000
+          // For live: 5 days to reach 100%
+          const totalTime = 5 * 24 * 60 * 60 * 1000
           const newProgress = Math.min(100, Math.floor((elapsedTime / totalTime) * 100))
 
           if (newProgress !== schedule.progress) {
@@ -315,7 +315,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
-    }, 1000) // Check every second
+    }, 60000) // Check every minute instead of every second for production
 
     return () => clearInterval(interval)
   }, [loading, vestingSchedules, user, sessionChecked])

@@ -131,10 +131,20 @@ export default function Login() {
 
             <div className="text-center text-white">
               <p className="mb-3">
-                Please take note we are in Soft Launch Phase and this is currently a desktop application that works
-                seamlessly on laptop & tablet devices.
+                Please note: We are currently in the Soft Launch Phase and the platform is available as a desktop
+                application, working seamlessly on laptop and tablet devices.
               </p>
-              <p className="mb-4">Would You like to Visit the Home Page for more info First?</p>
+              <p className="mb-3">
+                As an Early Adopter, you don't need to pay anything to begin until the 15 May 2025.
+              </p>
+              <p className="mb-3">
+                Simply sign up, and once you receive your tokens, invest them. After 5 days, you can sell your tokens to
+                earn approximately R2000.
+              </p>
+              <p className="mb-4">
+                For more information, click on "How it Works" next to the Privacy Policy on the Home Page.
+              </p>
+              <p className="mb-4">Would you like to visit the Home Page to learn more?</p>
 
               <a
                 href="https://peer-wealth.vercel.app/"
@@ -204,9 +214,9 @@ export default function Login() {
                 </label>
               </div>
 
-              <a href="#" className="text-sm text-gray-300 hover:text-white">
+              <Link href="/forgot-password" className="text-sm text-gray-300 hover:text-white">
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <button

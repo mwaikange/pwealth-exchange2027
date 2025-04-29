@@ -61,6 +61,18 @@ function ReferralCodeHandler({
   return isLookingUp ? <Loader2 className="animate-spin h-4 w-4 text-gray-400" /> : null
 }
 
+// Email validation function
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
+}
+
+// Password validation function
+function isValidPassword(password: string): boolean {
+  // At least 8 characters, with at least one letter and one number
+  return password.length >= 8 && /[A-Za-z]/.test(password) && /[0-9]/.test(password)
+}
+
 export function RegisterForm() {
   const router = useRouter()
   const [referrerEmail, setReferrerEmail] = useState("")
@@ -72,30 +84,101 @@ export function RegisterForm() {
   const [passwordsMatch, setPasswordsMatch] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [referralCode, setReferralCode] = useState<string | null>(null)
+  const [countryError, setCountryError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [termsError, setTermsError] = useState<string | null>(null)
 
   const handleReferralFound = (email: string, code: string) => {
     setReferrerEmail(email)
     setReferralCode(code)
   }
 
+  // Validate email when it changes
+  useEffect(() => {
+    if (email && !isValidEmail(email)) {
+      setEmailError("Please enter a valid email address")
+    } else {
+      setEmailError(null)
+    }
+  }, [email])
+
+  // Validate password when it changes
+  useEffect(() => {
+    if (password && !isValidPassword(password)) {
+      setPasswordError("Password must be at least 8 characters with at least one letter and one number")
+    } else {
+      setPasswordError(null)
+    }
+  }, [password])
+
+  // Check if passwords match when either changes
+  useEffect(() => {
+    if (password && confirmPassword) {
+      setPasswordsMatch(password === confirmPassword)
+    }
+  }, [password, confirmPassword])
+
   async function handleSubmit(formData: FormData) {
+    // Reset all errors
+    setError(null)
+    setCountryError(null)
+    setEmailError(null)
+    setPasswordError(null)
+    setTermsError(null)
+
+    // Validate email
+    if (!email || !isValidEmail(email)) {
+      setEmailError("Please enter a valid email address")
+      return
+    }
+
+    // Validate password
+    if (!password || !isValidPassword(password)) {
+      setPasswordError("Password must be at least 8 characters with at least one letter and one number")
+      return
+    }
+
     // Check if passwords match
     if (password !== confirmPassword) {
       setPasswordsMatch(false)
       return
     }
 
-    setError(null)
+    // Check if country is selected
+    if (!country) {
+      setCountryError("Please select your country")
+      return
+    }
+
+    // Check if terms are accepted
+    if (!termsAccepted) {
+      setTermsError("You must accept the Terms & Conditions")
+      return
+    }
+
     setIsSubmitting(true)
 
-    // Include country and referrerEmail with the other form values
-    const formDataWithExtras = new FormData()
-    formDataWithExtras.append("email", email)
-    formDataWithExtras.append("password", password)
-    formDataWithExtras.append("country", country) // Use full country name
-    formDataWithExtras.append("referrerEmail", referrerEmail)
-
     try {
+      // Include country and referrerEmail with the other form values
+      const formDataWithExtras = new FormData()
+      formDataWithExtras.append("email", email)
+      formDataWithExtras.append("password", password)
+      formDataWithExtras.append("country", country) // Country is required
+
+      // Only include referrerEmail if it's provided
+      if (referrerEmail) {
+        formDataWithExtras.append("referrerEmail", referrerEmail)
+      }
+
+      console.log("Submitting registration with data:", {
+        email,
+        country,
+        referrerEmail: referrerEmail || "None provided",
+        passwordLength: password.length,
+      })
+
       const result = await registerUser(formDataWithExtras)
 
       if (result.success) {
@@ -105,6 +188,7 @@ export function RegisterForm() {
         setError(result.message || "Registration failed. Please try again.")
       }
     } catch (err: any) {
+      console.error("Registration error:", err)
       setError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
       setIsSubmitting(false)
@@ -151,7 +235,7 @@ export function RegisterForm() {
               <input
                 type="email"
                 name="referrerEmail"
-                placeholder="Referrer's Email Address"
+                placeholder="Referrer's Email Address (Optional)"
                 value={referrerEmail}
                 onChange={(e) => setReferrerEmail(e.target.value)}
                 className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
@@ -164,52 +248,56 @@ export function RegisterForm() {
             </div>
 
             <div className="relative">
-              <CountryCombobox value={country} onChange={setCountry} placeholder="Country" />
+              <CountryCombobox value={country} onChange={setCountry} placeholder="Country" required={true} />
+              {countryError && <p className="text-red-500 text-xs mt-1 ml-4">{countryError}</p>}
             </div>
 
-            <input
-              type="email"
-              name="email"
-              placeholder="Your email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
-              required
-            />
+            <div className="relative">
+              <input
+                type="email"
+                name="email"
+                placeholder="Your email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                  emailError ? "border border-red-500" : ""
+                }`}
+                required
+              />
+              {emailError && <p className="text-red-500 text-xs mt-1 ml-4">{emailError}</p>}
+            </div>
 
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value)
-                if (confirmPassword) {
-                  setPasswordsMatch(e.target.value === confirmPassword)
-                }
-              }}
-              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
-                !passwordsMatch ? "border border-red-500" : ""
-              }`}
-              required
-            />
+            <div className="relative">
+              <input
+                type="password"
+                name="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                  passwordError ? "border border-red-500" : ""
+                }`}
+                required
+              />
+              {passwordError && <p className="text-red-500 text-xs mt-1 ml-4">{passwordError}</p>}
+            </div>
 
-            <input
-              type="password"
-              name="confirmPassword"
-              placeholder="Confirm Password"
-              value={confirmPassword}
-              onChange={(e) => {
-                setConfirmPassword(e.target.value)
-                setPasswordsMatch(password === e.target.value)
-              }}
-              className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
-                !passwordsMatch ? "border border-red-500" : ""
-              }`}
-              required
-            />
-
-            {!passwordsMatch && <p className="text-red-500 text-sm">Passwords do not match</p>}
+            <div className="relative">
+              <input
+                type="password"
+                name="confirmPassword"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={`w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none ${
+                  !passwordsMatch && confirmPassword ? "border border-red-500" : ""
+                }`}
+                required
+              />
+              {!passwordsMatch && confirmPassword && (
+                <p className="text-red-500 text-xs mt-1 ml-4">Passwords do not match</p>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -217,13 +305,16 @@ export function RegisterForm() {
               type="checkbox"
               id="terms"
               name="terms"
-              required
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
               className="rounded border-gray-600 bg-[#3a3d4a] text-[#fff27a] focus:ring-[#fff27a]"
+              required
             />
             <label htmlFor="terms" className="text-white text-sm">
               I have read and accept the Terms & Conditions
             </label>
           </div>
+          {termsError && <p className="text-red-500 text-xs">{termsError}</p>}
 
           <button
             type="submit"

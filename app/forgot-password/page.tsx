@@ -5,62 +5,34 @@ import type React from "react"
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { supabase } from "@/lib/supabase-singleton"
 
-export default function ResendVerification() {
+export default function ForgotPassword() {
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  async function handleResendVerification(e: React.FormEvent) {
+  async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault()
     setIsLoading(true)
     setMessage(null)
 
     try {
-      // Call our resend verification API
-      const response = await fetch("/api/auth/resend-verification", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"}/reset-password`,
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        // Success messages (200 OK)
-        if (data.message.includes("already confirmed")) {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-        } else {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-          setEmail("")
-        }
-      } else if (response.status === 404) {
-        // User not found (404)
-        setMessage({
-          type: "error",
-          text: data.message,
-        })
+      if (error) {
+        setMessage({ type: "error", text: error.message })
       } else {
-        // Other errors
         setMessage({
-          type: "error",
-          text: data.message || "An unexpected error occurred",
+          type: "success",
+          text: "Password reset email sent! Please check your inbox.",
         })
+        setEmail("")
       }
     } catch (err: any) {
-      console.error("Unexpected error:", err)
-      setMessage({
-        type: "error",
-        text: err.message || "An unexpected error occurred",
-      })
+      setMessage({ type: "error", text: err.message || "An unexpected error occurred" })
     } finally {
       setIsLoading(false)
     }
@@ -88,9 +60,9 @@ export default function ResendVerification() {
           </div>
 
           {/* Heading */}
-          <h2 className="text-center text-2xl font-medium text-white">Resend Verification Email</h2>
+          <h2 className="text-center text-2xl font-medium text-white">Reset Your Password</h2>
           <p className="text-center text-sm text-gray-300">
-            Enter your email address below to receive a new verification link.
+            Enter your email address below to receive a password reset link.
           </p>
 
           {/* Message */}
@@ -103,25 +75,11 @@ export default function ResendVerification() {
               } px-4 py-2 rounded-md text-sm border`}
             >
               {message.text}
-              {message.text === "User does not exist. Register now." && (
-                <div className="mt-2">
-                  <Link href="/register" className="text-blue-300 hover:text-blue-200 underline">
-                    Register here
-                  </Link>
-                </div>
-              )}
-              {message.text === "Email already confirmed. Login now." && (
-                <div className="mt-2">
-                  <Link href="/login" className="text-blue-300 hover:text-blue-200 underline">
-                    Login here
-                  </Link>
-                </div>
-              )}
             </div>
           )}
 
           {/* Form */}
-          <form onSubmit={handleResendVerification} className="space-y-6">
+          <form onSubmit={handleResetPassword} className="space-y-6">
             <div className="space-y-4">
               <input
                 type="email"
@@ -138,7 +96,7 @@ export default function ResendVerification() {
               disabled={isLoading}
               className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
             >
-              {isLoading ? "Sending..." : "Resend Verification"}
+              {isLoading ? "Sending..." : "Reset Password"}
             </button>
           </form>
 

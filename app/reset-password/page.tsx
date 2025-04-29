@@ -2,65 +2,68 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
+import { supabase } from "@/lib/supabase-singleton"
 
-export default function ResendVerification() {
-  const [email, setEmail] = useState("")
+export default function ResetPassword() {
+  const router = useRouter()
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  async function handleResendVerification(e: React.FormEvent) {
+  // Check if user is authenticated with a recovery token
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        setMessage({
+          type: "error",
+          text: "Invalid or expired password reset link. Please request a new one.",
+        })
+      }
+    }
+
+    checkSession()
+  }, [])
+
+  async function handlePasswordReset(e: React.FormEvent) {
     e.preventDefault()
+
+    if (password !== confirmPassword) {
+      setMessage({ type: "error", text: "Passwords do not match" })
+      return
+    }
+
+    if (password.length < 8) {
+      setMessage({ type: "error", text: "Password must be at least 8 characters long" })
+      return
+    }
+
     setIsLoading(true)
     setMessage(null)
 
     try {
-      // Call our resend verification API
-      const response = await fetch("/api/auth/resend-verification", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      })
+      const { error } = await supabase.auth.updateUser({ password })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        // Success messages (200 OK)
-        if (data.message.includes("already confirmed")) {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-        } else {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-          setEmail("")
-        }
-      } else if (response.status === 404) {
-        // User not found (404)
-        setMessage({
-          type: "error",
-          text: data.message,
-        })
+      if (error) {
+        setMessage({ type: "error", text: error.message })
       } else {
-        // Other errors
         setMessage({
-          type: "error",
-          text: data.message || "An unexpected error occurred",
+          type: "success",
+          text: "Password updated successfully! Redirecting to login...",
         })
+
+        // Redirect to login after 2 seconds
+        setTimeout(() => {
+          router.push("/login")
+        }, 2000)
       }
     } catch (err: any) {
-      console.error("Unexpected error:", err)
-      setMessage({
-        type: "error",
-        text: err.message || "An unexpected error occurred",
-      })
+      setMessage({ type: "error", text: err.message || "An unexpected error occurred" })
     } finally {
       setIsLoading(false)
     }
@@ -88,10 +91,8 @@ export default function ResendVerification() {
           </div>
 
           {/* Heading */}
-          <h2 className="text-center text-2xl font-medium text-white">Resend Verification Email</h2>
-          <p className="text-center text-sm text-gray-300">
-            Enter your email address below to receive a new verification link.
-          </p>
+          <h2 className="text-center text-2xl font-medium text-white">Create New Password</h2>
+          <p className="text-center text-sm text-gray-300">Enter your new password below.</p>
 
           {/* Message */}
           {message && (
@@ -103,33 +104,30 @@ export default function ResendVerification() {
               } px-4 py-2 rounded-md text-sm border`}
             >
               {message.text}
-              {message.text === "User does not exist. Register now." && (
-                <div className="mt-2">
-                  <Link href="/register" className="text-blue-300 hover:text-blue-200 underline">
-                    Register here
-                  </Link>
-                </div>
-              )}
-              {message.text === "Email already confirmed. Login now." && (
-                <div className="mt-2">
-                  <Link href="/login" className="text-blue-300 hover:text-blue-200 underline">
-                    Login here
-                  </Link>
-                </div>
-              )}
             </div>
           )}
 
           {/* Form */}
-          <form onSubmit={handleResendVerification} className="space-y-6">
+          <form onSubmit={handlePasswordReset} className="space-y-6">
             <div className="space-y-4">
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your email address"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="New password"
                 className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
                 required
+                minLength={8}
+              />
+
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+                required
+                minLength={8}
               />
             </div>
 
@@ -138,7 +136,7 @@ export default function ResendVerification() {
               disabled={isLoading}
               className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
             >
-              {isLoading ? "Sending..." : "Resend Verification"}
+              {isLoading ? "Updating..." : "Update Password"}
             </button>
           </form>
 

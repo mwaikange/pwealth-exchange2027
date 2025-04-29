@@ -92,7 +92,11 @@ export default function Cashout() {
       }
 
       // Check in app_users table for confirmed users
-      const { data, error } = await supabase.from("app_users").select("email").eq("email", email).single()
+      const { data, error } = await supabase
+        .from("app_users")
+        .select("email")
+        .eq("email", email.trim().toLowerCase())
+        .maybeSingle() // Use maybeSingle instead of single to avoid errors
 
       if (error) {
         console.error("Error checking app user:", error)
@@ -107,50 +111,86 @@ export default function Cashout() {
   }
 
   // Handle transfer email change with validation
-  const handleTransferEmailChange = async (email: string) => {
+  const handleTransferEmailChange = (email: string) => {
     setEmailTransfer(email)
-    setTransferError("")
-    setTransferSuccess("")
-    setIsTransferEmailValid(false)
+    // Clear messages when user starts typing
+    if (transferError) setTransferError("")
+    if (transferSuccess) setTransferSuccess("")
+  }
 
-    if (email && email.includes("@")) {
+  // New function to handle blur event for transfer email
+  const handleTransferEmailBlur = async () => {
+    // Only validate if there's an email and it looks like a valid email format
+    if (emailTransfer && emailTransfer.includes("@")) {
       setIsCheckingTransferEmail(true)
-      const { exists, isOwnEmail } = await checkEmailExists(email)
-      setIsCheckingTransferEmail(false)
+      setIsTransferEmailValid(false)
 
-      if (isOwnEmail) {
-        setTransferError("You cannot transfer to your own account")
-        return
-      }
+      try {
+        const { exists, isOwnEmail } = await checkEmailExists(emailTransfer)
 
-      setIsTransferEmailValid(exists)
-      if (!exists) {
-        setTransferError("Recipient not found or email not confirmed")
+        if (isOwnEmail) {
+          setTransferError("You cannot transfer to your own account")
+          setIsTransferEmailValid(false)
+        } else if (!exists) {
+          setTransferError("Recipient not found or email not confirmed")
+          setIsTransferEmailValid(false)
+        } else {
+          setIsTransferEmailValid(true)
+          setTransferError("")
+        }
+      } catch (error) {
+        console.error("Error checking email:", error)
+        setTransferError("Error validating email. Please try again.")
+        setIsTransferEmailValid(false)
+      } finally {
+        setIsCheckingTransferEmail(false)
       }
+    } else if (emailTransfer) {
+      // If there's text but not a valid email format
+      setTransferError("Please enter a valid email address")
+      setIsTransferEmailValid(false)
     }
   }
 
   // Handle gift email change with validation
-  const handleGiftEmailChange = async (email: string) => {
+  const handleGiftEmailChange = (email: string) => {
     setEmailGift(email)
-    setGiftError("")
-    setGiftSuccess("")
-    setIsGiftEmailValid(false)
+    // Clear messages when user starts typing
+    if (giftError) setGiftError("")
+    if (giftSuccess) setGiftSuccess("")
+  }
 
-    if (email && email.includes("@")) {
+  // New function to handle blur event for gift email
+  const handleGiftEmailBlur = async () => {
+    // Only validate if there's an email and it looks like a valid email format
+    if (emailGift && emailGift.includes("@")) {
       setIsCheckingGiftEmail(true)
-      const { exists, isOwnEmail } = await checkEmailExists(email)
-      setIsCheckingGiftEmail(false)
+      setIsGiftEmailValid(false)
 
-      if (isOwnEmail) {
-        setGiftError("You cannot gift to your own account")
-        return
-      }
+      try {
+        const { exists, isOwnEmail } = await checkEmailExists(emailGift)
 
-      setIsGiftEmailValid(exists)
-      if (!exists) {
-        setGiftError("Recipient not found or email not confirmed")
+        if (isOwnEmail) {
+          setGiftError("You cannot gift to your own account")
+          setIsGiftEmailValid(false)
+        } else if (!exists) {
+          setGiftError("Recipient not found or email not confirmed")
+          setIsGiftEmailValid(false)
+        } else {
+          setIsGiftEmailValid(true)
+          setGiftError("")
+        }
+      } catch (error) {
+        console.error("Error checking email:", error)
+        setGiftError("Error validating email. Please try again.")
+        setIsGiftEmailValid(false)
+      } finally {
+        setIsCheckingGiftEmail(false)
       }
+    } else if (emailGift) {
+      // If there's text but not a valid email format
+      setGiftError("Please enter a valid email address")
+      setIsGiftEmailValid(false)
     }
   }
 
@@ -342,6 +382,7 @@ export default function Cashout() {
                   type="text"
                   value={emailTransfer}
                   onChange={(e) => handleTransferEmailChange(e.target.value)}
+                  onBlur={handleTransferEmailBlur}
                   placeholder="enter the email of receiving party"
                   className={`w-full p-2 rounded ${
                     isTransferEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"
@@ -418,6 +459,7 @@ export default function Cashout() {
                   type="text"
                   value={emailGift}
                   onChange={(e) => handleGiftEmailChange(e.target.value)}
+                  onBlur={handleGiftEmailBlur}
                   placeholder="enter the email of the recieving party"
                   className={`w-full p-2 rounded ${
                     isGiftEmailValid ? "bg-green-100 text-green-800" : "bg-[#f5f5f5] text-black"

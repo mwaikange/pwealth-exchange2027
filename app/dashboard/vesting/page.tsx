@@ -259,8 +259,8 @@ export default function Vesting() {
   const formatMaturityDate = (startTime) => {
     if (!startTime) return "Not set | Not Set"
 
-    // Add 10 minutes (for testing)
-    const maturityTime = new Date(startTime + 10 * 60 * 1000)
+    // Add 5 days (for live production)
+    const maturityTime = new Date(startTime + 5 * 24 * 60 * 60 * 1000)
 
     // Format as DD/MM/YYYY | HH:MM:SS am/pm
     const day = maturityTime.getDate().toString().padStart(2, "0")
@@ -395,9 +395,8 @@ export default function Vesting() {
                     </div>
 
                     <div className="text-[10px] text-gray-300 mt-0.5">
-                      Earn {getCircleNumber()} PWT tokens every 2 minutes for 10 minutes | Claim anytime | Premature
-                      claims end vesting schedule | Vesting Schedule Activation Fee is {getActivationCost()} USD in AFT
-                      Tokens
+                      Earn {getCircleNumber()} PWT tokens every 24 hours for 5 days | Claim anytime | Premature claims
+                      end vesting schedule | Vesting Schedule Activation Fee is {getActivationCost()} USD in AFT Tokens
                     </div>
                   </div>
 
