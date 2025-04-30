@@ -16,6 +16,7 @@ export function SlidingNotification() {
   const [isLoading, setIsLoading] = useState(true)
   const [isVisible, setIsVisible] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
 
   // Fetch notifications from the API
   useEffect(() => {
@@ -31,12 +32,13 @@ export function SlidingNotification() {
         const data = await response.json()
 
         if (Array.isArray(data) && data.length > 0) {
-          console.log(`Received ${data.length} active notifications`)
+          console.log(`Received ${data.length} active notifications at ${new Date().toLocaleTimeString()}`)
           setNotifications(data)
         } else {
-          console.log("No active notifications found")
+          console.log(`No active notifications found at ${new Date().toLocaleTimeString()}`)
           setNotifications([])
         }
+        setLastUpdated(new Date())
       } catch (err) {
         console.error("Error fetching notifications:", err)
         setError(err instanceof Error ? err : new Error(String(err)))
@@ -46,10 +48,13 @@ export function SlidingNotification() {
       }
     }
 
+    // Initial fetch
     fetchNotifications()
 
-    // Refresh notifications every 5 minutes
-    const refreshInterval = setInterval(fetchNotifications, 5 * 60 * 1000)
+    // Refresh notifications every 3 minutes (changed from 5 minutes)
+    const refreshInterval = setInterval(fetchNotifications, 3 * 60 * 1000)
+
+    // Cleanup interval on unmount
     return () => clearInterval(refreshInterval)
   }, [])
 
