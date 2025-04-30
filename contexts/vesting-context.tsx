@@ -521,14 +521,20 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       // Update wallet balance
       await updatePwtInvestBalance(investmentCost, "subtract")
 
-      // Add transaction
-      await addTransaction({
-        type: "VESTING",
-        account: "PWT Invest",
-        amount: investmentCost,
-        amountUsd: investmentCost * 10,
-        description: `VESTING - ${scheduleId}`,
-      })
+      // Add transaction - Ensure this is properly recorded
+      try {
+        await addTransaction({
+          type: "VESTING",
+          account: "PWT Invest",
+          amount: investmentCost,
+          amountUsd: investmentCost * 10,
+          description: `Vesting investment for Schedule ${scheduleId}`,
+        })
+        console.log("Vesting transaction recorded successfully")
+      } catch (transactionError) {
+        console.error("Error recording vesting transaction:", transactionError)
+        // Don't throw here as the investment was successful, but log the error
+      }
     } catch (error) {
       console.error("Error investing in schedule:", error)
       throw error // Re-throw the error so it can be caught by the UI
@@ -613,16 +619,23 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       // Update wallet balance
       await updatePwtCashoutBalance(netReward, "add")
 
-      // Add transaction
-      await addTransaction({
-        type: "CLAIM",
-        account: "PWT Cashout",
-        amount: netReward,
-        amountUsd: netReward * 10,
-        description: `CLAIM - ${scheduleId}`,
-      })
+      // Add transaction - Ensure this is properly recorded
+      try {
+        await addTransaction({
+          type: "CLAIM",
+          account: "PWT Cashout",
+          amount: netReward,
+          amountUsd: netReward * 10,
+          description: `Claim from Schedule ${scheduleId} (${isPremature ? "Premature" : "Mature"})`,
+        })
+        console.log("Claim transaction recorded successfully")
+      } catch (transactionError) {
+        console.error("Error recording claim transaction:", transactionError)
+        // Don't throw here as the claim was successful, but log the error
+      }
     } catch (error) {
       console.error("Error claiming schedule:", error)
+      throw error // Re-throw the error so it can be caught by the UI
     }
   }
 

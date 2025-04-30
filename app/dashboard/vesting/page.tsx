@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
+import { useTransactions } from "@/contexts/transaction-context" // Import useTransactions directly
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
@@ -19,7 +20,13 @@ export default function Vesting() {
   // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
 
-  const { pwtInvestBalance, aftBalance, updateAftBalance, addTransaction } = useWallet()
+  // Get wallet functions
+  const { pwtInvestBalance, aftBalance, updateAftBalance } = useWallet()
+
+  // Get transaction functions directly from the transaction context
+  const { addTransaction } = useTransactions()
+
+  // Get vesting functions
   const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
 
   // Clear messages after 5 seconds
@@ -131,7 +138,7 @@ export default function Vesting() {
     setShowActivateConfirmation(true)
   }
 
-  // Update the confirmActivate function to use the processing state
+  // Update the confirmActivate function to ensure the transaction is properly recorded
   const confirmActivate = async () => {
     if (pendingScheduleId) {
       try {
@@ -157,22 +164,24 @@ export default function Vesting() {
           return
         }
 
+        // Record the transaction - IMPORTANT: This must execute successfully
         try {
-          // Check if addTransaction exists and is a function before calling it
+          // Make sure addTransaction is a function before calling it
           if (typeof addTransaction === "function") {
             await addTransaction({
               type: "ACTIVATE FEE",
               account: "AFT Wallet",
               amount: cost,
               amountUsd: cost,
-              description: `ACTIVATE FEE -${pendingScheduleId}`,
+              description: `Activation Fee for Schedule ${pendingScheduleId}`,
             })
-            console.log("Transaction recorded successfully")
+            console.log("Activation fee transaction recorded successfully")
           } else {
-            console.warn("addTransaction is not a function:", typeof addTransaction)
+            console.error("addTransaction is not a function or is undefined")
+            // Don't show an error to the user since the activation and balance update succeeded
           }
         } catch (transactionError) {
-          console.error("Error recording transaction:", transactionError)
+          console.error("Error recording activation fee transaction:", transactionError)
           // Don't show an error to the user since the activation and balance update succeeded
         }
 

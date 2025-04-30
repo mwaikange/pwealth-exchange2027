@@ -7,6 +7,7 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useState, useEffect } from "react"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
+import { SlidingNotification } from "./sliding-notification"
 
 // Add the import for the Supabase client and useRouter
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
@@ -177,6 +178,9 @@ export function DashboardHeader() {
           </button>
         </div>
       </header>
+
+      {/* Sliding Notification */}
+      <SlidingNotification />
 
       {/* AFT Purchase Modal */}
       <AFTPurchaseModal isOpen={showAFTModal} onClose={() => setShowAFTModal(false)} />

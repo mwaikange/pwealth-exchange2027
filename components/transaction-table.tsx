@@ -43,6 +43,23 @@ export function TransactionTable({
     if (type === "AFT Gift" || type === "OUT-AFT GIFT") return "OUT-AFT GIFT"
     if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return "OUT-PWT Transfer"
 
+    // Handle ACTIVATE FEE with level information
+    if (type === "ACTIVATE FEE") {
+      // Try to extract level number and letter from description or reference
+      const levelMatch =
+        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
+        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
+
+      if (levelMatch) {
+        const levelNumber = levelMatch[1] || "2"
+        const levelLetter = levelMatch[2] || "A"
+        return `ACTIVATE FEE - LEVEL${levelNumber}-${levelLetter}`
+      }
+
+      // Default if no match found
+      return "ACTIVATE FEE - LEVEL2-A"
+    }
+
     if (typeof type === "string" && type.startsWith("REFERRAL CLAIM")) {
       if (type.includes("Level 1")) return "REFERRAL CLAIM-LvL1"
       if (type.includes("Level 2")) return "REFERRAL CLAIM-LvL2"
@@ -102,6 +119,14 @@ export function TransactionTable({
     }
   }
 
+  // Helper function to check if a transaction is AFT-related
+  const isAftTransaction = (transaction: Transaction): boolean => {
+    const type = transaction.type || transaction.transaction_type || ""
+    return (
+      type.includes("AFT") || type === "ACTIVATE FEE" || (transaction.account && transaction.account.includes("AFT"))
+    )
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
@@ -136,7 +161,9 @@ export function TransactionTable({
                       : transaction.recipient || "-"}
                   </td>
                 )}
-                <td className="py-[6px] px-4 text-[10px]">{transaction.amount} PWT</td>
+                <td className="py-[6px] px-4 text-[10px]">
+                  {transaction.amount} {isAftTransaction(transaction) ? "AFT" : "PWT"}
+                </td>
                 <td className="py-[6px] px-4 text-[10px]">{transaction.amountUsd} USD</td>
               </tr>
             )

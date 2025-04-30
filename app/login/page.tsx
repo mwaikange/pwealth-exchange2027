@@ -264,7 +264,7 @@ export default function Login() {
         </div>
 
         {/* Register Buttons */}
-        <Link href="https://peerwealth.vercel.app/" className="block mb-2">
+        <Link href="https://peer-wealth.vercel.app/" className="block mb-2">
           <button className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-medium transition-colors">
             Home
           </button>

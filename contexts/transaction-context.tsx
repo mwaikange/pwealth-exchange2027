@@ -159,6 +159,25 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     }
 
     try {
+      // Validate transaction type
+      const validTypes: TransactionType[] = [
+        "OUT-TRANSFER",
+        "OUT-AFT GIFT",
+        "IN-PWT RECEIPT",
+        "REFERRAL CLAIM",
+        "BUY-AFT RECEIPT",
+        "ACTIVATE FEE",
+        "IN-AFT GIFT",
+        "VESTING",
+        "CLAIM",
+        "AFT-TopUP",
+      ]
+
+      if (!validTypes.includes(transaction.type)) {
+        console.error("Invalid transaction type:", transaction.type)
+        throw new Error(`Invalid transaction type: ${transaction.type}`)
+      }
+
       // Insert into Supabase
       const { error } = await supabase.from("transactions").insert({
         transaction_id: transactionId,
@@ -174,10 +193,14 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
         created_at: new Date().toISOString(),
       })
 
-      if (error) throw error
+      if (error) {
+        console.error("Supabase error when adding transaction:", error)
+        throw error
+      }
 
       // Update local state
       setTransactions((prev) => [newTransaction, ...prev])
+      console.log(`Transaction of type ${transaction.type} recorded successfully with ID: ${transactionId}`)
 
       return newTransaction
     } catch (error) {
