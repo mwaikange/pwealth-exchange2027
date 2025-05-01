@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     error,
     errorDescription,
     url: request.url,
+    fullUrl: request.url,
+    headers: Object.fromEntries(request.headers.entries()),
   })
 
   // Handle error case
@@ -54,16 +56,59 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // If we have a code, exchange it for a session
-    if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
+    // If we have a token, verify it directly
+    if (token) {
+      console.log("Attempting to verify token directly:", token.substring(0, 10) + "...")
 
-      if (error) {
-        console.error("Session exchange error:", error.message)
+      try {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: "recovery",
+        })
+
+        if (error) {
+          console.error("Token verification error:", error.message)
+          return NextResponse.redirect(
+            new URL(`/forgot-password?error=${encodeURIComponent(error.message)}`, request.url),
+          )
+        }
+
+        console.log("Token verification successful, redirecting to reset-password")
+      } catch (verifyError: any) {
+        console.error("Token verification exception:", verifyError.message)
         return NextResponse.redirect(
-          new URL(`/forgot-password?error=${encodeURIComponent(error.message)}`, request.url),
+          new URL(`/forgot-password?error=${encodeURIComponent(verifyError.message)}`, request.url),
         )
       }
+    }
+
+    // If we have a code, exchange it for a session
+    if (code) {
+      console.log("Attempting to exchange code for session:", code.substring(0, 10) + "...")
+
+      try {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (error) {
+          console.error("Session exchange error:", error.message)
+          return NextResponse.redirect(
+            new URL(`/forgot-password?error=${encodeURIComponent(error.message)}`, request.url),
+          )
+        }
+
+        console.log("Code exchange successful, redirecting to reset-password")
+      } catch (exchangeError: any) {
+        console.error("Code exchange exception:", exchangeError.message)
+        return NextResponse.redirect(
+          new URL(`/forgot-password?error=${encodeURIComponent(exchangeError.message)}`, request.url),
+        )
+      }
+    }
+
+    // If we don't have a token or code, redirect to forgot-password
+    if (!token && !code) {
+      console.error("No token or code provided")
+      return NextResponse.redirect(new URL(`/forgot-password?error=No reset token or code provided`, request.url))
     }
 
     // Always redirect to reset-password page for password reset flows

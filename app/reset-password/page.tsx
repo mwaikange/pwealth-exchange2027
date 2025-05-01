@@ -3,32 +3,72 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase-singleton"
 
 export default function ResetPassword() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const [hasSession, setHasSession] = useState(false)
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
 
   // Check if user is authenticated with a recovery token
   useEffect(() => {
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      console.log("Reset password session check:", data.session ? "Session found" : "No session")
+      try {
+        setIsCheckingSession(true)
+        const { data } = await supabase.auth.getSession()
 
-      if (data.session) {
-        setHasSession(true)
-      } else {
+        console.log("Reset password session check:", data.session ? "Session found" : "No session")
+
+        if (data.session) {
+          setHasSession(true)
+        } else {
+          // Check if we have a hash in the URL (Supabase sometimes adds it)
+          const hash = window.location.hash
+          if (hash && hash.includes("access_token")) {
+            console.log("Found access token in URL hash, attempting to process")
+            try {
+              // Try to process the hash
+              const { error } = await supabase.auth.getSessionFromUrl()
+              if (error) {
+                console.error("Error processing URL hash:", error.message)
+                setMessage({
+                  type: "error",
+                  text: "Invalid or expired password reset link. Please request a new one.",
+                })
+              } else {
+                console.log("Successfully processed URL hash")
+                setHasSession(true)
+              }
+            } catch (err: any) {
+              console.error("Error processing hash:", err.message)
+              setMessage({
+                type: "error",
+                text: "Error processing authentication data. Please request a new password reset link.",
+              })
+            }
+          } else {
+            setMessage({
+              type: "error",
+              text: "Invalid or expired password reset link. Please request a new one.",
+            })
+          }
+        }
+      } catch (err: any) {
+        console.error("Session check error:", err.message)
         setMessage({
           type: "error",
-          text: "Invalid or expired password reset link. Please request a new one.",
+          text: "Error checking authentication status. Please try again.",
         })
+      } finally {
+        setIsCheckingSession(false)
       }
     }
 
@@ -55,6 +95,7 @@ export default function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password })
 
       if (error) {
+        console.error("Password update error:", error.message)
         setMessage({ type: "error", text: error.message })
       } else {
         setMessage({
@@ -68,6 +109,7 @@ export default function ResetPassword() {
         }, 2000)
       }
     } catch (err: any) {
+      console.error("Password update exception:", err.message)
       setMessage({ type: "error", text: err.message || "An unexpected error occurred" })
     } finally {
       setIsLoading(false)
@@ -99,6 +141,13 @@ export default function ResetPassword() {
           <h2 className="text-center text-2xl font-medium text-white">Create New Password</h2>
           <p className="text-center text-sm text-gray-300">Enter your new password below.</p>
 
+          {/* Loading state */}
+          {isCheckingSession && (
+            <div className="flex justify-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-yellow-300"></div>
+            </div>
+          )}
+
           {/* Message */}
           {message && (
             <div
@@ -113,7 +162,7 @@ export default function ResetPassword() {
           )}
 
           {/* Form */}
-          {hasSession ? (
+          {!isCheckingSession && hasSession ? (
             <form onSubmit={handlePasswordReset} className="space-y-6">
               <div className="space-y-4">
                 <input
@@ -146,11 +195,13 @@ export default function ResetPassword() {
               </button>
             </form>
           ) : (
-            <div className="text-center">
-              <Link href="/forgot-password" className="text-yellow-300 hover:text-yellow-200">
-                Request a new password reset link
-              </Link>
-            </div>
+            !isCheckingSession && (
+              <div className="text-center">
+                <Link href="/forgot-password" className="text-yellow-300 hover:text-yellow-200 block py-2">
+                  Request a new password reset link
+                </Link>
+              </div>
+            )
           )}
 
           {/* Back to login */}

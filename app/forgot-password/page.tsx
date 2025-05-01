@@ -18,13 +18,21 @@ export default function ForgotPassword() {
     setMessage(null)
 
     try {
+      console.log("Requesting password reset for:", email)
+      console.log(
+        "Using redirect URL:",
+        `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"}/auth/reset-password`,
+      )
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"}/auth/reset-password`,
       })
 
       if (error) {
+        console.error("Password reset request error:", error.message)
         setMessage({ type: "error", text: error.message })
       } else {
+        console.log("Password reset email sent successfully")
         setMessage({
           type: "success",
           text: "Password reset email sent! Please check your inbox.",
@@ -32,6 +40,7 @@ export default function ForgotPassword() {
         setEmail("")
       }
     } catch (err: any) {
+      console.error("Password reset request exception:", err.message)
       setMessage({ type: "error", text: err.message || "An unexpected error occurred" })
     } finally {
       setIsLoading(false)
