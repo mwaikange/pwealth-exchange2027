@@ -32,13 +32,7 @@ export async function POST(request: NextRequest) {
 
     const user = data.users[0]
 
-    // Check if email is already confirmed
-    if (user.email_confirmed_at) {
-      return NextResponse.json({ message: "Email already confirmed. Login now." }, { status: 200 })
-    }
-
-    // Resend verification email using the standard auth.resend method
-    // since the admin.resendEmailVerification method might not be available
+    // Always resend verification email, even if already confirmed
     const { error: resendError } = await supabase.auth.resend({
       type: "signup",
       email: email,
@@ -49,7 +43,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Failed to resend verification email." }, { status: 500 })
     }
 
-    return NextResponse.json({ message: "Check your email for verification link." }, { status: 200 })
+    return NextResponse.json({ message: "Verification email has been sent. Please check your inbox." }, { status: 200 })
   } catch (err: any) {
     console.error("Unexpected error:", err)
     return NextResponse.json({ message: "Unexpected server error." }, { status: 500 })

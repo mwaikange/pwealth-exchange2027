@@ -29,24 +29,17 @@ export default function ResendVerification() {
       const data = await response.json()
 
       if (response.ok) {
-        // Success messages (200 OK)
-        if (data.message.includes("already confirmed")) {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-        } else {
-          setMessage({
-            type: "success",
-            text: data.message,
-          })
-          setEmail("")
-        }
+        // Success message
+        setMessage({
+          type: "success",
+          text: data.message || "Verification email has been sent. Please check your inbox.",
+        })
+        setEmail("")
       } else if (response.status === 404) {
         // User not found (404)
         setMessage({
           type: "error",
-          text: data.message,
+          text: data.message || "User not found.",
         })
       } else {
         // Other errors
@@ -107,13 +100,6 @@ export default function ResendVerification() {
                 <div className="mt-2">
                   <Link href="/register" className="text-blue-300 hover:text-blue-200 underline">
                     Register here
-                  </Link>
-                </div>
-              )}
-              {message.text === "Email already confirmed. Login now." && (
-                <div className="mt-2">
-                  <Link href="/login" className="text-blue-300 hover:text-blue-200 underline">
-                    Login here
                   </Link>
                 </div>
               )}
