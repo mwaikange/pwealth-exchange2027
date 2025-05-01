@@ -17,6 +17,8 @@ export default function ResendVerification() {
     setMessage(null)
 
     try {
+      console.log("Submitting resend verification request for:", email)
+
       // Call our resend verification API
       const response = await fetch("/api/auth/resend-verification", {
         method: "POST",
@@ -27,6 +29,7 @@ export default function ResendVerification() {
       })
 
       const data = await response.json()
+      console.log("Resend verification response:", response.status, data)
 
       if (response.ok) {
         // Success message
