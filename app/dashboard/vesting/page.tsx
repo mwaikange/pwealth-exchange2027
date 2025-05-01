@@ -5,6 +5,7 @@ import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
 import { useTransactions } from "@/contexts/transaction-context" // Import useTransactions directly
+import Celebration from "@/components/celebration"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
@@ -19,6 +20,7 @@ export default function Vesting() {
 
   // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
 
   // Get wallet functions
   const { pwtInvestBalance, aftBalance, updateAftBalance } = useWallet()
@@ -237,7 +239,9 @@ export default function Vesting() {
     }
   }
 
-  // Update the handleClaim function to use the processing state
+  // Update the handleClaim function to only show confetti at 100% maturity
+  // Find the handleClaim function and replace it with this updated version:
+
   const handleClaim = async (scheduleId, progress) => {
     // Prevent action if already processing something
     if (isProcessing) return
@@ -256,6 +260,11 @@ export default function Vesting() {
       // Show success message
       const yieldAmount = getYieldAmount(level, progress)
       setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
+
+      // Only show confetti when claiming at 100% maturity
+      if (progress === 100) {
+        setShowConfetti(true)
+      }
     } catch (error) {
       console.error("Claim failed:", error)
       setClaimError(`Claim failed: ${error.message || "Unknown error"}`)
@@ -596,6 +605,8 @@ export default function Vesting() {
           </div>
         </div>
       )}
+      {/* Confetti Celebration */}
+      {showConfetti && <Celebration onComplete={() => setShowConfetti(false)} />}
     </div>
   )
 }

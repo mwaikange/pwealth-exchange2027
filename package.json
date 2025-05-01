@@ -65,7 +65,9 @@
     "@vercel/postgres": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
     "uuid": "latest",
-    "@supabase/ssr": "latest"
+    "@supabase/ssr": "latest",
+    "canvas-confetti": "latest",
+    "howler": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
