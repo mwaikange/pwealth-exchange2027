@@ -4,20 +4,17 @@ import { env } from "@/lib/env"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
-  const code = requestUrl.searchParams.get("code")
   const token = requestUrl.searchParams.get("token")
+  const type = requestUrl.searchParams.get("type") || "recovery"
   const error = requestUrl.searchParams.get("error")
   const errorDescription = requestUrl.searchParams.get("error_description")
-  const type = requestUrl.searchParams.get("type") || ""
 
-  console.log("Password reset callback received:", {
-    code,
-    token,
+  console.log("Password reset handler received:", {
+    token: token ? `${token.substring(0, 10)}...` : null,
     type,
     error,
     errorDescription,
     url: request.url,
-    fullUrl: request.url,
     headers: Object.fromEntries(request.headers.entries()),
   })
 
@@ -33,7 +30,7 @@ export async function GET(request: NextRequest) {
   const res = NextResponse.redirect(new URL("/reset-password", request.url))
 
   try {
-    // Create a Supabase client for handling the code exchange
+    // Create a Supabase client for handling the token verification
     const supabase = createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
       cookies: {
         get(name: string) {
@@ -56,12 +53,12 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // If we have a token, verify it directly
+    // If we have a token, verify it directly using verifyOtp
     if (token) {
-      console.log("Attempting to verify token directly:", token.substring(0, 10) + "...")
+      console.log("Attempting to verify recovery token")
 
       try {
-        const { error } = await supabase.auth.verifyOtp({
+        const { data, error } = await supabase.auth.verifyOtp({
           token_hash: token,
           type: "recovery",
         })
@@ -73,7 +70,14 @@ export async function GET(request: NextRequest) {
           )
         }
 
-        console.log("Token verification successful, redirecting to reset-password")
+        console.log("Token verification successful:", data)
+
+        // Add token to the redirect URL as a query parameter
+        // This helps the frontend know that verification was successful
+        const resetUrl = new URL("/reset-password", request.url)
+        resetUrl.searchParams.set("verified", "true")
+
+        return NextResponse.redirect(resetUrl)
       } catch (verifyError: any) {
         console.error("Token verification exception:", verifyError.message)
         return NextResponse.redirect(
@@ -82,39 +86,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If we have a code, exchange it for a session
-    if (code) {
-      console.log("Attempting to exchange code for session:", code.substring(0, 10) + "...")
-
-      try {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-
-        if (error) {
-          console.error("Session exchange error:", error.message)
-          return NextResponse.redirect(
-            new URL(`/forgot-password?error=${encodeURIComponent(error.message)}`, request.url),
-          )
-        }
-
-        console.log("Code exchange successful, redirecting to reset-password")
-      } catch (exchangeError: any) {
-        console.error("Code exchange exception:", exchangeError.message)
-        return NextResponse.redirect(
-          new URL(`/forgot-password?error=${encodeURIComponent(exchangeError.message)}`, request.url),
-        )
-      }
+    // If we don't have a token, redirect to forgot-password
+    if (!token) {
+      console.error("No token provided")
+      return NextResponse.redirect(new URL(`/forgot-password?error=No reset token provided`, request.url))
     }
 
-    // If we don't have a token or code, redirect to forgot-password
-    if (!token && !code) {
-      console.error("No token or code provided")
-      return NextResponse.redirect(new URL(`/forgot-password?error=No reset token or code provided`, request.url))
-    }
-
-    // Always redirect to reset-password page for password reset flows
+    // Default fallback - should not reach here
     return res
   } catch (err: any) {
-    console.error("Password reset callback error:", err.message)
+    console.error("Password reset handler error:", err.message)
     return NextResponse.redirect(
       new URL(`/forgot-password?error=Unexpected error: ${encodeURIComponent(err.message)}`, request.url),
     )

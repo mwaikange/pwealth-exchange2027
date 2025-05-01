@@ -19,13 +19,15 @@ export default function ForgotPassword() {
 
     try {
       console.log("Requesting password reset for:", email)
-      console.log(
-        "Using redirect URL:",
-        `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"}/auth/reset-password`,
-      )
+
+      // Use the absolute URL for the redirectTo
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"
+      const redirectUrl = `${siteUrl}/auth/reset-password`
+
+      console.log("Using redirect URL:", redirectUrl)
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.peer-wealth.com"}/auth/reset-password`,
+        redirectTo: redirectUrl,
       })
 
       if (error) {

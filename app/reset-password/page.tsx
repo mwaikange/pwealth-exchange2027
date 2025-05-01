@@ -23,35 +23,77 @@ export default function ResetPassword() {
     const checkSession = async () => {
       try {
         setIsCheckingSession(true)
-        const { data } = await supabase.auth.getSession()
 
+        // Check if we were redirected with a verified parameter
+        const verified = searchParams?.get("verified")
+        if (verified === "true") {
+          console.log("Token was verified by the server, session should be available")
+        }
+
+        // Get the current session
+        const { data } = await supabase.auth.getSession()
         console.log("Reset password session check:", data.session ? "Session found" : "No session")
 
         if (data.session) {
           setHasSession(true)
+          return
+        }
+
+        // If no session, check for hash in URL (Supabase sometimes adds it)
+        const hash = window.location.hash
+        if (hash && (hash.includes("access_token") || hash.includes("recovery_token"))) {
+          console.log("Found token in URL hash, attempting to process")
+
+          try {
+            // Try to process the hash
+            const { data: hashData, error } = await supabase.auth.getSessionFromUrl()
+
+            if (error) {
+              console.error("Error processing URL hash:", error.message)
+              setMessage({
+                type: "error",
+                text: "Invalid or expired password reset link. Please request a new one.",
+              })
+            } else {
+              console.log("Successfully processed URL hash:", hashData)
+              setHasSession(true)
+            }
+          } catch (err: any) {
+            console.error("Error processing hash:", err.message)
+            setMessage({
+              type: "error",
+              text: "Error processing authentication data. Please request a new password reset link.",
+            })
+          }
         } else {
-          // Check if we have a hash in the URL (Supabase sometimes adds it)
-          const hash = window.location.hash
-          if (hash && hash.includes("access_token")) {
-            console.log("Found access token in URL hash, attempting to process")
+          // Last resort - try to directly verify OTP if token is in the URL
+          const urlParams = new URLSearchParams(window.location.search)
+          const token = urlParams.get("token")
+
+          if (token) {
+            console.log("Found token in URL params, attempting direct verification")
+
             try {
-              // Try to process the hash
-              const { error } = await supabase.auth.getSessionFromUrl()
-              if (error) {
-                console.error("Error processing URL hash:", error.message)
+              const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+                token_hash: token,
+                type: "recovery",
+              })
+
+              if (otpError) {
+                console.error("Direct OTP verification error:", otpError.message)
                 setMessage({
                   type: "error",
                   text: "Invalid or expired password reset link. Please request a new one.",
                 })
               } else {
-                console.log("Successfully processed URL hash")
+                console.log("Direct OTP verification successful:", otpData)
                 setHasSession(true)
               }
-            } catch (err: any) {
-              console.error("Error processing hash:", err.message)
+            } catch (otpErr: any) {
+              console.error("Direct OTP verification exception:", otpErr.message)
               setMessage({
                 type: "error",
-                text: "Error processing authentication data. Please request a new password reset link.",
+                text: "Error verifying reset token. Please request a new password reset link.",
               })
             }
           } else {
@@ -73,7 +115,7 @@ export default function ResetPassword() {
     }
 
     checkSession()
-  }, [])
+  }, [searchParams])
 
   async function handlePasswordReset(e: React.FormEvent) {
     e.preventDefault()
@@ -92,12 +134,14 @@ export default function ResetPassword() {
     setMessage(null)
 
     try {
+      console.log("Attempting to update password")
       const { error } = await supabase.auth.updateUser({ password })
 
       if (error) {
         console.error("Password update error:", error.message)
         setMessage({ type: "error", text: error.message })
       } else {
+        console.log("Password updated successfully")
         setMessage({
           type: "success",
           text: "Password updated successfully! Redirecting to login...",
