@@ -14,12 +14,17 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [hasSession, setHasSession] = useState(false)
 
   // Check if user is authenticated with a recovery token
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession()
-      if (!data.session) {
+      console.log("Reset password session check:", data.session ? "Session found" : "No session")
+
+      if (data.session) {
+        setHasSession(true)
+      } else {
         setMessage({
           type: "error",
           text: "Invalid or expired password reset link. Please request a new one.",
@@ -108,37 +113,45 @@ export default function ResetPassword() {
           )}
 
           {/* Form */}
-          <form onSubmit={handlePasswordReset} className="space-y-6">
-            <div className="space-y-4">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="New password"
-                className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
-                required
-                minLength={8}
-              />
+          {hasSession ? (
+            <form onSubmit={handlePasswordReset} className="space-y-6">
+              <div className="space-y-4">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="New password"
+                  className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+                  required
+                  minLength={8}
+                />
 
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
-                required
-                minLength={8}
-              />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="w-full px-4 py-3 bg-[#3a3d4a] rounded-full text-white placeholder-gray-400 focus:outline-none"
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+              >
+                {isLoading ? "Updating..." : "Update Password"}
+              </button>
+            </form>
+          ) : (
+            <div className="text-center">
+              <Link href="/forgot-password" className="text-yellow-300 hover:text-yellow-200">
+                Request a new password reset link
+              </Link>
             </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
-            >
-              {isLoading ? "Updating..." : "Update Password"}
-            </button>
-          </form>
+          )}
 
           {/* Back to login */}
           <div className="text-center mt-4">

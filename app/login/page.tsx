@@ -15,6 +15,9 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [showPopup, setShowPopup] = useState(true)
+  const [isEmailNotConfirmed, setIsEmailNotConfirmed] = useState(false)
+  const [resendingEmail, setResendingEmail] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState(false)
 
   // Check if already logged in
   useEffect(() => {
@@ -46,6 +49,8 @@ export default function Login() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setIsEmailNotConfirmed(false)
+    setResendSuccess(false)
 
     try {
       console.log("[CLIENT] Attempting login with email:", email)
@@ -57,7 +62,14 @@ export default function Login() {
 
       if (error) {
         console.error("[CLIENT] Login error:", error.message)
-        setError(error.message)
+
+        // Check if the error is due to unconfirmed email
+        if (error.message.includes("Email not confirmed") || error.message.includes("email_not_confirmed")) {
+          setIsEmailNotConfirmed(true)
+        } else {
+          setError(error.message)
+        }
+
         setIsLoading(false)
         return
       }
@@ -82,6 +94,31 @@ export default function Login() {
       console.error("[CLIENT] Unexpected login error:", err)
       setError(err.message || "An unexpected error occurred")
       setIsLoading(false)
+    }
+  }
+
+  async function handleResendConfirmation() {
+    setResendingEmail(true)
+    setResendSuccess(false)
+    setError(null)
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+      })
+
+      if (error) {
+        console.error("[CLIENT] Error resending confirmation email:", error.message)
+        setError(`Failed to resend: ${error.message}`)
+      } else {
+        setResendSuccess(true)
+      }
+    } catch (err: any) {
+      console.error("[CLIENT] Unexpected error resending confirmation:", err)
+      setError(err.message || "An unexpected error occurred")
+    } finally {
+      setResendingEmail(false)
     }
   }
 
@@ -174,8 +211,31 @@ export default function Login() {
           {/* Heading */}
           <h2 className="text-center text-2xl font-medium text-white">Welcome back!</h2>
 
+          {/* Email not confirmed message */}
+          {isEmailNotConfirmed && (
+            <div className="bg-yellow-500/20 border border-yellow-500 text-yellow-200 px-4 py-3 rounded-md">
+              <p className="font-medium mb-2">Email not confirmed</p>
+              <p className="text-sm mb-3">Please check your inbox and confirm your email address before logging in.</p>
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={handleResendConfirmation}
+                  disabled={resendingEmail}
+                  className="text-sm bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded transition-colors disabled:opacity-50"
+                >
+                  {resendingEmail ? "Sending..." : "Resend confirmation email"}
+                </button>
+                <Link href="/resend-verification" className="text-sm text-yellow-200 hover:text-white">
+                  Need help?
+                </Link>
+              </div>
+              {resendSuccess && (
+                <p className="text-green-300 text-sm mt-2">Confirmation email sent! Please check your inbox.</p>
+              )}
+            </div>
+          )}
+
           {/* Error message */}
-          {error && (
+          {error && !isEmailNotConfirmed && (
             <div className="bg-red-500/20 border border-red-500 text-red-300 px-4 py-2 rounded-md text-sm">{error}</div>
           )}
 
