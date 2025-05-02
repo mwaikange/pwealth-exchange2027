@@ -87,83 +87,94 @@ export default function Referrals() {
     const supabase = createClientComponentClient()
 
     try {
-      // Step 1: Fetch from the referral_view
-      const { data: referralViewData, error: referralViewError } = await supabase
-        .from("referral_view")
-        .select("*")
+      // Query directly from the levels table
+      const { data: levelsData, error: levelsError } = await supabase
+        .from("levels")
+        .select(`
+        id,
+        user_uuid,
+        referral_id,
+        referrer_uuid,
+        level,
+        progress,
+        status,
+        email,
+        referral_code,
+        country,
+        register_date,
+        referrals (
+          claimed,
+          claim_date,
+          active_count
+        )
+      `)
         .eq("referrer_uuid", user.id)
+        .order("register_date", { ascending: false })
 
-      if (referralViewError) {
-        console.error("Error fetching referrals:", referralViewError)
+      if (levelsError) {
+        console.error("Error fetching referrals:", levelsError)
         setReferralData([])
         setLoading(false)
         return
       }
 
-      console.log("Referral view data:", referralViewData)
+      console.log("Levels data:", levelsData)
 
-      if (!referralViewData || referralViewData.length === 0) {
-        console.log("No referrals found in referral_view")
+      if (!levelsData || levelsData.length === 0) {
+        console.log("No referrals found in levels table")
         setReferralData([])
         setLoading(false)
         return
       }
 
-      // Process each referral and fetch its progress
-      const processedData = await Promise.all(
-        referralViewData.map(async (ref: ReferralViewData) => {
-          // Query the levels table for this specific user's progress
-          const { data: levelsData, error: levelsError } = await supabase
-            .from("levels")
-            .select("progress")
-            .eq("user_uuid", ref.referred_uuid)
-            .eq("level", ref.level)
-            .limit(1)
+      // Process each referral from the levels table
+      const processedData = levelsData.map((level) => {
+        // Extract the progress value (e.g., "3/5")
+        const progressText = level.progress || "0/5"
 
-          if (levelsError) {
-            console.error(`Error fetching progress for user ${ref.referred_uuid}:`, levelsError)
-          }
+        // Extract numeric value from progress string
+        const activeCount = extractProgressValue(progressText)
 
-          // Get the progress value (default to "0/5" if not found)
-          const progress = levelsData && levelsData.length > 0 ? levelsData[0].progress : "0/5"
+        // Get referral data if available
+        const referralData = level.referrals && level.referrals.length > 0 ? level.referrals[0] : null
 
-          // Extract numeric value from progress string
-          const activeCount = extractProgressValue(progress)
+        // Determine if claimed
+        const claimed = referralData ? referralData.claimed : false
+        const claim_date = referralData ? referralData.claim_date : null
 
-          // Determine button state using our utility function
-          const buttonState = determineButtonState({
-            active_count: activeCount,
-            claimed: ref.claimed,
-            claim_date: ref.claim_date,
-            level_reset: false,
-          })
+        // Determine button state using our utility function
+        const buttonState = determineButtonState({
+          active_count: activeCount,
+          claimed: claimed,
+          claim_date: claim_date,
+          level_reset: false,
+        })
 
-          // Map button_state to claimStatus for backward compatibility
-          let claimStatus: "claimed" | "eligible" | "pending" = "pending"
-          if (buttonState.button_state === "claimed") {
-            claimStatus = "claimed"
-          } else if (buttonState.button_state === "claimable") {
-            claimStatus = "eligible"
-          }
+        // Map button_state to claimStatus for backward compatibility
+        let claimStatus: "claimed" | "eligible" | "pending" = "pending"
+        if (buttonState.button_state === "claimed") {
+          claimStatus = "claimed"
+        } else if (buttonState.button_state === "claimable") {
+          claimStatus = "eligible"
+        }
 
-          return {
-            referralId: ref.referral_id,
-            referralCode: ref.referred_referral_code || "Unknown",
-            email: ref.referred_email || "Unknown",
-            country: ref.country || "Unknown",
-            status: ref.status || "pending",
-            level: String(ref.level || "1"),
-            progress: progress,
-            claimStatus,
-            registerDate: ref.referral_date ? format(new Date(ref.referral_date), "dd MMM, h:mm a") : "Unknown",
-            referredUuid: ref.referred_uuid,
-            activeCount,
-            buttonState,
-            claimed: ref.claimed,
-            claim_date: ref.claim_date,
-          }
-        }),
-      )
+        return {
+          referralId: level.referral_id || "",
+          referralCode: level.referral_code || "Unknown",
+          email: level.email || "Unknown",
+          country: level.country || "Unknown",
+          status: level.status || "pending",
+          level: String(level.level || "1"),
+          progress: progressText,
+          claimStatus,
+          registerDate: level.register_date ? format(new Date(level.register_date), "dd MMM, h:mm a") : "Unknown",
+          referredUuid: level.user_uuid,
+          activeCount,
+          buttonState,
+          claimed,
+          claim_date,
+        }
+      })
 
       setReferralData(processedData)
       setLoading(false)
