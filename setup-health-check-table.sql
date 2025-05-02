@@ -1,3 +1,4 @@
+-- This file is kept for reference but not used in the current implementation
 -- Create a simple health check table for connection testing
 CREATE TABLE IF NOT EXISTS health_check (
   id SERIAL PRIMARY KEY,

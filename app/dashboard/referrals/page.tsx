@@ -1,39 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Search } from "lucide-react"
+import { Search, RefreshCw } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useAuth } from "@/contexts/auth-context"
 import { format } from "date-fns"
-import { determineButtonState, type ButtonState } from "@/utils/button-state"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import type { Database } from "@/types/supabase"
 
-// Define the type for referral data from the view
-interface ReferralViewData {
-  referral_id: string
-  referred_uuid: string
-  referred_email: string
-  referral_date: string
-  referred_referral_code: string
-  claimed: boolean
-  claim_date: string | null
-  country: string
-  status: string
-  level: number
-  active_count: number
-  invested_schedules_count: number
-  referrer_uuid: string
-}
-
-// Define the type for level progress data
-interface LevelProgressData {
-  user_uuid: string
-  level: number
-  progress: string
-}
-
+// Define the type for referral data
 interface FormattedReferral {
   referralId: string
   referralCode: string
@@ -46,9 +23,14 @@ interface FormattedReferral {
   registerDate: string
   referredUuid: string
   activeCount: number
-  buttonState?: ButtonState
   claimed: boolean
   claim_date: string | null
+}
+
+// Group type for organizing referrals by code
+interface ReferralGroup {
+  referralCode: string
+  referrals: FormattedReferral[]
 }
 
 export default function Referrals() {
@@ -56,13 +38,16 @@ export default function Referrals() {
   const [searchQuery, setSearchQuery] = useState("")
   const [claimSuccess, setClaimSuccess] = useState("")
   const [referralData, setReferralData] = useState<FormattedReferral[]>([])
-  const [loading, setLoading] = useState(true)
-  const [debugInfo, setDebugInfo] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false) // Separate state for background refreshes
+  const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
   const router = useRouter()
   const { claimToPwtCashout } = useWallet()
   const { addTransaction } = useTransactions()
   const { user } = useAuth()
   const [claimingReferralId, setClaimingReferralId] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<any>({})
 
   // Helper function to extract numeric progress value from string
   const extractProgressValue = (progressString: string): number => {
@@ -80,165 +65,195 @@ export default function Referrals() {
   }
 
   // Fetch referral data from Supabase
-  const fetchReferrals = async () => {
-    if (!user) return
+  const fetchReferrals = async (retry = 0, isBackgroundRefresh = false) => {
+    if (!user) {
+      console.log("No user found, skipping fetch")
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
 
-    setLoading(true)
-    const supabase = createClientComponentClient()
+    // Only set loading to true for initial loads, not background refreshes
+    if (!isBackgroundRefresh) {
+      setLoading(true)
+    } else {
+      setRefreshing(true)
+    }
+
+    setError(null)
 
     try {
-      // Query directly from the levels table
-      const { data: levelsData, error: levelsError } = await supabase
+      console.log(`Fetching referrals for user: ${user.id} (Attempt ${retry + 1})`)
+
+      const supabase = createClientComponentClient<Database>()
+
+      // Log the current user ID for debugging
+      console.log("Current user ID:", user.id)
+      setDebugInfo((prev) => ({ ...prev, userId: user.id }))
+
+      // Get all referrals where the current user is the referrer using the corrected referrer_uuid column
+      const { data, error: fetchError } = await supabase
         .from("levels")
-        .select(`
-        id,
-        user_uuid,
-        referral_id,
-        referrer_uuid,
-        level,
-        progress,
-        status,
-        email,
-        referral_code,
-        country,
-        register_date,
-        referrals (
-          claimed,
-          claim_date,
-          active_count
-        )
-      `)
+        .select("*")
         .eq("referrer_uuid", user.id)
         .order("register_date", { ascending: false })
 
-      if (levelsError) {
-        console.error("Error fetching referrals:", levelsError)
+      if (fetchError) {
+        console.error("Error fetching referrals:", fetchError)
+        setDebugInfo((prev) => ({ ...prev, fetchError: fetchError.message }))
+        throw new Error(`Failed to fetch referrals: ${fetchError.message}`)
+      }
+
+      console.log("Raw referrals data:", data)
+      setDebugInfo((prev) => ({ ...prev, rawData: data }))
+
+      if (!data || data.length === 0) {
+        console.log("No referrals found with referrer_uuid query, trying fallback query")
+
+        // Try a direct query without filters as a fallback
+        const { data: allData, error: allError } = await supabase
+          .from("levels")
+          .select("*")
+          .limit(20)
+          .order("register_date", { ascending: false })
+
+        if (allError) {
+          console.error("Error fetching all referrals:", allError)
+          setDebugInfo((prev) => ({ ...prev, allError: allError.message }))
+        } else if (allData && allData.length > 0) {
+          console.log("Found some referrals with direct query:", allData.length)
+          setDebugInfo((prev) => ({ ...prev, allData: allData }))
+
+          // Process all data without filtering by user
+          const processedData: FormattedReferral[] = allData.map((item) => {
+            // Extract the progress value (e.g., "3/5")
+            const progressText = item.progress || "0/5"
+            const activeCount = item.active_count || extractProgressValue(progressText)
+
+            // Determine claim status
+            let claimStatus: "claimed" | "eligible" | "pending" = "pending"
+            if (item.claimed) {
+              claimStatus = "claimed"
+            } else if (activeCount >= 5) {
+              claimStatus = "eligible"
+            }
+
+            return {
+              referralId: item.referral_id || "",
+              referralCode: item.referral_code || "Unknown",
+              email: item.referred_email || item.email || "Unknown",
+              country: item.country || "Unknown",
+              status: item.status || "pending",
+              level: String(item.level || "1"),
+              progress: progressText,
+              claimStatus,
+              registerDate: item.register_date ? format(new Date(item.register_date), "dd MMM, h:mm a") : "Unknown",
+              referredUuid: item.user_uuid || "",
+              activeCount,
+              claimed: item.claimed || false,
+              claim_date: item.claim_date,
+            }
+          })
+
+          console.log("Processed all data:", processedData.length, "records")
+          setReferralData(processedData)
+          setLoading(false)
+          setRefreshing(false)
+          return
+        } else {
+          console.log("No referrals found with direct query either")
+          setDebugInfo((prev) => ({ ...prev, noData: true }))
+        }
+
         setReferralData([])
         setLoading(false)
+        setRefreshing(false)
         return
       }
 
-      console.log("Levels data:", levelsData)
-
-      if (!levelsData || levelsData.length === 0) {
-        console.log("No referrals found in levels table")
-        setReferralData([])
-        setLoading(false)
-        return
-      }
-
-      // Process each referral from the levels table
-      const processedData = levelsData.map((level) => {
+      // Process the data
+      const processedData: FormattedReferral[] = data.map((item) => {
         // Extract the progress value (e.g., "3/5")
-        const progressText = level.progress || "0/5"
+        const progressText = item.progress || "0/5"
+        const activeCount = item.active_count || extractProgressValue(progressText)
 
-        // Extract numeric value from progress string
-        const activeCount = extractProgressValue(progressText)
-
-        // Get referral data if available
-        const referralData = level.referrals && level.referrals.length > 0 ? level.referrals[0] : null
-
-        // Determine if claimed
-        const claimed = referralData ? referralData.claimed : false
-        const claim_date = referralData ? referralData.claim_date : null
-
-        // Determine button state using our utility function
-        const buttonState = determineButtonState({
-          active_count: activeCount,
-          claimed: claimed,
-          claim_date: claim_date,
-          level_reset: false,
-        })
-
-        // Map button_state to claimStatus for backward compatibility
+        // Determine claim status
         let claimStatus: "claimed" | "eligible" | "pending" = "pending"
-        if (buttonState.button_state === "claimed") {
+        if (item.claimed) {
           claimStatus = "claimed"
-        } else if (buttonState.button_state === "claimable") {
+        } else if (activeCount >= 5) {
           claimStatus = "eligible"
         }
 
         return {
-          referralId: level.referral_id || "",
-          referralCode: level.referral_code || "Unknown",
-          email: level.email || "Unknown",
-          country: level.country || "Unknown",
-          status: level.status || "pending",
-          level: String(level.level || "1"),
+          referralId: item.referral_id || "",
+          referralCode: item.referral_code || "Unknown",
+          email: item.referred_email || item.email || "Unknown",
+          country: item.country || "Unknown",
+          status: item.status || "pending",
+          level: String(item.level || "1"),
           progress: progressText,
           claimStatus,
-          registerDate: level.register_date ? format(new Date(level.register_date), "dd MMM, h:mm a") : "Unknown",
-          referredUuid: level.user_uuid,
+          registerDate: item.register_date ? format(new Date(item.register_date), "dd MMM, h:mm a") : "Unknown",
+          referredUuid: item.user_uuid || "",
           activeCount,
-          buttonState,
-          claimed,
-          claim_date,
+          claimed: item.claimed || false,
+          claim_date: item.claim_date,
         }
       })
 
+      console.log("Processed data:", processedData.length, "records")
       setReferralData(processedData)
       setLoading(false)
-    } catch (err) {
+      setRefreshing(false)
+      setRetryCount(0) // Reset retry count on success
+    } catch (err: any) {
       console.error("Error in fetchReferrals:", err)
-      setReferralData([])
+      setDebugInfo((prev) => ({ ...prev, error: err.message }))
+
+      // If we haven't exceeded max retries, try again
+      if (retry < 2) {
+        console.log(`Retrying fetch (${retry + 1}/2)...`)
+        setRetryCount(retry + 1)
+        setTimeout(() => fetchReferrals(retry + 1, isBackgroundRefresh), 1000 * (retry + 1)) // Exponential backoff
+        return
+      }
+
+      setError(`Connection error: ${err.message || "Failed to connect to the database"}`)
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
-  // Initial fetch
-  useEffect(() => {
-    fetchReferrals()
-  }, [user])
+  // Group referrals by referral code and sort by level
+  const groupedReferrals = useMemo(() => {
+    // Create a map to group referrals by code
+    const referralMap = new Map<string, FormattedReferral[]>()
 
-  // Set up a polling interval to refresh data
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      fetchReferrals()
-    }, 30000) // Check every 30 seconds
+    referralData.forEach((referral) => {
+      const code = referral.referralCode
+      if (!referralMap.has(code)) {
+        referralMap.set(code, [])
+      }
+      referralMap.get(code)?.push(referral)
+    })
 
-    return () => {
-      clearInterval(intervalId)
-    }
-  }, [user])
+    // Convert map to array and sort each group by level
+    const groups: ReferralGroup[] = []
+    referralMap.forEach((referrals, referralCode) => {
+      // Sort referrals by level (1, 2, 3)
+      const sortedReferrals = [...referrals].sort((a, b) => {
+        return Number.parseInt(a.level) - Number.parseInt(b.level)
+      })
 
-  // Filter referrals based on active filter and search query
-  const filteredReferrals = referralData.filter((referral) => {
-    // Filter by claim status
-    if (
-      (activeFilter === "Claimed" && referral.claimStatus !== "claimed") ||
-      (activeFilter === "Not Claimed" && referral.claimStatus === "claimed")
-    ) {
-      return false
-    }
+      groups.push({
+        referralCode,
+        referrals: sortedReferrals,
+      })
+    })
 
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      return (
-        referral.referralCode?.toLowerCase().includes(query) ||
-        referral.country?.toLowerCase().includes(query) ||
-        referral.email?.toLowerCase().includes(query)
-      )
-    }
-
-    return true
-  })
-
-  // Create a map to store unique referrals by user and level
-  const uniqueReferrals = new Map<string, FormattedReferral>()
-
-  // Process referrals to ensure one entry per user per level
-  filteredReferrals.forEach((referral) => {
-    const key = `${referral.referredUuid}-${referral.level}`
-
-    // Only add if this user+level combination doesn't exist yet
-    if (!uniqueReferrals.has(key)) {
-      uniqueReferrals.set(key, referral)
-    }
-  })
-
-  // Convert map back to array
-  const deduplicatedReferrals = Array.from(uniqueReferrals.values())
+    return groups
+  }, [referralData])
 
   // Handle claim button click
   const handleClaim = async (referralId: string, level: string) => {
@@ -250,10 +265,12 @@ export default function Referrals() {
       // Award 1 PWT for all levels
       const pwtAmount = 1 // Fixed at 1 PWT for all levels
 
+      // Create a new client for the update
+      const supabase = createClientComponentClient<Database>()
+
       // Update the database to mark the referral as claimed
-      const supabase = createClientComponentClient()
       const { error } = await supabase
-        .from("referrals")
+        .from("levels")
         .update({
           claimed: true,
           claim_date: new Date().toISOString(),
@@ -289,15 +306,77 @@ export default function Referrals() {
       }, 3000)
 
       // Refresh the data to get the latest state
-      fetchReferrals()
+      fetchReferrals(0, true) // Background refresh
       setClaimingReferralId(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error in claim process:", error)
-      setClaimSuccess("An error occurred during the claim process.")
+      setClaimSuccess(`An error occurred during the claim process: ${error.message || "Unknown error"}`)
       setTimeout(() => setClaimSuccess(""), 3000)
       setClaimingReferralId(null)
     }
   }
+
+  // Manual refresh handler
+  const handleRefresh = () => {
+    setRetryCount(0)
+    fetchReferrals(0)
+  }
+
+  // Initial fetch with a slight delay to ensure user is fully loaded
+  useEffect(() => {
+    if (user) {
+      console.log("User loaded, fetching referrals in 500ms")
+      // Add a small delay to ensure user data is fully loaded
+      const timer = setTimeout(() => {
+        fetchReferrals()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [user])
+
+  // Set up a polling interval to refresh data
+  useEffect(() => {
+    if (!user) return
+
+    console.log("Setting up polling interval")
+    const intervalId = setInterval(() => {
+      console.log("Polling: refreshing referrals data")
+      fetchReferrals(0, true) // Use background refresh for polling
+    }, 30000) // Check every 30 seconds
+
+    return () => {
+      console.log("Clearing polling interval")
+      clearInterval(intervalId)
+    }
+  }, [user])
+
+  // Filter referral groups based on active filter and search query
+  const filteredReferralGroups = useMemo(() => {
+    return groupedReferrals.filter((group) => {
+      // Check if any referral in the group matches the filter criteria
+      return group.referrals.some((referral) => {
+        // Filter by claim status
+        if (
+          (activeFilter === "Claimed" && referral.claimStatus !== "claimed") ||
+          (activeFilter === "Not Claimed" && referral.claimStatus === "claimed")
+        ) {
+          return false
+        }
+
+        // Filter by search query
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase()
+          return (
+            referral.referralCode?.toLowerCase().includes(query) ||
+            referral.country?.toLowerCase().includes(query) ||
+            referral.email?.toLowerCase().includes(query)
+          )
+        }
+
+        return true
+      })
+    })
+  }, [groupedReferrals, activeFilter, searchQuery])
 
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
@@ -330,8 +409,28 @@ export default function Referrals() {
       {/* Success message */}
       {claimSuccess && <div className="mx-6 mb-2 p-2 bg-green-500 text-white text-sm rounded">{claimSuccess}</div>}
 
+      {/* Error message with refresh button */}
+      {error && (
+        <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded flex justify-between items-center">
+          <span>{error}</span>
+          <button
+            onClick={handleRefresh}
+            className="bg-white text-red-500 px-2 py-1 rounded-md text-xs font-medium flex items-center"
+          >
+            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+          </button>
+        </div>
+      )}
+
       {/* Referrals Table */}
-      <div className="px-6 mt-2">
+      <div className="px-6 mt-2 relative">
+        {/* Loading indicator in corner */}
+        {refreshing && (
+          <div className="absolute top-2 right-8 z-10">
+            <div className="w-5 h-5 rounded-full border-2 border-red-500 border-t-transparent animate-spin"></div>
+          </div>
+        )}
+
         <div className="bg-[#2a2d3a] rounded-lg overflow-hidden">
           {/* Filter Tabs */}
           <div className="flex justify-center py-3">
@@ -383,18 +482,84 @@ export default function Referrals() {
             {/* Scrollable Body */}
             <div className="max-h-[calc(100vh-300px)] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
               {loading ? (
-                <div className="p-4 text-center">Loading referrals...</div>
-              ) : deduplicatedReferrals.length === 0 ? (
                 <div className="p-4 text-center">
-                  No referrals found
-                  {process.env.NODE_ENV === "development" && (
-                    <div className="text-xs text-gray-500 mt-2">Check the debug info above for more details</div>
-                  )}
+                  <div className="inline-block animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white mb-2"></div>
+                  <div>Loading referrals{retryCount > 0 ? ` (Retry ${retryCount}/2)` : ""}...</div>
+                </div>
+              ) : filteredReferralGroups.length === 0 ? (
+                <div className="p-4 text-center">
+                  {error ? "Error loading referrals" : "No referrals found"}
+                  <div className="text-xs text-gray-500 mt-2">
+                    {!error && "Share your referral code to start earning rewards"}
+                  </div>
                 </div>
               ) : (
                 <table className="w-full table-fixed">
                   <tbody>
-                    {deduplicatedReferrals.map((referral, index) => renderReferralRow(referral, index.toString()))}
+                    {filteredReferralGroups.map((group, groupIndex) =>
+                      // For each group, render all its referrals
+                      group.referrals.map((referral, index) => (
+                        <tr
+                          key={`${groupIndex}-${index}`}
+                          className={`border-b ${index === group.referrals.length - 1 ? "border-gray-600" : "border-gray-800"}`}
+                          style={{
+                            backgroundColor: index === 0 ? "#1c1e26" : index === 1 ? "#1f2029" : "#22232d",
+                          }}
+                        >
+                          <td className="py-[6px] px-4 text-[10px] w-[20%]">
+                            {index === 0 ? referral.referralCode : ""}
+                          </td>
+                          <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
+                          <td className="py-[6px] px-4 text-[10px] w-[10%]">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9px] ${
+                                referral.status.toLowerCase() === "active"
+                                  ? "bg-green-500/20 text-green-400"
+                                  : "bg-gray-500/20 text-gray-400"
+                              }`}
+                            >
+                              {referral.status}
+                            </span>
+                          </td>
+                          <td className="py-[6px] px-4 text-[10px] w-[10%]">{referral.level}</td>
+                          <td className="py-[6px] px-4 text-[10px] w-[15%]">
+                            <div className="w-full h-1 bg-gray-700 rounded-full">
+                              <div
+                                className="h-full bg-green-500 rounded-full"
+                                style={{ width: `${(referral.activeCount / 5) * 100}%` }}
+                              ></div>
+                            </div>
+                            <div className="text-[9px] text-gray-400 mt-1">{referral.progress}</div>
+                          </td>
+                          <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
+                          <td className="py-[6px] px-4 text-[10px] w-[15%]">
+                            <button
+                              onClick={() =>
+                                referral.claimStatus === "eligible" && handleClaim(referral.referralId, referral.level)
+                              }
+                              disabled={
+                                referral.claimStatus !== "eligible" || claimingReferralId === referral.referralId
+                              }
+                              className={`px-4 py-1 rounded text-[10px] w-16 ${
+                                referral.claimStatus === "claimed"
+                                  ? "bg-gray-500 text-white cursor-not-allowed"
+                                  : referral.claimStatus === "eligible"
+                                    ? "bg-white text-black hover:bg-gray-200"
+                                    : "bg-gray-700 text-gray-400 cursor-not-allowed"
+                              }`}
+                            >
+                              {referral.claimStatus === "claimed"
+                                ? "Claimed"
+                                : claimingReferralId === referral.referralId
+                                  ? "..."
+                                  : referral.claimStatus === "eligible"
+                                    ? "Claim"
+                                    : "Pending"}
+                            </button>
+                          </td>
+                        </tr>
+                      )),
+                    )}
                   </tbody>
                 </table>
               )}
@@ -402,81 +567,26 @@ export default function Referrals() {
           </div>
         </div>
       </div>
+
+      {/* Debug info for development */}
+      <div className="px-6 mt-4 text-xs text-gray-500">
+        <details>
+          <summary>Debug Info</summary>
+          <pre className="mt-2 p-2 bg-[#1c1e26] rounded overflow-auto max-h-[200px]">
+            {JSON.stringify(
+              {
+                user: user?.id,
+                referralsCount: referralData.length,
+                groupsCount: groupedReferrals.length,
+                refreshing: refreshing,
+                ...debugInfo,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </details>
+      </div>
     </div>
   )
-
-  // Helper function to render a referral row
-  function renderReferralRow(referral: FormattedReferral, key: string) {
-    // Use button state from our utility function
-    const buttonState =
-      referral.buttonState ||
-      determineButtonState({
-        active_count: referral.activeCount,
-        claimed: referral.claimed,
-        claim_date: referral.claim_date,
-        level_reset: false, // We're not using level reset anymore
-      })
-
-    // Determine button appearance and behavior based on button state
-    const buttonAppearance = {
-      text: buttonState.button_text,
-      bgColor:
-        buttonState.button_color === "white"
-          ? "bg-white"
-          : buttonState.button_color === "grey"
-            ? "bg-gray-500"
-            : buttonState.button_color === "red"
-              ? "bg-red-500"
-              : "bg-gray-500",
-      textColor:
-        buttonState.text_color === "white"
-          ? "text-white"
-          : buttonState.text_color === "black"
-            ? "text-black"
-            : buttonState.text_color === "green"
-              ? "text-green-400"
-              : "text-white",
-      isClickable: buttonState.is_clickable,
-      additionalClasses: buttonState.is_clickable ? "hover:bg-gray-100" : "cursor-not-allowed opacity-70",
-    }
-
-    // Override text if currently claiming
-    if (claimingReferralId === referral.referralId) {
-      buttonAppearance.text = "..."
-      buttonAppearance.bgColor = "bg-gray-400"
-      buttonAppearance.textColor = "text-gray-800"
-      buttonAppearance.isClickable = false
-      buttonAppearance.additionalClasses = ""
-    }
-
-    return (
-      <tr key={key} className="border-b border-gray-700">
-        <td className="py-[6px] px-4 text-[10px] w-[20%]">{referral.referralCode}</td>
-        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.country}</td>
-        <td className="py-[6px] px-4 text-[10px] w-[10%]">
-          <span
-            className={`px-2 py-0.5 rounded-full text-[9px] ${
-              referral.status.toLowerCase() === "active"
-                ? "bg-green-500/20 text-green-400"
-                : "bg-gray-500/20 text-gray-400"
-            }`}
-          >
-            {referral.status}
-          </span>
-        </td>
-        <td className="py-[6px] px-4 text-[10px] w-[10%]">{referral.level}</td>
-        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.progress}</td>
-        <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
-        <td className="py-[6px] px-4 text-[10px] w-[15%]">
-          <button
-            onClick={() => buttonAppearance.isClickable && handleClaim(referral.referralId, referral.level)}
-            disabled={!buttonAppearance.isClickable}
-            className={`${buttonAppearance.bgColor} ${buttonAppearance.textColor} px-4 py-1 rounded text-[10px] w-16 transition-colors ${buttonAppearance.additionalClasses}`}
-          >
-            {buttonAppearance.text}
-          </button>
-        </td>
-      </tr>
-    )
-  }
 }
