@@ -119,11 +119,11 @@ export function SlidingNotification() {
 
   // Return the notification component with the yellow bar always visible
   return (
-    <div className="w-full bg-yellow-500 text-black px-4 py-2 text-sm font-semibold overflow-hidden relative">
+    <div className="w-full bg-yellow-500 text-black px-4 py-2 text-sm font-semibold overflow-hidden relative h-[36px] flex items-center">
       {isVisible ? (
         <div className="animate-slide-message whitespace-nowrap">{currentMessage}</div>
       ) : (
-        <div className="opacity-0 h-4">Waiting for next message</div>
+        <div className="opacity-0 h-[20px]">Waiting for next message</div>
       )}
     </div>
   )

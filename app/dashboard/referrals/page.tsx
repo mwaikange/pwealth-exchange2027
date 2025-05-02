@@ -110,59 +110,59 @@ export default function Referrals() {
       if (!data || data.length === 0) {
         console.log("No referrals found with referrer_uuid query, trying fallback query")
 
-        // Try a direct query without filters as a fallback
-        const { data: allData, error: allError } = await supabase
-          .from("levels")
-          .select("*")
-          .limit(20)
-          .order("register_date", { ascending: false })
+        // Try a direct query without filters as a fallback - but only for development/debugging
+        // In production, we should only show the user's own referrals
+        if (process.env.NODE_ENV === "development") {
+          const { data: allData, error: allError } = await supabase
+            .from("levels")
+            .select("*")
+            .limit(20)
+            .order("register_date", { ascending: false })
 
-        if (allError) {
-          console.error("Error fetching all referrals:", allError)
-          setDebugInfo((prev) => ({ ...prev, allError: allError.message }))
-        } else if (allData && allData.length > 0) {
-          console.log("Found some referrals with direct query:", allData.length)
-          setDebugInfo((prev) => ({ ...prev, allData: allData }))
+          if (allError) {
+            console.error("Error fetching all referrals:", allError)
+            setDebugInfo((prev) => ({ ...prev, allError: allError.message }))
+          } else if (allData && allData.length > 0) {
+            console.log("Found some referrals with direct query:", allData.length)
+            setDebugInfo((prev) => ({ ...prev, allData: allData }))
 
-          // Process all data without filtering by user
-          const processedData: FormattedReferral[] = allData.map((item) => {
-            // Extract the progress value (e.g., "3/5")
-            const progressText = item.progress || "0/5"
-            const activeCount = item.active_count || extractProgressValue(progressText)
+            // Process all data without filtering by user
+            const processedData: FormattedReferral[] = allData.map((item) => {
+              // Extract the progress value (e.g., "3/5")
+              const progressText = item.progress || "0/5"
+              const activeCount = extractProgressValue(progressText)
 
-            // Determine claim status
-            let claimStatus: "claimed" | "eligible" | "pending" = "pending"
-            if (item.claimed) {
-              claimStatus = "claimed"
-            } else if (activeCount >= 5) {
-              claimStatus = "eligible"
-            }
+              // Determine claim status
+              let claimStatus: "claimed" | "eligible" | "pending" = "pending"
+              if (item.claimed) {
+                claimStatus = "claimed"
+              } else if (activeCount >= 5) {
+                claimStatus = "eligible"
+              }
 
-            return {
-              referralId: item.referral_id || "",
-              referralCode: item.referral_code || "Unknown",
-              email: item.referred_email || item.email || "Unknown",
-              country: item.country || "Unknown",
-              status: item.status || "pending",
-              level: String(item.level || "1"),
-              progress: progressText,
-              claimStatus,
-              registerDate: item.register_date ? format(new Date(item.register_date), "dd MMM, h:mm a") : "Unknown",
-              referredUuid: item.user_uuid || "",
-              activeCount,
-              claimed: item.claimed || false,
-              claim_date: item.claim_date,
-            }
-          })
+              return {
+                referralId: item.referral_id || "",
+                referralCode: item.referral_code || "Unknown",
+                email: item.referred_email || item.email || "Unknown",
+                country: item.country || "Unknown",
+                status: item.status || "pending",
+                level: String(item.level || "1"),
+                progress: progressText,
+                claimStatus,
+                registerDate: item.register_date ? format(new Date(item.register_date), "dd MMM, h:mm a") : "Unknown",
+                referredUuid: item.user_uuid || "",
+                activeCount,
+                claimed: item.claimed || false,
+                claim_date: item.claim_date,
+              }
+            })
 
-          console.log("Processed all data:", processedData.length, "records")
-          setReferralData(processedData)
-          setLoading(false)
-          setRefreshing(false)
-          return
-        } else {
-          console.log("No referrals found with direct query either")
-          setDebugInfo((prev) => ({ ...prev, noData: true }))
+            console.log("Processed all data:", processedData.length, "records")
+            setReferralData(processedData)
+            setLoading(false)
+            setRefreshing(false)
+            return
+          }
         }
 
         setReferralData([])
@@ -173,9 +173,9 @@ export default function Referrals() {
 
       // Process the data
       const processedData: FormattedReferral[] = data.map((item) => {
-        // Extract the progress value (e.g., "3/5")
+        // Extract the progress value (e.g., "3/5") directly from the database
         const progressText = item.progress || "0/5"
-        const activeCount = item.active_count || extractProgressValue(progressText)
+        const activeCount = extractProgressValue(progressText)
 
         // Determine claim status
         let claimStatus: "claimed" | "eligible" | "pending" = "pending"
@@ -566,26 +566,6 @@ export default function Referrals() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Debug info for development */}
-      <div className="px-6 mt-4 text-xs text-gray-500">
-        <details>
-          <summary>Debug Info</summary>
-          <pre className="mt-2 p-2 bg-[#1c1e26] rounded overflow-auto max-h-[200px]">
-            {JSON.stringify(
-              {
-                user: user?.id,
-                referralsCount: referralData.length,
-                groupsCount: groupedReferrals.length,
-                refreshing: refreshing,
-                ...debugInfo,
-              },
-              null,
-              2,
-            )}
-          </pre>
-        </details>
       </div>
     </div>
   )
