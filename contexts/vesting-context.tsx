@@ -7,6 +7,8 @@ import { useTransactions } from "./transaction-context"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { v4 as uuidv4 } from "uuid"
+import { resetVestingSchedulesAndProcessClaims } from "@/actions/vesting-actions"
+import { toast } from "react-hot-toast"
 
 // Define the vesting schedule state
 export type VestingScheduleState = {
@@ -36,7 +38,7 @@ type VestingContextType = {
   getScheduleById: (scheduleId: string) => VestingScheduleState | undefined
   getSchedulesByLevel: (level: number) => VestingScheduleState[]
   getScheduleByRank: (rank: number) => VestingScheduleState | undefined
-  resetAllSchedulesInLevel: (level: number) => Promise<void>
+  resetAllSchedulesInLevel: (userUuid: string, level: number) => Promise<void>
   loading: boolean
 }
 
@@ -82,14 +84,15 @@ const ensureValidUuidOrNull = (id: string | null | undefined): string | null => 
 
 // Provider component
 export function VestingProvider({ children }: { children: React.ReactNode }) {
-  const { updatePwtInvestBalance, updatePwtCashoutBalance, updateAftBalance } = useWallet()
-  const { addTransaction } = useTransactions()
+  const { updatePwtInvestBalance, updatePwtCashoutBalance, updateAftBalance, refreshBalances } = useWallet()
+  const { addTransaction, refreshTransactions } = useTransactions()
   const { user } = useAuth()
 
   // State for vesting schedules
   const [vestingSchedules, setVestingSchedules] = useState<VestingScheduleState[]>([])
   const [loading, setLoading] = useState(true)
   const [sessionChecked, setSessionChecked] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
   // Check for active session first
   useEffect(() => {
@@ -332,14 +335,14 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         if (allCompleted && levelSchedules.length > 0) {
           // Set a timeout to reset all schedules in this level
           setTimeout(() => {
-            resetAllSchedulesInLevel(level)
+            resetAllSchedulesInLevel(user.id, level)
           }, 5000) // 5 seconds
         }
       }
     }
 
     checkLevelCompletion()
-  }, [vestingSchedules, loading])
+  }, [vestingSchedules, loading, user])
 
   // Get activation cost based on level
   const getActivationCost = (level: number): number => {
@@ -655,78 +658,75 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Reset all schedules in a level
-  const resetAllSchedulesInLevel = async (level: number) => {
-    if (!user || !sessionChecked) return
-
-    // Verify session is still active
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
+  const resetAllSchedulesInLevel = async (userUuid: string, level: number) => {
+    setIsResetting(true)
     try {
-      console.log("Resetting schedules for level:", level)
+      const result = await resetVestingSchedulesAndProcessClaims(userUuid, level)
 
-      // Create the parameters object and log it
-      const params = {
-        p_level: level,
-      }
+      if (result.success) {
+        // Refresh vesting schedules
+        async function fetchVestingSchedules() {
+          if (!user) return
+          try {
+            const { data, error } = await supabase
+              .from("vesting_schedules")
+              .select("*")
+              .eq("user_uuid", user.id)
+              .order("level_rank", { ascending: true })
 
-      console.log("RPC parameters:", JSON.stringify(params))
-
-      // Use the reset_schedules_by_level function with correct parameter name
-      const { data, error } = await supabase.rpc("reset_schedules_by_level", params)
-
-      if (error) {
-        console.error("Error resetting schedules:", error)
-        throw error
-      }
-
-      console.log("Reset result:", data)
-
-      // Reset any referral claims where this user is the referred person
-      try {
-        const { error: resetClaimsError } = await supabase.rpc("reset_referral_claims_for_user", {
-          p_referred_uuid: user.id,
-          p_level: level,
-        })
-
-        if (resetClaimsError) {
-          console.error("Error resetting referral claims:", resetClaimsError)
-        } else {
-          console.log(`Successfully reset referral claims for user ${user.id} at level ${level}`)
-        }
-      } catch (resetError) {
-        console.error("Error in reset_referral_claims_for_user:", resetError)
-      }
-
-      // Check if the operation was successful
-      if (data && data.success === false) {
-        console.error("Failed to reset schedules:", data.error)
-        throw new Error(data.error)
-      }
-
-      // Update local state
-      setVestingSchedules((prevSchedules) => {
-        return prevSchedules.map((schedule) => {
-          if (schedule.level === level) {
-            return {
-              ...schedule,
-              activated: false,
-              invested: false,
-              claimed: false,
-              progress: 0,
-              startTime: null,
-              lastClaimTime: null,
-              lastClaimPercentage: 0,
-              prematurelyClaimed: false,
+            if (error) {
+              console.error("Error fetching vesting schedules:", error)
+              return
             }
+
+            if (data) {
+              const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
+                id: `LEVEL${schedule.level}-${schedule.position}`,
+                level: schedule.level,
+                position: schedule.position,
+                level_rank: schedule.level_rank,
+                color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
+                activated: schedule.activated,
+                invested: schedule.invested,
+                claimed: schedule.claimed,
+                progress: schedule.progress,
+                startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
+                lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
+                lastClaimPercentage: schedule.last_claim_percentage,
+                prematurelyClaimed: schedule.prematurely_claimed,
+                schedule_id: schedule.schedule_id,
+                schedule_id_text: schedule.schedule_id_text,
+              }))
+              setVestingSchedules(formattedSchedules)
+            }
+          } catch (error) {
+            console.error("Error in fetchVestingSchedules:", error)
           }
-          return schedule
+        }
+        await fetchVestingSchedules()
+
+        // Show success notification
+        toast({
+          title: "Reset Successful",
+          description: `All schedules in Level ${level} have been reset.`,
+          status: "success",
+          duration: 5000,
+          isClosable: true,
         })
-      })
+      } else {
+        throw new Error("Failed to reset schedules")
+      }
     } catch (error) {
       console.error("Error resetting schedules:", error)
+      toast({
+        title: "Reset Failed",
+        description: "There was an error resetting the schedules. Please try again.",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      })
+    } finally {
+      setIsResetting(false)
     }
   }
 

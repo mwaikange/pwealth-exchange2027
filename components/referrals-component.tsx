@@ -1,4 +1,54 @@
+"use client"
+
+import { useEffect } from "react"
+import { useToast } from "@chakra-ui/react"
+import { useSupabaseClient } from "@supabase/auth-helpers-react"
+import { useUser } from "@supabase/auth-helpers-react"
+
 export function ReferralsComponent() {
+  const supabase = useSupabaseClient()
+  const user = useUser()
+  const toast = useToast()
+
+  const checkForAutoClaims = async () => {
+    try {
+      if (!user?.id) return // Exit if user is not available
+
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .like("description", "%Auto Referral Claim%")
+        .order("created_at", { ascending: false })
+        .limit(5)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        // Show notification for auto-claimed rewards
+        const latestClaim = data[0]
+        const claimDate = new Date(latestClaim.created_at).toLocaleDateString()
+
+        toast({
+          title: "Auto Referral Claim Processed",
+          description: `${latestClaim.description} of ${latestClaim.amount} PWT was automatically processed on ${claimDate}`,
+          status: "success",
+          duration: 8000,
+          isClosable: true,
+        })
+      }
+    } catch (error) {
+      console.error("Error checking for auto claims:", error)
+    }
+  }
+
+  useEffect(() => {
+    if (user) {
+      // fetchReferralData(); // Assuming fetchReferralData is defined elsewhere and handles user being null
+      checkForAutoClaims() // Add this line
+    }
+  }, [user, supabase, toast])
+
   return (
     <div className="p-6">
       <div className="mb-6">
