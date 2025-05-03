@@ -38,58 +38,68 @@ export default function Settings() {
   }, [])
 
   // Fetch user data from Supabase
-  useEffect(() => {
-    async function fetchUserData() {
-      if (!user) return
+  // Update the fetchUserData function to properly check if the user has a referrer
+  // by directly querying the referrals table
 
-      setLoading(true)
+  // Replace the existing fetchUserData function with this enhanced version:
+  async function fetchUserData() {
+    if (!user) return
 
-      try {
-        const { data: userProfile, error } = await supabase
-          .from("app_users")
-          .select("*")
-          .eq("user_uuid", user.id)
-          .single()
+    setLoading(true)
 
-        if (error) {
-          console.error("Error fetching user data:", error)
-          return
-        }
+    try {
+      const { data: userProfile, error } = await supabase
+        .from("app_users")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .single()
 
-        // Also fetch referral code
-        const { data: settingsData } = await supabase
-          .from("usersettings")
-          .select("referral_code")
-          .eq("user_uuid", user.id)
-          .single()
-
-        // Check if the user has a referrer by querying the referral_view table
-        const { data: referralViewData } = await supabase
-          .from("referral_view")
-          .select("referred_user_referral_code, referrer_referral_code")
-          .eq("referred_referral_code", settingsData?.referral_code)
-          .single()
-
-        // Determine if user has a referrer based on referred_user_referral_code
-        const hasReferrer = referralViewData?.referred_user_referral_code ? true : false
-        const referrerCode = referralViewData?.referrer_referral_code || null
-
-        // Then merge this with your user data:
-        const userData = {
-          ...userProfile,
-          referral_code: settingsData?.referral_code,
-          hasReferrer: hasReferrer,
-          referrerCode: referrerCode,
-        }
-
-        setUserData(userData)
-      } catch (error) {
-        console.error("Error in fetchUserData:", error)
-      } finally {
-        setLoading(false)
+      if (error) {
+        console.error("Error fetching user data:", error)
+        return
       }
-    }
 
+      // Also fetch referral code
+      const { data: settingsData } = await supabase
+        .from("usersettings")
+        .select("referral_code")
+        .eq("user_uuid", user.id)
+        .single()
+
+      // IMPORTANT: Directly check the referrals table to see if the user is referred
+      const { data: referralData, error: referralError } = await supabase
+        .from("referrals")
+        .select("referrer_email, referral_code, referred_referral_code")
+        .eq("referred_uuid", user.id)
+        .single()
+
+      if (referralError && referralError.code !== "PGRST116") {
+        console.error("Error checking referrals:", referralError)
+      }
+
+      // Determine if user has a referrer based on the referrals table
+      const hasReferrer = !!referralData
+      const referrerCode = referralData?.referral_code || null
+
+      // Then merge this with your user data:
+      const userData = {
+        ...userProfile,
+        referral_code: settingsData?.referral_code,
+        hasReferrer: hasReferrer,
+        referrerCode: referrerCode,
+        referrerEmail: referralData?.referrer_email || null,
+        referred_referral_code: referralData?.referred_referral_code || null,
+      }
+
+      setUserData(userData)
+    } catch (error) {
+      console.error("Error in fetchUserData:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchUserData()
   }, [user])
 
@@ -125,37 +135,176 @@ export default function Settings() {
     }
   }
 
+  // Update the handleReferrerUpdate function to ensure it properly updates the referrals table
+  // Replace the existing handleReferrerUpdate function with this enhanced version:
   async function handleReferrerUpdate(formData: FormData) {
     setReferrerError(null)
     setReferrerSuccess(null)
 
+    const referrerEmail = formData.get("referrerEmail") as string
+
+    if (!referrerEmail) {
+      setReferrerError("Please enter a referrer email or referral code")
+      return
+    }
+
     // Add the session token to the form data
     if (sessionToken) {
       formData.append("sessionToken", sessionToken)
       formData.append("userId", user?.id || "")
     }
 
-    const result = await updateReferrerEmail(formData)
+    try {
+      // First, check if the user already has a referrer
+      const { data: existingReferral, error: existingError } = await supabase
+        .from("referrals")
+        .select("*")
+        .eq("referred_uuid", user?.id || "")
+        .single()
 
-    if (result.success) {
-      setReferrerSuccess(result.message)
-      // Clear form
-      const form = document.getElementById("referrer-form") as HTMLFormElement
-      if (form) form.reset()
-    } else {
-      setReferrerError(result.message)
+      if (existingReferral) {
+        setReferrerError("You already have a referrer and cannot change it")
+        return
+      }
+
+      // Check if the referrer exists by email or referral code
+      let referrerQuery = supabase.from("app_users").select("user_uuid, email")
+
+      // Determine if input is an email or referral code
+      if (referrerEmail.includes("@")) {
+        referrerQuery = referrerQuery.eq("email", referrerEmail)
+      } else {
+        // If not an email, try to find by referral code
+        const { data: referrerByCode } = await supabase
+          .from("usersettings")
+          .select("user_uuid")
+          .eq("referral_code", referrerEmail)
+          .single()
+
+        if (referrerByCode) {
+          const { data: referrerUser } = await supabase
+            .from("app_users")
+            .select("user_uuid, email")
+            .eq("user_uuid", referrerByCode.user_uuid)
+            .single()
+
+          if (referrerUser) {
+            // Update the referrerEmail to the actual email
+            formData.set("referrerEmail", referrerUser.email)
+          }
+        }
+      }
+
+      const result = await updateReferrerEmail(formData)
+
+      if (result.success) {
+        // Fetch the updated referral data to confirm it was properly saved
+        const { data: updatedReferral } = await supabase
+          .from("referrals")
+          .select("*")
+          .eq("referred_uuid", user?.id || "")
+          .single()
+
+        if (updatedReferral) {
+          setReferrerSuccess(result.message)
+          // Clear form
+          const form = document.getElementById("referrer-form") as HTMLFormElement
+          if (form) form.reset()
+
+          // Update userData to reflect the change
+          setUserData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  hasReferrer: true,
+                  referrerCode: updatedReferral.referral_code,
+                  referrerEmail: updatedReferral.referrer_email,
+                  referred_referral_code: updatedReferral.referred_referral_code,
+                }
+              : prev,
+          )
+        } else {
+          setReferrerError("Referrer was updated but data couldn't be verified. Please refresh the page.")
+        }
+      } else {
+        setReferrerError(result.message)
+      }
+    } catch (error: any) {
+      console.error("Error updating referrer:", error)
+      setReferrerError(error.message || "Failed to update referrer")
     }
   }
 
-  // New function to handle the updateReferrer action in the Card component
+  // Update the handleCardReferrerUpdate function similarly
+  // Replace the existing handleCardReferrerUpdate function with this enhanced version:
   async function handleCardReferrerUpdate(formData: FormData) {
+    setReferrerError(null)
+    setReferrerSuccess(null)
+
+    const referrerEmail = formData.get("referrerEmail") as string
+
+    if (!referrerEmail) {
+      setReferrerError("Please enter a referrer email or referral code")
+      return
+    }
+
     // Add the session token to the form data
     if (sessionToken) {
       formData.append("sessionToken", sessionToken)
       formData.append("userId", user?.id || "")
     }
 
-    return updateReferrer(formData)
+    try {
+      // First, check if the user already has a referrer
+      const { data: existingReferral, error: existingError } = await supabase
+        .from("referrals")
+        .select("*")
+        .eq("referred_uuid", user?.id || "")
+        .single()
+
+      if (existingReferral) {
+        setReferrerError("You already have a referrer and cannot change it")
+        return { success: false, message: "You already have a referrer and cannot change it" }
+      }
+
+      const result = await updateReferrer(formData)
+
+      if (result.success) {
+        // Fetch the updated referral data to confirm it was properly saved
+        const { data: updatedReferral } = await supabase
+          .from("referrals")
+          .select("*")
+          .eq("referred_uuid", user?.id || "")
+          .single()
+
+        if (updatedReferral) {
+          setReferrerSuccess(result.message)
+
+          // Update userData to reflect the change
+          setUserData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  hasReferrer: true,
+                  referrerCode: updatedReferral.referral_code,
+                  referrerEmail: updatedReferral.referrer_email,
+                  referred_referral_code: updatedReferral.referred_referral_code,
+                }
+              : prev,
+          )
+        } else {
+          setReferrerError("Referrer was updated but data couldn't be verified. Please refresh the page.")
+        }
+      } else {
+        setReferrerError(result.message)
+      }
+
+      return result
+    } catch (error: any) {
+      console.error("Error updating referrer:", error)
+      setReferrerError(error.message || "Failed to update referrer")
+      return { success: false, message: error.message || "Failed to update referrer" }
+    }
   }
 
   if (loading) {
@@ -288,10 +437,12 @@ export default function Settings() {
               )}
 
               <form id="referrer-form" action={handleReferrerUpdate}>
-                {userData?.hasReferrer ? (
+                {userData?.hasReferrer || referrerSuccess ? (
                   <>
                     <div className="bg-gray-700 p-2 rounded text-center mb-2">
-                      <p className="text-xs text-gray-300">You're Referrer is: {userData?.referrerCode}</p>
+                      <p className="text-xs text-gray-300">
+                        Your Referrer is: {userData?.referrerCode || "Updated successfully"}
+                      </p>
                     </div>
                     <p className="text-xs text-gray-400 mb-2">
                       **NB once completed this can't be changed for this account
@@ -503,9 +654,9 @@ export default function Settings() {
           <CardDescription>Update your referrer if you didn't provide one during registration</CardDescription>
         </CardHeader>
         <CardContent>
-          {userData?.hasReferrer ? (
+          {userData?.hasReferrer || referrerSuccess ? (
             <div className="bg-gray-700 p-4 rounded text-center">
-              <p className="text-gray-300">You're Referrer is: {userData?.referrerCode}</p>
+              <p className="text-gray-300">Your Referrer is: {userData?.referrerCode || "Updated successfully"}</p>
               <p className="text-gray-400 text-sm mt-2">This cannot be changed for this account</p>
             </div>
           ) : (

@@ -6,7 +6,6 @@ import { env } from "@/lib/env"
 
 export async function updateReferrer(formData: FormData) {
   const referrerEmail = formData.get("referrerEmail") as string
-  // Get the session token and user ID from the form data
   const sessionToken = formData.get("sessionToken") as string
   const userId = formData.get("userId") as string
 
@@ -14,12 +13,8 @@ export async function updateReferrer(formData: FormData) {
     console.log("Updating referrer for user:", userId)
 
     if (!sessionToken || !userId) {
-      console.error("Missing session token or user ID in updateReferrer")
+      console.error("Missing session token or user ID")
       return { success: false, message: "Authentication required. Please log in again." }
-    }
-
-    if (!referrerEmail?.trim()) {
-      return { success: false, message: "Referrer email is required" }
     }
 
     // Create a new Supabase client with the service role key
@@ -32,74 +27,92 @@ export async function updateReferrer(formData: FormData) {
       return { success: false, message: "You already have a referrer and cannot change it" }
     }
 
-    // Check if the referrer exists
-    const { data: referrer } = await supabase
-      .from("app_users")
-      .select("user_uuid, referral_code, email")
-      .eq("email", referrerEmail)
-      .single()
+    // Get the referrer's information
+    let referrerQuery = supabase.from("app_users").select("user_uuid, email")
 
-    if (!referrer) {
-      return { success: false, message: "Referrer email not found" }
+    // Determine if input is an email or referral code
+    if (referrerEmail.includes("@")) {
+      referrerQuery = referrerQuery.eq("email", referrerEmail)
+    } else {
+      // If not an email, try to find by referral code
+      const { data: referrerByCode } = await supabase
+        .from("usersettings")
+        .select("user_uuid")
+        .eq("referral_code", referrerEmail)
+        .single()
+
+      if (referrerByCode) {
+        referrerQuery = supabase.from("app_users").select("user_uuid, email").eq("user_uuid", referrerByCode.user_uuid)
+      } else {
+        return { success: false, message: "Referrer not found with the provided referral code" }
+      }
     }
 
-    // Update the user's referrer_email in app_users
-    const { error: updateError } = await supabase
-      .from("app_users")
-      .update({ referrer_email: referrerEmail })
-      .eq("user_uuid", userId)
+    const { data: referrer, error: referrerError } = await referrerQuery.single()
 
-    if (updateError) {
-      throw new Error(updateError.message)
+    if (referrerError || !referrer) {
+      console.error("Referrer not found:", referrerError)
+      return { success: false, message: "Referrer email or code not found" }
     }
 
-    // Update the user's referral_code in usersettings
-    const { error: settingsError } = await supabase
+    // Get referrer's referral code
+    const { data: referrerSettings, error: referrerSettingsError } = await supabase
       .from("usersettings")
-      .update({
-        referral_code: referrer.referral_code,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_uuid", userId)
+      .select("referral_code")
+      .eq("user_uuid", referrer.user_uuid)
+      .single()
 
-    if (settingsError) {
-      throw new Error(settingsError.message)
+    if (referrerSettingsError || !referrerSettings) {
+      console.error("Referrer settings not found:", referrerSettingsError)
+      return { success: false, message: "Referrer settings not found" }
     }
 
-    // Get the user's country
-    const { data: userData } = await supabase
+    // Get user's information
+    const { data: userData, error: userError } = await supabase
       .from("app_users")
-      .select("email, country")
+      .select("display_id, email")
       .eq("user_uuid", userId)
       .single()
 
-    if (!userData) {
+    if (userError || !userData) {
+      console.error("User data not found:", userError)
       return { success: false, message: "User data not found" }
     }
 
-    // Create a new referral record
-    const { error: referralError } = await supabase.from("referrals").insert({
+    // Get user's referral code
+    const { data: userSettings, error: userSettingsError } = await supabase
+      .from("usersettings")
+      .select("referral_code")
+      .eq("user_uuid", userId)
+      .single()
+
+    if (userSettingsError || !userSettings) {
+      console.error("User settings not found:", userSettingsError)
+      return { success: false, message: "User settings not found" }
+    }
+
+    // Create the referral with both referral codes
+    const { error } = await supabase.from("referrals").insert({
       user_uuid: referrer.user_uuid,
       referred_uuid: userId,
-      referrer_email: referrerEmail,
+      referrer_email: referrer.email,
       referred_email: userData.email,
       referral_date: new Date().toISOString(),
-      status: "pending", // Start as pending
-      referred_referral_code: referrer.referral_code,
-      country: userData.country || "Unknown", // Include country
-      claimed: false,
-      claim_date: null,
-      active_count: 0, // Initialize with 0 active vesting schedules
+      status: "active",
+      display_id: userData.display_id,
+      referral_code: referrerSettings.referral_code,
+      referred_referral_code: userSettings.referral_code,
     })
 
-    if (referralError) {
-      throw new Error(referralError.message)
+    if (error) {
+      console.error("Error creating referral:", error)
+      throw new Error(error.message)
     }
 
     revalidatePath("/dashboard/settings")
     return { success: true, message: "Referrer updated successfully" }
   } catch (error: any) {
-    console.error("Error updating referrer:", error)
+    console.error("Referrer update error:", error.message)
     return { success: false, message: error.message || "Failed to update referrer" }
   }
 }

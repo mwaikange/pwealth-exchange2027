@@ -38,10 +38,19 @@ export function TransactionTable({
   // Helper function to format transaction type display
   const formatTransactionType = (transaction: Transaction): string => {
     const type = transaction.type || transaction.transaction_type || "Unknown"
+    const isPositive = isPositiveTransaction(transaction)
+    const prefix = isPositive ? "+ " : "- "
 
     // Standardize display names
-    if (type === "AFT Gift" || type === "OUT-AFT GIFT") return "OUT-AFT GIFT"
-    if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return "OUT-PWT Transfer"
+    if (type === "AFT Gift" || type === "OUT-AFT GIFT") return `${prefix}OUT-AFT GIFT`
+    if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return `${prefix}OUT-PWT Transfer`
+    if (type === "AFT-TopUP") return `${prefix}AFT-TopUP`
+    if (type === "IN-PWT RECEIPT") return `${prefix}IN-PWT RECEIPT`
+    if (type === "BUY-AFT RECEIPT") return `${prefix}BUY-AFT RECEIPT`
+    if (type === "IN-AFT GIFT") return `${prefix}IN-AFT GIFT`
+    if (type === "CLAIM") return `${prefix}CLAIM`
+    if (type === "OUT-TRANSFER") return `${prefix}OUT-TRANSFER`
+    if (type === "VESTING") return `${prefix}VESTING`
 
     // Handle ACTIVATE FEE with level information
     if (type === "ACTIVATE FEE") {
@@ -53,21 +62,42 @@ export function TransactionTable({
       if (levelMatch) {
         const levelNumber = levelMatch[1] || "2"
         const levelLetter = levelMatch[2] || "A"
-        return `ACTIVATE FEE - LEVEL${levelNumber}-${levelLetter}`
+        return `${prefix}ACTIVATE FEE - LEVEL${levelNumber}-${levelLetter}`
       }
 
       // Default if no match found
-      return "ACTIVATE FEE - LEVEL2-A"
+      return `${prefix}ACTIVATE FEE - LEVEL2-A`
     }
 
+    // Handle REFERRAL CLAIM with level information
     if (typeof type === "string" && type.startsWith("REFERRAL CLAIM")) {
-      if (type.includes("Level 1")) return "REFERRAL CLAIM-LvL1"
-      if (type.includes("Level 2")) return "REFERRAL CLAIM-LvL2"
-      if (type.includes("Level 3")) return "REFERRAL CLAIM-LvL3"
-      return "REFERRAL CLAIM"
+      // Check for the exact format we're using when creating transactions
+      if (type.includes("REFERRAL CLAIM-LvL1")) return `${prefix}REFERRAL CLAIM-LvL1`
+      if (type.includes("REFERRAL CLAIM-LvL2")) return `${prefix}REFERRAL CLAIM-LvL2`
+      if (type.includes("REFERRAL CLAIM-LvL3")) return `${prefix}REFERRAL CLAIM-LvL3`
+
+      // Also check description for level information (case insensitive)
+      if (transaction.description?.toUpperCase().includes("LVL1")) return `${prefix}REFERRAL CLAIM-LvL1`
+      if (transaction.description?.toUpperCase().includes("LVL2")) return `${prefix}REFERRAL CLAIM-LvL2`
+      if (transaction.description?.toUpperCase().includes("LVL3")) return `${prefix}REFERRAL CLAIM-LvL3`
+
+      // Extract level from type using our exact format
+      const levelMatchType = type.match(/REFERRAL CLAIM-LvL(\d+)/)
+      if (levelMatchType) {
+        return `${prefix}REFERRAL CLAIM-LvL${levelMatchType[1]}`
+      }
+
+      // Extract level from description as fallback
+      const levelMatchDesc = transaction.description?.match(/LVL(\d+)/i) || transaction.description?.match(/LvL(\d+)/i)
+      if (levelMatchDesc) {
+        return `${prefix}REFERRAL CLAIM-LvL${levelMatchDesc[1]}`
+      }
+
+      return `${prefix}REFERRAL CLAIM`
     }
 
-    return transaction.description || type
+    // Default case: use description or type
+    return `${prefix}${transaction.description || type}`
   }
 
   // List of transaction types that should show a plus sign (incoming transactions)
@@ -80,6 +110,7 @@ export function TransactionTable({
     "BUY-AFT RECEIPT",
     "IN-AFT GIFT",
     "CLAIM",
+    "AFT-TopUP",
   ]
 
   // Check if a transaction is positive (incoming)
@@ -92,31 +123,17 @@ export function TransactionTable({
     if (positiveTypes.includes(type)) return true
 
     // Check if it starts with any of our positive prefixes
-    if (type.startsWith("REFERRAL CLAIM") || type.startsWith("IN-") || type === "CLAIM" || type === "BUY-AFT RECEIPT") {
+    if (
+      type.startsWith("REFERRAL CLAIM") ||
+      type.startsWith("IN-") ||
+      type === "CLAIM" ||
+      type === "BUY-AFT RECEIPT" ||
+      type === "AFT-TopUP"
+    ) {
       return true
     }
 
     return false
-  }
-
-  // Update the getTransactionColor function to add color for AFT-TopUP transactions
-  const getTransactionColor = (type: TransactionType) => {
-    switch (type) {
-      case "IN-PWT RECEIPT":
-      case "REFERRAL CLAIM":
-      case "BUY-AFT RECEIPT":
-      case "IN-AFT GIFT":
-      case "CLAIM":
-      case "AFT-TopUP": // <-- Add this case to show AFT-TopUP as green
-        return "bg-green-500"
-      case "OUT-TRANSFER":
-      case "OUT-AFT GIFT":
-      case "ACTIVATE FEE":
-      case "VESTING":
-        return "bg-red-500"
-      default:
-        return "bg-gray-500"
-    }
   }
 
   // Helper function to check if a transaction is AFT-related
@@ -144,12 +161,15 @@ export function TransactionTable({
         <tbody>
           {transactions.map((transaction) => {
             const isPositive = isPositiveTransaction(transaction)
+            const formattedType = formatTransactionType(transaction)
+            const signPart = formattedType.substring(0, 2) // Get the "+ " or "- " part
+            const descriptionPart = formattedType.substring(2) // Get the rest of the description
 
             return (
               <tr key={transaction.id} className="border-b border-gray-700">
                 <td className="py-[6px] px-4 text-[10px]">
-                  <span className={isPositive ? "text-green-400" : "text-red-400"}>{isPositive ? "+" : "-"}</span>{" "}
-                  {formatTransactionType(transaction)}
+                  <span className={isPositive ? "text-green-500" : "text-red-500"}>{signPart}</span>
+                  <span className="text-white">{descriptionPart}</span>
                 </td>
                 {showAccount && <td className="py-[6px] px-4 text-[10px]">{transaction.account}</td>}
                 <td className="py-[6px] px-4 text-[10px]">{transaction.date}</td>

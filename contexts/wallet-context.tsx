@@ -134,25 +134,55 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updatePwtCashoutBalance = async (amount: number, operation: "add" | "subtract") => {
-    if (!user) return
+    if (!user) {
+      console.error("WalletContext: Cannot update balance - no user logged in")
+      throw new Error("No user logged in")
+    }
 
-    const newBalance =
-      operation === "add" ? walletState.pwtCashoutBalance + amount : walletState.pwtCashoutBalance - amount
+    const oldBalance = walletState.pwtCashoutBalance
+    const newBalance = operation === "add" ? oldBalance + amount : oldBalance - amount
 
-    // Update local state first
+    console.log(
+      `WalletContext: Updating PWT Cashout balance from ${oldBalance} to ${newBalance} (${operation === "add" ? "+" : "-"}${amount})`,
+    )
+
+    // Update local state first for immediate UI feedback
     setWalletState((prev) => ({
       ...prev,
       pwtCashoutBalance: newBalance,
     }))
 
     // Then update in Supabase
-    await supabase
-      .from("balances")
-      .update({
-        pwt_cashout_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_uuid", user.id)
+    try {
+      const { error } = await supabase
+        .from("balances")
+        .update({
+          pwt_cashout_balance: newBalance,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_uuid", user.id)
+
+      if (error) {
+        console.error(`WalletContext: Database error updating balance:`, error)
+        // Revert local state if database update fails
+        setWalletState((prev) => ({
+          ...prev,
+          pwtCashoutBalance: oldBalance,
+        }))
+        throw error
+      }
+
+      console.log(`WalletContext: Successfully updated PWT Cashout balance in database`)
+      return true
+    } catch (error) {
+      console.error(`WalletContext: Error updating PWT Cashout balance:`, error)
+      // Revert local state if there's an exception
+      setWalletState((prev) => ({
+        ...prev,
+        pwtCashoutBalance: oldBalance,
+      }))
+      throw error
+    }
   }
 
   const updateAftBalance = async (amount: number, operation: "add" | "subtract") => {
@@ -186,7 +216,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }
 
   const claimToPwtCashout = async (amount: number) => {
-    await updatePwtCashoutBalance(amount, "add")
+    console.log(`WalletContext: Adding ${amount} PWT to Cashout balance`)
+    try {
+      await updatePwtCashoutBalance(amount, "add")
+      console.log(`WalletContext: Successfully added ${amount} PWT to Cashout balance`)
+      return true
+    } catch (error) {
+      console.error(`WalletContext: Error adding to Cashout balance:`, error)
+      throw error
+    }
   }
 
   const receivePwtInvest = async (amount: number) => {
