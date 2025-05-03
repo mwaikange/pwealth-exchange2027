@@ -12,12 +12,15 @@ export type TransactionType =
   | "OUT-AFT GIFT"
   | "IN-PWT RECEIPT"
   | "REFERRAL CLAIM"
+  | "REFERRAL CLAIM-LvL1"
+  | "REFERRAL CLAIM-LvL2"
+  | "REFERRAL CLAIM-LvL3"
   | "BUY-AFT RECEIPT"
   | "ACTIVATE FEE"
   | "IN-AFT GIFT"
   | "VESTING"
   | "CLAIM"
-  | "AFT-TopUP" // Added new transaction type for AFT top-up
+  | "AFT-TopUP"
 
 // Define wallet types
 export type WalletType = "PWT Invest" | "PWT Cashout" | "AFT Wallet"
@@ -165,6 +168,9 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
         "OUT-AFT GIFT",
         "IN-PWT RECEIPT",
         "REFERRAL CLAIM",
+        "REFERRAL CLAIM-LvL1",
+        "REFERRAL CLAIM-LvL2",
+        "REFERRAL CLAIM-LvL3",
         "BUY-AFT RECEIPT",
         "ACTIVATE FEE",
         "IN-AFT GIFT",
@@ -173,14 +179,13 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
         "AFT-TopUP",
       ]
 
-      if (!validTypes.includes(transaction.type)) {
+      if (!validTypes.includes(transaction.type as TransactionType)) {
         console.error("Invalid transaction type:", transaction.type)
         throw new Error(`Invalid transaction type: ${transaction.type}`)
       }
 
       // Insert into Supabase
       const { error } = await supabase.from("transactions").insert({
-        transaction_id: transactionId,
         user_uuid: user.id,
         transaction_type: transaction.type,
         account_type: transaction.account,
@@ -221,15 +226,40 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     }
 
     if (type === "Earnings") {
-      return transactions.filter((t) =>
-        ["IN-PWT RECEIPT", "REFERRAL CLAIM", "BUY-AFT RECEIPT", "IN-AFT GIFT", "CLAIM", "AFT-TopUP"].includes(t.type),
-      )
+      return transactions.filter((t) => {
+        const transactionType = t.type || ""
+        return (
+          transactionType.includes("IN-PWT RECEIPT") ||
+          transactionType.includes("REFERRAL CLAIM") ||
+          transactionType.includes("BUY-AFT RECEIPT") ||
+          transactionType.includes("IN-AFT GIFT") ||
+          transactionType === "CLAIM" ||
+          transactionType === "AFT-TopUP"
+        )
+      })
     }
 
     if (type === "Outflows") {
-      return transactions.filter((t) => ["OUT-TRANSFER", "OUT-AFT GIFT", "ACTIVATE FEE", "VESTING"].includes(t.type))
+      return transactions.filter((t) => {
+        const transactionType = t.type || ""
+        return (
+          transactionType.includes("OUT-TRANSFER") ||
+          transactionType.includes("OUT-AFT GIFT") ||
+          transactionType.includes("ACTIVATE FEE") ||
+          transactionType === "VESTING"
+        )
+      })
     }
 
+    // For specific transaction types, handle partial matches for REFERRAL CLAIM with levels
+    if (type === "REFERRAL CLAIM") {
+      return transactions.filter((t) => {
+        const transactionType = t.type || ""
+        return transactionType.includes("REFERRAL CLAIM")
+      })
+    }
+
+    // For other specific types, do an exact match
     return transactions.filter((t) => t.type === type)
   }
 

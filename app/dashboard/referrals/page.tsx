@@ -39,7 +39,7 @@ export default function Referrals() {
   const [refreshing, setRefreshing] = useState(false) // Separate state for background refreshes
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [claimingReferralId, setClaimingReferralId] = useState<string | null>(null)
+  const [claimingReferral, setClaimingReferral] = useState<{ id: string; level: string } | null>(null)
   const [claimSuccess, setClaimSuccess] = useState("")
   const router = useRouter()
   const { user } = useAuth()
@@ -83,12 +83,12 @@ export default function Referrals() {
           referred_referral_code,
           referral_code,
           country,
-          register_date,
+          referral_date,
           button_state
         `)
         .eq("referral_uuid", user.id)
         .order("level", { ascending: true })
-        .order("register_date", { ascending: false })
+        .order("referral_date", { ascending: false })
 
       if (fetchError) {
         console.error("Error fetching referrals:", fetchError)
@@ -110,8 +110,24 @@ export default function Referrals() {
         // Determine status based on invested_count
         const status = item.invested_count > 0 ? "active" : "inactive"
 
-        // Default button state if not provided
-        const buttonState = item.button_state || (item.invested_count >= 5 ? "claimable" : "Locked")
+        // Ensure we're getting the correct button state from the database
+        // If button_state is null or undefined, determine it based on invested_count
+        let buttonState: "Locked" | "claimable" | "claimed"
+
+        if (item.button_state) {
+          buttonState = item.button_state as "Locked" | "claimable" | "claimed"
+        } else {
+          // Fallback logic if button_state is not provided
+          buttonState = item.invested_count >= 5 ? "claimable" : "Locked"
+
+          // Check if this referral has been claimed by querying transactions
+          // This is a fallback and should be handled by the view
+          console.log(`No button_state for referral: ${item.referred_uuid}, level: ${item.level}`)
+        }
+
+        console.log(
+          `Referral ${item.referred_referral_code || item.referral_code}, Level ${item.level}: Button state = ${buttonState}`,
+        )
 
         return {
           referredUuid: item.referred_uuid || "",
@@ -123,13 +139,24 @@ export default function Referrals() {
           referredReferralCode: item.referred_referral_code || "",
           country: item.country || "Unknown",
           status: status,
-          registerDate: item.register_date ? format(new Date(item.register_date), "dd MMM, h:mm a") : "Unknown",
-          buttonState: buttonState as "Locked" | "claimable" | "claimed",
+          registerDate: item.referral_date ? format(new Date(item.referral_date), "dd MMM, h:mm a") : "Unknown",
+          buttonState: buttonState,
         }
       })
 
       console.log("Processed data:", processedData.length, "records")
       setReferralData(processedData)
+
+      // Add this inside the fetchReferrals function, right after processing the data
+      console.log(
+        "Button states after processing:",
+        processedData.map((r) => ({
+          referredUuid: r.referredUuid,
+          level: r.level,
+          buttonState: r.buttonState,
+        })),
+      )
+
       setLoading(false)
       setRefreshing(false)
       setRetryCount(0) // Reset retry count on success
@@ -150,31 +177,128 @@ export default function Referrals() {
     }
   }
 
-  // Handle claim button click
-  const handleClaim = async (referredUuid: string, level: string) => {
-    if (!user || !referredUuid) return
-
-    setClaimingReferralId(referredUuid)
+  // Check if a referral has already been claimed
+  const checkIfReferralClaimed = async (referredUuid: string, level: string) => {
+    if (!user) return false
 
     try {
+      const supabase = createClientComponentClient<Database>()
+
+      // Query the referral_claims table
+      const { data, error } = await supabase
+        .from("referral_claims")
+        .select("*")
+        .eq("referred_uuid", referredUuid)
+        .eq("level", level)
+        .eq("claimed_by", user.id)
+        .limit(1)
+
+      if (error) {
+        console.error("Error checking if referral claimed:", error)
+        return false
+      }
+
+      return data && data.length > 0
+    } catch (err) {
+      console.error("Error in checkIfReferralClaimed:", err)
+      return false
+    }
+  }
+
+  // Record a referral claim in the database
+  const recordReferralClaim = async (referredUuid: string, level: string) => {
+    if (!user) return false
+
+    try {
+      console.log(`Recording claim for referral: ${referredUuid}, level: ${level}`)
+
+      // Use direct Supabase insert as a fallback if the API approach fails
+      const supabase = createClientComponentClient<Database>()
+
+      const { error } = await supabase.from("referral_claims").insert({
+        referred_uuid: referredUuid,
+        level: Number(level),
+        claimed_by: user.id,
+      })
+
+      if (error) {
+        // If the error is about unique constraint, it means this referral was already claimed
+        if (error.code === "23505") {
+          console.log("This referral has already been claimed")
+          return true // Consider it a success since it's already claimed
+        }
+
+        console.error("Error recording referral claim:", error)
+        return false
+      }
+
+      console.log("Successfully recorded referral claim")
+      return true
+    } catch (err) {
+      console.error("Error in recordReferralClaim:", err)
+      return false
+    }
+  }
+
+  // Handle claim button click
+  const handleClaim = async (referredUuid: string, level: string, referralCode: string) => {
+    if (!user || !referredUuid) return
+
+    setClaimingReferral({ id: referredUuid, level })
+
+    try {
+      // Check if already claimed first
+      const alreadyClaimed = await checkIfReferralClaimed(referredUuid, level)
+
+      if (alreadyClaimed) {
+        console.log(`Referral ${referredUuid} level ${level} has already been claimed`)
+        setClaimSuccess("This referral has already been claimed")
+
+        // Update the local state to show the button as claimed
+        setReferralData((prevData) =>
+          prevData.map((referral) =>
+            referral.referredUuid === referredUuid && referral.level === level
+              ? { ...referral, buttonState: "claimed" }
+              : referral,
+          ),
+        )
+
+        setTimeout(() => {
+          setClaimSuccess("")
+        }, 3000)
+
+        return
+      }
+
       // Award tokens based on level
       const pwtAmount = Number(level) // Level 1 = 1 PWT, Level 2 = 2 PWT, Level 3 = 3 PWT
 
-      console.log(`Claiming ${pwtAmount} PWT for level ${level} referral`)
+      console.log(`Claiming ${pwtAmount} PWT for level ${level} referral (${referralCode})`)
 
       // Add to cashout balance
       await claimToPwtCashout(pwtAmount)
 
-      // Log the transaction
-      const transaction = await addTransaction({
-        type: "REFERRAL CLAIM",
-        account: "PWT Cashout",
-        amount: pwtAmount,
-        amountUsd: pwtAmount * 10, // Assuming 1 PWT = $10 USD
-        description: `REFERRAL CLAIM - Level ${level}`,
-      })
+      // Record the claim in the database
+      const claimRecorded = await recordReferralClaim(referredUuid, level)
 
-      console.log("Transaction recorded:", transaction)
+      if (!claimRecorded) {
+        console.warn("Could not record claim in database, but continuing with transaction")
+      }
+
+      // Log the transaction with a clearer level identifier
+      try {
+        const transaction = await addTransaction({
+          type: `REFERRAL CLAIM-LvL${level}` as any,
+          account: "PWT Cashout",
+          amount: pwtAmount,
+          amountUsd: pwtAmount * 10, // Assuming 1 PWT = $10 USD
+          description: `REFERRAL CLAIM-LvL${level}`,
+        })
+        console.log("Transaction recorded:", transaction)
+      } catch (txError) {
+        console.error("Error recording transaction:", txError)
+        // Continue execution even if transaction recording fails
+      }
 
       // Update the local state to show the button as claimed
       setReferralData((prevData) =>
@@ -193,14 +317,16 @@ export default function Referrals() {
         setClaimSuccess("")
       }, 3000)
 
-      // Refresh the data to get the latest state
-      fetchReferrals(0, true) // Background refresh
+      // Force a complete refresh to get the latest state from the database
+      setTimeout(() => {
+        fetchReferrals(0, false) // Full refresh, not background
+      }, 1000)
     } catch (error: any) {
       console.error("Error in claim process:", error)
       setClaimSuccess(`An error occurred during the claim process: ${error.message || "Unknown error"}`)
       setTimeout(() => setClaimSuccess(""), 3000)
     } finally {
-      setClaimingReferralId(null)
+      setClaimingReferral(null)
     }
   }
 
@@ -450,7 +576,10 @@ export default function Referrals() {
                     {filteredReferralGroups.map((group, groupIndex) =>
                       // For each group, render all its referrals
                       group.referrals.map((referral, index) => {
-                        const isProcessing = claimingReferralId === referral.referredUuid
+                        const isProcessing =
+                          claimingReferral !== null &&
+                          claimingReferral.id === referral.referredUuid &&
+                          claimingReferral.level === referral.level
                         const buttonProps = getButtonProps(referral, isProcessing)
 
                         return (
@@ -488,18 +617,34 @@ export default function Referrals() {
                                   }}
                                 ></div>
                               </div>
-                              <div className="text-[9px] text-gray-400 mt-1">{referral.progress}</div>
+                              <div className="text-[9px] text-gray-400 mt-1">{`${referral.investedCount}/5`}</div>
                             </td>
                             <td className="py-[6px] px-4 text-[10px] w-[15%]">{referral.registerDate}</td>
                             <td className="py-[6px] px-4 text-[10px] w-[15%]">
                               <button
-                                onClick={() =>
-                                  !buttonProps.disabled && handleClaim(referral.referredUuid, referral.level)
-                                }
-                                disabled={buttonProps.disabled}
+                                onClick={async () => {
+                                  if (!buttonProps.disabled && !isProcessing) {
+                                    // First update the UI immediately
+                                    setReferralData((prevData) =>
+                                      prevData.map((ref) =>
+                                        ref.referredUuid === referral.referredUuid && ref.level === referral.level
+                                          ? { ...ref, buttonState: "claimed" }
+                                          : ref,
+                                      ),
+                                    )
+
+                                    // Then process the claim
+                                    handleClaim(
+                                      referral.referredUuid,
+                                      referral.level,
+                                      referral.referredReferralCode || referral.referralCode,
+                                    )
+                                  }
+                                }}
+                                disabled={buttonProps.disabled || isProcessing}
                                 className={`px-4 py-1 rounded text-[10px] w-16 ${buttonProps.className}`}
                               >
-                                {buttonProps.text}
+                                {isProcessing ? "..." : buttonProps.text}
                               </button>
                             </td>
                           </tr>
