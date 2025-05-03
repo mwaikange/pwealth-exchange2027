@@ -69,9 +69,9 @@
     "canvas-confetti": "latest",
     "howler": "latest",
     "@supabase/ssr": "latest",
-    "react-hot-toast": "latest",
     "@chakra-ui/react": "latest",
-    "@supabase/auth-helpers-react": "latest"
+    "@supabase/auth-helpers-react": "latest",
+    "react-hot-toast": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

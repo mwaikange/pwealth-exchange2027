@@ -39,7 +39,9 @@ type VestingContextType = {
   getSchedulesByLevel: (level: number) => VestingScheduleState[]
   getScheduleByRank: (rank: number) => VestingScheduleState | undefined
   resetAllSchedulesInLevel: (userUuid: string, level: number) => Promise<void>
+  forceResetLevel: (level: number) => Promise<void> // New function to force reset
   loading: boolean
+  refreshVestingSchedules: () => Promise<void> // New function to refresh schedules
 }
 
 // Create the context
@@ -93,6 +95,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [sessionChecked, setSessionChecked] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
+  const [resetAttempted, setResetAttempted] = useState<{ [key: number]: boolean }>({})
 
   // Check for active session first
   useEffect(() => {
@@ -110,86 +113,87 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     checkSession()
   }, [])
 
-  // Load vesting schedules from Supabase
-  useEffect(() => {
-    async function fetchVestingSchedules() {
-      if (!user || !sessionChecked) {
+  // Function to fetch vesting schedules
+  const fetchVestingSchedules = async () => {
+    if (!user || !sessionChecked) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      // Ensure we have an active session before proceeding
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) {
+        console.error("No active session when fetching vesting schedules")
         setLoading(false)
         return
       }
 
-      try {
-        setLoading(true)
+      // First, check if the user has any vesting schedules
+      const { data: existingSchedules, error: checkError } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
 
-        // Ensure we have an active session before proceeding
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (!session) {
-          console.error("No active session when fetching vesting schedules")
-          setLoading(false)
-          return
-        }
-
-        // First, check if the user has any vesting schedules
-        const { data: existingSchedules, error: checkError } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-
-        if (checkError) {
-          console.error("Error checking vesting schedules:", checkError)
-          setLoading(false)
-          return
-        }
-
-        // If no schedules exist, create default ones
-        if (!existingSchedules || existingSchedules.length === 0) {
-          await createDefaultVestingSchedules(user.id)
-        }
-
-        // Fetch all schedules
-        const { data, error } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-          .order("level_rank", { ascending: true }) // Use level_rank for ordering
-
-        if (error) {
-          console.error("Error fetching vesting schedules:", error)
-          setLoading(false)
-          return
-        }
-
-        if (data) {
-          // Transform the data to match our VestingScheduleState interface
-          const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
-            id: `LEVEL${schedule.level}-${schedule.position}`,
-            level: schedule.level,
-            position: schedule.position,
-            level_rank: schedule.level_rank,
-            color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
-            activated: schedule.activated,
-            invested: schedule.invested,
-            claimed: schedule.claimed,
-            progress: schedule.progress,
-            startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
-            lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
-            lastClaimPercentage: schedule.last_claim_percentage,
-            prematurelyClaimed: schedule.prematurely_claimed,
-            schedule_id: schedule.schedule_id,
-            schedule_id_text: schedule.schedule_id_text, // Add the text representation
-          }))
-
-          setVestingSchedules(formattedSchedules)
-        }
-      } catch (error) {
-        console.error("Error in fetchVestingSchedules:", error)
-      } finally {
+      if (checkError) {
+        console.error("Error checking vesting schedules:", checkError)
         setLoading(false)
+        return
       }
-    }
 
+      // If no schedules exist, create default ones
+      if (!existingSchedules || existingSchedules.length === 0) {
+        await createDefaultVestingSchedules(user.id)
+      }
+
+      // Fetch all schedules
+      const { data, error } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .order("level_rank", { ascending: true }) // Use level_rank for ordering
+
+      if (error) {
+        console.error("Error fetching vesting schedules:", error)
+        setLoading(false)
+        return
+      }
+
+      if (data) {
+        // Transform the data to match our VestingScheduleState interface
+        const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
+          id: `LEVEL${schedule.level}-${schedule.position}`,
+          level: schedule.level,
+          position: schedule.position,
+          level_rank: schedule.level_rank,
+          color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
+          activated: schedule.activated,
+          invested: schedule.invested,
+          claimed: schedule.claimed,
+          progress: schedule.progress,
+          startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
+          lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
+          lastClaimPercentage: schedule.last_claim_percentage,
+          prematurelyClaimed: schedule.prematurely_claimed,
+          schedule_id: schedule.schedule_id,
+          schedule_id_text: schedule.schedule_id_text, // Add the text representation
+        }))
+
+        setVestingSchedules(formattedSchedules)
+      }
+    } catch (error) {
+      console.error("Error in fetchVestingSchedules:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load vesting schedules from Supabase
+  useEffect(() => {
     fetchVestingSchedules()
   }, [user, sessionChecked])
 
@@ -325,24 +329,52 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Check if all schedules in a level are completed
   useEffect(() => {
-    if (loading || vestingSchedules.length === 0) return
+    if (loading || vestingSchedules.length === 0 || !user) return
 
     const checkLevelCompletion = async () => {
       for (let level = 1; level <= 3; level++) {
         const levelSchedules = vestingSchedules.filter((s) => s.level === level)
-        const allCompleted = levelSchedules.every((s) => s.claimed)
 
-        if (allCompleted && levelSchedules.length > 0) {
+        // Debug logging to see what's happening
+        console.log(
+          `Level ${level} schedules:`,
+          levelSchedules.map((s) => ({
+            id: s.id,
+            claimed: s.claimed,
+            activated: s.activated,
+            invested: s.invested,
+          })),
+        )
+
+        // Check if we have all 5 schedules for this level
+        if (levelSchedules.length !== 5) {
+          console.log(`Level ${level} has ${levelSchedules.length} schedules instead of 5`)
+          continue
+        }
+
+        const allCompleted = levelSchedules.every((s) => s.claimed)
+        console.log(`Level ${level} all completed: ${allCompleted}`)
+
+        // Only attempt to reset once per level per session
+        if (allCompleted && !resetAttempted[level] && !isResetting) {
+          console.log(`All schedules in Level ${level} are claimed. Triggering reset in 5 seconds...`)
+
+          // Mark that we've attempted a reset for this level
+          setResetAttempted((prev) => ({ ...prev, [level]: true }))
+
           // Set a timeout to reset all schedules in this level
           setTimeout(() => {
+            console.log(`Executing reset for Level ${level}...`)
             resetAllSchedulesInLevel(user.id, level)
+              .then(() => console.log(`Reset for Level ${level} completed successfully`))
+              .catch((err) => console.error(`Reset for Level ${level} failed:`, err))
           }, 5000) // 5 seconds
         }
       }
     }
 
     checkLevelCompletion()
-  }, [vestingSchedules, loading, user])
+  }, [vestingSchedules, loading, user, resetAttempted, isResetting])
 
   // Get activation cost based on level
   const getActivationCost = (level: number): number => {
@@ -636,6 +668,19 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         console.error("Error recording claim transaction:", transactionError)
         // Don't throw here as the claim was successful, but log the error
       }
+
+      // After claiming, check if all schedules in this level are now claimed
+      // and reset the resetAttempted flag for this level to allow a new reset attempt
+      const level = schedule.level
+      const levelSchedules = vestingSchedules.filter((s) => s.level === level)
+      const updatedSchedule = { ...schedule, claimed: true }
+      const updatedLevelSchedules = levelSchedules.map((s) => (s.id === updatedSchedule.id ? updatedSchedule : s))
+
+      const allClaimedAfterUpdate = updatedLevelSchedules.every((s) => s.claimed)
+      if (allClaimedAfterUpdate) {
+        console.log(`All schedules in Level ${level} are now claimed after this claim. Resetting resetAttempted flag.`)
+        setResetAttempted((prev) => ({ ...prev, [level]: false }))
+      }
     } catch (error) {
       console.error("Error claiming schedule:", error)
       throw error // Re-throw the error so it can be caught by the UI
@@ -657,67 +702,48 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return vestingSchedules.filter((s) => s.level === level)
   }
 
+  // Refresh vesting schedules
+  const refreshVestingSchedules = async () => {
+    await fetchVestingSchedules()
+  }
+
   // Reset all schedules in a level
   const resetAllSchedulesInLevel = async (userUuid: string, level: number) => {
+    if (!userUuid) {
+      console.error("Cannot reset schedules: No user UUID provided")
+      return
+    }
+
     setIsResetting(true)
     try {
+      console.log(`Starting reset for Level ${level}, User ${userUuid}`)
+
+      // Use the server action to reset schedules
       const result = await resetVestingSchedulesAndProcessClaims(userUuid, level)
 
       if (result.success) {
+        console.log(`Reset successful for Level ${level}`)
+
+        // Refresh vesting schedules  {
+        console.log(`Reset successful for Level ${level}`)
+
         // Refresh vesting schedules
-        async function fetchVestingSchedules() {
-          if (!user) return
-          try {
-            const { data, error } = await supabase
-              .from("vesting_schedules")
-              .select("*")
-              .eq("user_uuid", user.id)
-              .order("level_rank", { ascending: true })
+        await refreshVestingSchedules()
 
-            if (error) {
-              console.error("Error fetching vesting schedules:", error)
-              return
-            }
+        // Refresh balances and transactions to reflect any auto-claims
+        refreshBalances()
+        refreshTransactions()
 
-            if (data) {
-              const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
-                id: `LEVEL${schedule.level}-${schedule.position}`,
-                level: schedule.level,
-                position: schedule.position,
-                level_rank: schedule.level_rank,
-                color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
-                activated: schedule.activated,
-                invested: schedule.invested,
-                claimed: schedule.claimed,
-                progress: schedule.progress,
-                startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
-                lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
-                lastClaimPercentage: schedule.last_claim_percentage,
-                prematurelyClaimed: schedule.prematurely_claimed,
-                schedule_id: schedule.schedule_id,
-                schedule_id_text: schedule.schedule_id_text,
-              }))
-              setVestingSchedules(formattedSchedules)
-            }
-          } catch (error) {
-            console.error("Error in fetchVestingSchedules:", error)
-          }
-        }
-        await fetchVestingSchedules()
+        // Reset the resetAttempted flag for this level
+        setResetAttempted((prev) => ({ ...prev, [level]: false }))
 
-        // Show success notification
-        toast({
-          title: "Reset Successful",
-          description: `All schedules in Level ${level} have been reset.`,
-          status: "success",
-          duration: 5000,
-          isClosable: true,
-        })
+        console.log(`Reset process completed for Level ${level}`)
       } else {
+        console.error(`Reset failed for Level ${level}:`, result.error)
         throw new Error("Failed to reset schedules")
       }
     } catch (error) {
-      console.error("Error resetting schedules:", error)
+      console.error("Error in resetAllSchedulesInLevel:", error)
       toast({
         title: "Reset Failed",
         description: "There was an error resetting the schedules. Please try again.",
@@ -730,6 +756,17 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Force reset a level (for manual intervention)
+  const forceResetLevel = async (level: number) => {
+    if (!user) {
+      console.error("Cannot force reset: No user in context")
+      return
+    }
+
+    console.log(`Force resetting Level ${level} for user ${user.id}`)
+    await resetAllSchedulesInLevel(user.id, level)
+  }
+
   // Context value
   const value = {
     vestingSchedules,
@@ -740,7 +777,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     getSchedulesByLevel,
     getScheduleByRank,
     resetAllSchedulesInLevel,
+    forceResetLevel,
     loading,
+    refreshVestingSchedules,
   }
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>
