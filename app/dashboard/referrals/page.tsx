@@ -41,7 +41,7 @@ export default function Referrals() {
   const [retryCount, setRetryCount] = useState(0)
   const [claimingReferral, setClaimingReferral] = useState<{ id: string; level: string } | null>(null)
   const [claimSuccess, setClaimSuccess] = useState("")
-  const router = useRouter()
+  const [router] = useRouter()
   const { user } = useAuth()
   const { claimToPwtCashout } = useWallet()
   const { addTransaction } = useTransactions()
@@ -118,11 +118,14 @@ export default function Referrals() {
           buttonState = item.button_state as "Locked" | "claimable" | "claimed"
         } else {
           // Fallback logic if button_state is not provided
-          buttonState = item.invested_count >= 5 ? "claimable" : "Locked"
+          // Check if the referral has been claimed and not reset
+          const isClaimable = item.invested_count >= 5
 
-          // Check if this referral has been claimed by querying transactions
-          // This is a fallback and should be handled by the view
-          console.log(`No button_state for referral: ${item.referred_uuid}, level: ${item.level}`)
+          if (isClaimable) {
+            buttonState = "claimable"
+          } else {
+            buttonState = "Locked"
+          }
         }
 
         console.log(
@@ -133,7 +136,7 @@ export default function Referrals() {
           referredUuid: item.referred_uuid || "",
           level: String(item.level || "1"),
           investedCount: item.invested_count || 0,
-          progress: `${item.invested_count || 0}/5`,
+          progress: `${item.investedCount || 0}/5`,
           referralUuid: item.referral_uuid || "",
           referralCode: item.referral_code || "Unknown",
           referredReferralCode: item.referred_referral_code || "",
@@ -174,6 +177,54 @@ export default function Referrals() {
       setError(`Connection error: ${err.message || "Failed to connect to the database"}`)
       setLoading(false)
       setRefreshing(false)
+    }
+  }
+
+  // Function to check if any claims have been reset
+  const checkForResetClaims = async () => {
+    if (!user) return
+
+    try {
+      const supabase = createClientComponentClient<Database>()
+
+      // Query for any reset claims
+      const { data, error } = await supabase
+        .from("referral_claims")
+        .select("referred_uuid, level, reset_at, reset_reason")
+        .eq("claimed_by", user.id)
+        .eq("status", "reset")
+        .order("reset_at", { ascending: false })
+
+      if (error) {
+        console.error("Error checking for reset claims:", error)
+        return
+      }
+
+      if (data && data.length > 0) {
+        console.log("Found reset claims:", data)
+
+        // Notify the user about reset claims
+        const resetClaim = data[0] // Get the most recent reset
+        setClaimSuccess(
+          `A referral claim for level ${resetClaim.level} has been reset due to vesting schedule changes. You can claim again when conditions are met.`,
+        )
+
+        setTimeout(() => {
+          setClaimSuccess("")
+        }, 5000)
+
+        // Mark these reset claims as acknowledged
+        for (const claim of data) {
+          await supabase
+            .from("referral_claims")
+            .update({ status: "reset_acknowledged" })
+            .eq("referred_uuid", claim.referred_uuid)
+            .eq("level", claim.level)
+            .eq("claimed_by", user.id)
+        }
+      }
+    } catch (err) {
+      console.error("Error in checkForResetClaims:", err)
     }
   }
 
@@ -385,6 +436,7 @@ export default function Referrals() {
       // Add a small delay to ensure user data is fully loaded
       const timer = setTimeout(() => {
         fetchReferrals()
+        checkForResetClaims() // Add this line
       }, 500)
       return () => clearTimeout(timer)
     }

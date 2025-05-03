@@ -684,6 +684,22 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       console.log("Reset result:", data)
 
+      // Reset any referral claims where this user is the referred person
+      try {
+        const { error: resetClaimsError } = await supabase.rpc("reset_referral_claims_for_user", {
+          p_referred_uuid: user.id,
+          p_level: level,
+        })
+
+        if (resetClaimsError) {
+          console.error("Error resetting referral claims:", resetClaimsError)
+        } else {
+          console.log(`Successfully reset referral claims for user ${user.id} at level ${level}`)
+        }
+      } catch (resetError) {
+        console.error("Error in reset_referral_claims_for_user:", resetError)
+      }
+
       // Check if the operation was successful
       if (data && data.success === false) {
         console.error("Failed to reset schedules:", data.error)

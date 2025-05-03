@@ -135,6 +135,24 @@ export default function Settings() {
     }
   }
 
+  // Validate that user is not trying to refer themselves
+  const validateReferrerInput = (input: string) => {
+    // Check if input is the user's own email
+    if (input === userData?.email || input === user?.email) {
+      setReferrerError("You cannot refer yourself. Please enter someone else's email or referral code.")
+      return false
+    }
+
+    // Check if input is the user's own referral code
+    if (input === userData?.referral_code) {
+      setReferrerError("You cannot refer yourself. Please enter someone else's referral code.")
+      return false
+    }
+
+    setReferrerError(null)
+    return true
+  }
+
   // Update the handleReferrerUpdate function to ensure it properly updates the referrals table
   // Replace the existing handleReferrerUpdate function with this enhanced version:
   async function handleReferrerUpdate(formData: FormData) {
@@ -145,6 +163,11 @@ export default function Settings() {
 
     if (!referrerEmail) {
       setReferrerError("Please enter a referrer email or referral code")
+      return
+    }
+
+    // Validate that user is not trying to refer themselves
+    if (!validateReferrerInput(referrerEmail)) {
       return
     }
 
@@ -245,7 +268,12 @@ export default function Settings() {
 
     if (!referrerEmail) {
       setReferrerError("Please enter a referrer email or referral code")
-      return
+      return { success: false, message: "Please enter a referrer email or referral code" }
+    }
+
+    // Validate that user is not trying to refer themselves
+    if (!validateReferrerInput(referrerEmail)) {
+      return { success: false, message: "You cannot refer yourself" }
     }
 
     // Add the session token to the form data
@@ -464,6 +492,7 @@ export default function Settings() {
                       name="referrerEmail"
                       placeholder="pwt@example.com"
                       className="w-full p-2 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0 mb-2 text-xs"
+                      onChange={(e) => validateReferrerInput(e.target.value)}
                     />
                     <p className="text-xs text-gray-400 mb-1">
                       Paste email address OR REFERRAL CODE of your Referral here.
