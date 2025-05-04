@@ -72,8 +72,14 @@ export function DashboardSidebar() {
   ]
 
   const handleSignOut = async () => {
-    await signOut()
-    router.push("/login")
+    try {
+      await signOut()
+      router.push("/login")
+    } catch (error) {
+      console.error("Error signing out:", error)
+      // Still try to redirect even if there's an error
+      router.push("/login")
+    }
   }
 
   return (
