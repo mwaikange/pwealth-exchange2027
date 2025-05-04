@@ -70,8 +70,7 @@
     "howler": "latest",
     "@supabase/ssr": "latest",
     "@chakra-ui/react": "latest",
-    "@supabase/auth-helpers-react": "latest",
-    "react-hot-toast": "latest"
+    "@supabase/auth-helpers-react": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

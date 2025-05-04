@@ -1,12 +1,12 @@
 -- Function to reset all schedules in a specific level for a user
-CREATE OR REPLACE FUNCTION reset_all_schedules_in_level(
+-- This function has NO dependency on referral_claims
+CREATE OR REPLACE FUNCTION reset_schedules_by_level(
   p_user_uuid UUID,
   p_level INTEGER
 )
 RETURNS JSONB AS $$
 DECLARE
   v_result JSONB;
-  v_schedule RECORD;
 BEGIN
   -- Log the start of the operation
   RAISE NOTICE 'Resetting all schedules in level % for user %', p_level, p_user_uuid;
@@ -51,4 +51,4 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute permission to authenticated users
-GRANT EXECUTE ON FUNCTION reset_all_schedules_in_level(UUID, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION reset_schedules_by_level(UUID, INTEGER) TO authenticated;

@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { v4 as uuidv4 } from "uuid"
 import { resetVestingSchedulesAndProcessClaims } from "@/actions/vesting-actions"
-import { toast } from "react-hot-toast"
 
 // Define the vesting schedule state
 export type VestingScheduleState = {
@@ -707,7 +706,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     await fetchVestingSchedules()
   }
 
-  // Reset all schedules in a level
+  // Reset all schedules in a level - COMPLETELY INDEPENDENT OF REFERRAL CLAIMS
   const resetAllSchedulesInLevel = async (userUuid: string, level: number) => {
     if (!userUuid) {
       console.error("Cannot reset schedules: No user UUID provided")
@@ -718,19 +717,16 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log(`Starting reset for Level ${level}, User ${userUuid}`)
 
-      // Use the server action to reset schedules
+      // Use the server action to reset schedules - no referral claims dependency
       const result = await resetVestingSchedulesAndProcessClaims(userUuid, level)
 
       if (result.success) {
         console.log(`Reset successful for Level ${level}`)
 
-        // Refresh vesting schedules  {
-        console.log(`Reset successful for Level ${level}`)
-
         // Refresh vesting schedules
         await refreshVestingSchedules()
 
-        // Refresh balances and transactions to reflect any auto-claims
+        // Refresh balances and transactions
         refreshBalances()
         refreshTransactions()
 
@@ -740,17 +736,32 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         console.log(`Reset process completed for Level ${level}`)
       } else {
         console.error(`Reset failed for Level ${level}:`, result.error)
-        throw new Error("Failed to reset schedules")
+
+        // Even if the server action fails, try to reset locally
+        try {
+          console.log("Attempting direct database reset as fallback...")
+
+          // Direct database call as fallback
+          const { error } = await supabase.rpc("reset_schedules_by_level", {
+            p_user_uuid: userUuid,
+            p_level: level,
+          })
+
+          if (error) {
+            console.error("Error in fallback reset:", error)
+            throw error
+          }
+
+          // Refresh schedules after direct reset
+          await refreshVestingSchedules()
+          console.log("Fallback reset completed successfully")
+        } catch (fallbackError) {
+          console.error("Fallback reset also failed:", fallbackError)
+          throw new Error("Failed to reset schedules using all available methods")
+        }
       }
     } catch (error) {
       console.error("Error in resetAllSchedulesInLevel:", error)
-      toast({
-        title: "Reset Failed",
-        description: "There was an error resetting the schedules. Please try again.",
-        status: "error",
-        duration: 5000,
-        isClosable: true,
-      })
     } finally {
       setIsResetting(false)
     }
