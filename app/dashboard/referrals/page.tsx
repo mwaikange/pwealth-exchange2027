@@ -72,23 +72,20 @@ export default function Referrals() {
       // Log the current user ID for debugging
       console.log("Current user ID:", user.id)
 
-      // Query the progression view table for the current user's referrals
+      // Query the progression_levels_new view for the current user's referrals
       const { data, error: fetchError } = await supabase
-        .from("progression_view")
+        .from("progression_levels_new") // Use the new view
         .select(`
           referred_uuid,
-          level,
-          invested_count,
+          level_1,
+          level_2,
+          level_3,
           referral_uuid,
-          referred_referral_code,
-          referral_code,
-          country,
-          referral_date,
-          button_state
+          button_state_lvl_1,
+          button_state_lvl_2,
+          button_state_lvl_3
         `)
         .eq("referral_uuid", user.id)
-        .order("level", { ascending: true })
-        .order("referral_date", { ascending: false })
 
       if (fetchError) {
         console.error("Error fetching referrals:", fetchError)
@@ -105,52 +102,87 @@ export default function Referrals() {
         return
       }
 
-      // Process the data
-      const processedData: FormattedReferral[] = data.map((item) => {
-        // Determine status based on invested_count
-        const status = item.invested_count > 0 ? "active" : "inactive"
+      // Process the data - transform the flat structure into level-specific entries
+      const processedData: FormattedReferral[] = []
 
-        // Ensure we're getting the correct button state from the database
-        // If button_state is null or undefined, determine it based on invested_count
-        let buttonState: "Locked" | "claimable" | "claimed"
+      // For each referral, create up to 3 entries (one for each level)
+      for (const item of data) {
+        // Get additional info for this referral
+        const { data: userData } = await supabase
+          .from("app_users")
+          .select("country, referral_code, created_at")
+          .eq("user_uuid", item.referred_uuid)
+          .single()
 
-        if (item.button_state) {
-          buttonState = item.button_state as "Locked" | "claimable" | "claimed"
-        } else {
-          // Fallback logic if button_state is not provided
-          // Check if the referral has been claimed and not reset
-          const isClaimable = item.invested_count >= 5
+        const country = userData?.country || "Unknown"
+        const referralCode = userData?.referral_code || "Unknown"
+        const registerDate = userData?.created_at ? format(new Date(userData.created_at), "dd MMM, h:mm a") : "Unknown"
 
-          if (isClaimable) {
-            buttonState = "claimable"
-          } else {
-            buttonState = "Locked"
-          }
+        // Process level 1
+        if (item.level_1 !== null) {
+          const investedCount = Number.parseInt(item.level_1.split("/")[0])
+          const status = investedCount > 0 ? "active" : "inactive"
+
+          processedData.push({
+            referredUuid: item.referred_uuid,
+            level: "1",
+            investedCount,
+            progress: item.level_1,
+            referralUuid: item.referral_uuid,
+            referralCode,
+            referredReferralCode: referralCode,
+            country,
+            status,
+            registerDate,
+            buttonState: item.button_state_lvl_1 as "Locked" | "claimable" | "claimed",
+          })
         }
 
-        console.log(
-          `Referral ${item.referred_referral_code || item.referral_code}, Level ${item.level}: Button state = ${buttonState}`,
-        )
+        // Process level 2
+        if (item.level_2 !== null) {
+          const investedCount = Number.parseInt(item.level_2.split("/")[0])
+          const status = investedCount > 0 ? "active" : "inactive"
 
-        return {
-          referredUuid: item.referred_uuid || "",
-          level: String(item.level || "1"),
-          investedCount: item.invested_count || 0,
-          progress: `${item.investedCount || 0}/5`,
-          referralUuid: item.referral_uuid || "",
-          referralCode: item.referral_code || "Unknown",
-          referredReferralCode: item.referred_referral_code || "",
-          country: item.country || "Unknown",
-          status: status,
-          registerDate: item.referral_date ? format(new Date(item.referral_date), "dd MMM, h:mm a") : "Unknown",
-          buttonState: buttonState,
+          processedData.push({
+            referredUuid: item.referred_uuid,
+            level: "2",
+            investedCount,
+            progress: item.level_2,
+            referralUuid: item.referral_uuid,
+            referralCode,
+            referredReferralCode: referralCode,
+            country,
+            status,
+            registerDate,
+            buttonState: item.button_state_lvl_2 as "Locked" | "claimable" | "claimed",
+          })
         }
-      })
+
+        // Process level 3
+        if (item.level_3 !== null) {
+          const investedCount = Number.parseInt(item.level_3.split("/")[0])
+          const status = investedCount > 0 ? "active" : "inactive"
+
+          processedData.push({
+            referredUuid: item.referred_uuid,
+            level: "3",
+            investedCount,
+            progress: item.level_3,
+            referralUuid: item.referral_uuid,
+            referralCode,
+            referredReferralCode: referralCode,
+            country,
+            status,
+            registerDate,
+            buttonState: item.button_state_lvl_3 as "Locked" | "claimable" | "claimed",
+          })
+        }
+      }
 
       console.log("Processed data:", processedData.length, "records")
       setReferralData(processedData)
 
-      // Add this inside the fetchReferrals function, right after processing the data
+      // Log button states after processing
       console.log(
         "Button states after processing:",
         processedData.map((r) => ({
@@ -177,54 +209,6 @@ export default function Referrals() {
       setError(`Connection error: ${err.message || "Failed to connect to the database"}`)
       setLoading(false)
       setRefreshing(false)
-    }
-  }
-
-  // Function to check if any claims have been reset
-  const checkForResetClaims = async () => {
-    if (!user) return
-
-    try {
-      const supabase = createClientComponentClient<Database>()
-
-      // Query for any reset claims
-      const { data, error } = await supabase
-        .from("referral_claims")
-        .select("referred_uuid, level, reset_at, reset_reason")
-        .eq("claimed_by", user.id)
-        .eq("status", "reset")
-        .order("reset_at", { ascending: false })
-
-      if (error) {
-        console.error("Error checking for reset claims:", error)
-        return
-      }
-
-      if (data && data.length > 0) {
-        console.log("Found reset claims:", data)
-
-        // Notify the user about reset claims
-        const resetClaim = data[0] // Get the most recent reset
-        setClaimSuccess(
-          `A referral claim for level ${resetClaim.level} has been reset due to vesting schedule changes. You can claim again when conditions are met.`,
-        )
-
-        setTimeout(() => {
-          setClaimSuccess("")
-        }, 5000)
-
-        // Mark these reset claims as acknowledged
-        for (const claim of data) {
-          await supabase
-            .from("referral_claims")
-            .update({ status: "reset_acknowledged" })
-            .eq("referred_uuid", claim.referred_uuid)
-            .eq("level", claim.level)
-            .eq("claimed_by", user.id)
-        }
-      }
-    } catch (err) {
-      console.error("Error in checkForResetClaims:", err)
     }
   }
 
@@ -436,7 +420,6 @@ export default function Referrals() {
       // Add a small delay to ensure user data is fully loaded
       const timer = setTimeout(() => {
         fetchReferrals()
-        checkForResetClaims() // Add this line
       }, 500)
       return () => clearTimeout(timer)
     }
