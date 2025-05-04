@@ -441,34 +441,7 @@ export default function Referrals() {
     }
   }, [user])
 
-  // Filter referral groups based on active filter and search query
-  const filteredReferralGroups = useMemo(() => {
-    return groupedReferrals.filter((group) => {
-      // Check if any referral in the group matches the filter criteria
-      return group.referrals.some((referral) => {
-        // Filter by status
-        if (
-          (activeFilter === "Active" && referral.status !== "active") ||
-          (activeFilter === "Inactive" && referral.status !== "inactive")
-        ) {
-          return false
-        }
-
-        // Filter by search query
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase()
-          return (
-            referral.referralCode?.toLowerCase().includes(query) ||
-            referral.country?.toLowerCase().includes(query) ||
-            referral.referredReferralCode?.toLowerCase().includes(query)
-          )
-        }
-
-        return true
-      })
-    })
-  }, [groupedReferrals, activeFilter, searchQuery])
-
+  // Move this function up, before filteredReferralGroups
   // Get button properties based on button state
   const getButtonProps = (referral: FormattedReferral, isProcessing: boolean) => {
     if (isProcessing) {
@@ -501,6 +474,35 @@ export default function Referrals() {
         }
     }
   }
+
+  // Then keep the filteredReferralGroups useMemo hook as is
+  // Filter referral groups based on active filter and search query
+  const filteredReferralGroups = useMemo(() => {
+    return groupedReferrals.filter((group) => {
+      // Check if any referral in the group matches the filter criteria
+      return group.referrals.some((referral) => {
+        // Get the button text that would be shown in the UI
+        const buttonText = getButtonProps(referral, false).text
+
+        // Filter by button text instead of button state
+        if (activeFilter !== "All" && buttonText !== activeFilter) {
+          return false
+        }
+
+        // Filter by search query
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase()
+          return (
+            referral.referralCode?.toLowerCase().includes(query) ||
+            referral.country?.toLowerCase().includes(query) ||
+            referral.referredReferralCode?.toLowerCase().includes(query)
+          )
+        }
+
+        return true
+      })
+    })
+  }, [groupedReferrals, activeFilter, searchQuery])
 
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
@@ -568,20 +570,28 @@ export default function Referrals() {
                 All
               </button>
               <button
-                onClick={() => setActiveFilter("Active")}
+                onClick={() => setActiveFilter("Locked")}
                 className={`px-6 py-1.5 text-xs font-medium ${
-                  activeFilter === "Active" ? "bg-white text-black" : "bg-[#1c1e26] text-white"
+                  activeFilter === "Locked" ? "bg-white text-black" : "bg-[#1c1e26] text-white"
                 }`}
               >
-                Active
+                Locked
               </button>
               <button
-                onClick={() => setActiveFilter("Inactive")}
+                onClick={() => setActiveFilter("Claim")}
                 className={`px-6 py-1.5 text-xs font-medium ${
-                  activeFilter === "Inactive" ? "bg-white text-black" : "bg-[#1c1e26] text-white"
+                  activeFilter === "Claim" ? "bg-white text-black" : "bg-[#1c1e26] text-white"
                 }`}
               >
-                Inactive
+                Claim
+              </button>
+              <button
+                onClick={() => setActiveFilter("Claimed")}
+                className={`px-6 py-1.5 text-xs font-medium ${
+                  activeFilter === "Claimed" ? "bg-white text-black" : "bg-[#1c1e26] text-white"
+                }`}
+              >
+                Claimed
               </button>
             </div>
           </div>

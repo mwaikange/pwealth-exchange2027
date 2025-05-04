@@ -48,9 +48,35 @@ export function TransactionTable({
     if (type === "IN-PWT RECEIPT") return `${prefix}IN-PWT RECEIPT`
     if (type === "BUY-AFT RECEIPT") return `${prefix}BUY-AFT RECEIPT`
     if (type === "IN-AFT GIFT") return `${prefix}IN-AFT GIFT`
-    if (type === "CLAIM") return `${prefix}CLAIM`
-    if (type === "OUT-TRANSFER") return `${prefix}OUT-TRANSFER`
-    if (type === "VESTING") return `${prefix}VESTING`
+    // Handle CLAIM with level and schedule information
+    if (type === "CLAIM") {
+      // Try to extract level number and letter from description or reference
+      const levelMatch =
+        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
+        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
+
+      if (levelMatch) {
+        const levelNumber = levelMatch[1] || ""
+        const levelLetter = levelMatch[2] || ""
+        return `${prefix}CLAIM - LEVEL${levelNumber}${levelLetter ? `-${levelLetter}` : ""}`
+      }
+      return `${prefix}CLAIM`
+    }
+
+    // Handle VESTING with level and schedule information
+    if (type === "VESTING") {
+      // Try to extract level number and letter from description or reference
+      const levelMatch =
+        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
+        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
+
+      if (levelMatch) {
+        const levelNumber = levelMatch[1] || ""
+        const levelLetter = levelMatch[2] || ""
+        return `${prefix}VESTING - LEVEL${levelNumber}${levelLetter ? `-${levelLetter}` : ""}`
+      }
+      return `${prefix}VESTING`
+    }
 
     // Handle ACTIVATE FEE with level information
     if (type === "ACTIVATE FEE") {
