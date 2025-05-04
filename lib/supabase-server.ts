@@ -3,9 +3,6 @@ import { cookies } from "next/headers"
 import { env } from "./env"
 import type { Database } from "@/types/supabase"
 
-// Re-export createClient from @supabase/supabase-js
-export { createClient } from "@supabase/supabase-js"
-
 // Create a Supabase client for server components
 export const createServerSupabaseClient = () => {
   try {
@@ -39,5 +36,4 @@ export const createServerSupabaseClient = () => {
   }
 }
 
-// Also export the function with the new name for backward compatibility
-export const createServerClient = createServerSupabaseClient
+// Don't re-export createClient directly to avoid confusion

@@ -43,8 +43,8 @@ export default function Referrals() {
   const [claimSuccess, setClaimSuccess] = useState("")
   const router = useRouter()
   const { user } = useAuth()
-  const { claimToPwtCashout, refreshBalances } = useWallet()
-  const { addTransaction, refreshTransactions } = useTransactions()
+  const { claimToPwtCashout } = useWallet()
+  const { addTransaction } = useTransactions()
 
   // Fetch referral data from Supabase
   const fetchReferrals = async (retry = 0, isBackgroundRefresh = false) => {
@@ -136,7 +136,7 @@ export default function Referrals() {
           referredUuid: item.referred_uuid || "",
           level: String(item.level || "1"),
           investedCount: item.invested_count || 0,
-          progress: `${item.invested_count || 0}/5`,
+          progress: `${item.investedCount || 0}/5`,
           referralUuid: item.referral_uuid || "",
           referralCode: item.referral_code || "Unknown",
           referredReferralCode: item.referred_referral_code || "",
@@ -180,28 +180,31 @@ export default function Referrals() {
     }
   }
 
-  // Function to check for reset claims and auto-claims
-  const checkForResetAndAutoClaims = async () => {
+  // Function to check if any claims have been reset
+  const checkForResetClaims = async () => {
     if (!user) return
 
     try {
       const supabase = createClientComponentClient<Database>()
 
-      // Check for reset claims
-      const { data: resetClaims, error: resetError } = await supabase
+      // Query for any reset claims
+      const { data, error } = await supabase
         .from("referral_claims")
         .select("referred_uuid, level, reset_at, reset_reason")
         .eq("claimed_by", user.id)
         .eq("status", "reset")
         .order("reset_at", { ascending: false })
 
-      if (resetError) {
-        console.error("Error checking for reset claims:", resetError)
-      } else if (resetClaims && resetClaims.length > 0) {
-        console.log("Found reset claims:", resetClaims)
+      if (error) {
+        console.error("Error checking for reset claims:", error)
+        return
+      }
+
+      if (data && data.length > 0) {
+        console.log("Found reset claims:", data)
 
         // Notify the user about reset claims
-        const resetClaim = resetClaims[0] // Get the most recent reset
+        const resetClaim = data[0] // Get the most recent reset
         setClaimSuccess(
           `A referral claim for level ${resetClaim.level} has been reset due to vesting schedule changes. You can claim again when conditions are met.`,
         )
@@ -211,7 +214,7 @@ export default function Referrals() {
         }, 5000)
 
         // Mark these reset claims as acknowledged
-        for (const claim of resetClaims) {
+        for (const claim of data) {
           await supabase
             .from("referral_claims")
             .update({ status: "reset_acknowledged" })
@@ -220,47 +223,8 @@ export default function Referrals() {
             .eq("claimed_by", user.id)
         }
       }
-
-      // Check for auto-claims
-      const { data: autoClaims, error: autoError } = await supabase
-        .from("referral_claims")
-        .select("referred_uuid, level, claimed_at")
-        .eq("claimed_by", user.id)
-        .eq("status", "auto_claimed")
-        .eq("auto_claimed", true)
-        .order("claimed_at", { ascending: false })
-
-      if (autoError) {
-        console.error("Error checking for auto claims:", autoError)
-      } else if (autoClaims && autoClaims.length > 0) {
-        console.log("Found auto claims:", autoClaims)
-
-        // Notify the user about auto claims
-        const autoClaim = autoClaims[0] // Get the most recent auto claim
-        setClaimSuccess(
-          `You received an automatic referral claim for level ${autoClaim.level}. The tokens have been added to your PWT Cashout balance.`,
-        )
-
-        setTimeout(() => {
-          setClaimSuccess("")
-        }, 5000)
-
-        // Mark these auto claims as acknowledged
-        for (const claim of autoClaims) {
-          await supabase
-            .from("referral_claims")
-            .update({ status: "auto_claimed_acknowledged" })
-            .eq("referred_uuid", claim.referred_uuid)
-            .eq("level", claim.level)
-            .eq("claimed_by", user.id)
-        }
-
-        // Refresh balances and transactions to reflect auto-claims
-        refreshBalances()
-        refreshTransactions()
-      }
     } catch (err) {
-      console.error("Error in checkForResetAndAutoClaims:", err)
+      console.error("Error in checkForResetClaims:", err)
     }
   }
 
@@ -306,8 +270,6 @@ export default function Referrals() {
         referred_uuid: referredUuid,
         level: Number(level),
         claimed_by: user.id,
-        status: "claimed",
-        auto_claimed: false,
       })
 
       if (error) {
@@ -465,7 +427,6 @@ export default function Referrals() {
   const handleRefresh = () => {
     setRetryCount(0)
     fetchReferrals(0)
-    checkForResetAndAutoClaims()
   }
 
   // Initial fetch with a slight delay to ensure user is fully loaded
@@ -475,7 +436,7 @@ export default function Referrals() {
       // Add a small delay to ensure user data is fully loaded
       const timer = setTimeout(() => {
         fetchReferrals()
-        checkForResetAndAutoClaims() // Check for reset and auto claims
+        checkForResetClaims() // Add this line
       }, 500)
       return () => clearTimeout(timer)
     }
@@ -489,7 +450,6 @@ export default function Referrals() {
     const intervalId = setInterval(() => {
       console.log("Polling: refreshing referrals data")
       fetchReferrals(0, true) // Use background refresh for polling
-      checkForResetAndAutoClaims() // Check for reset and auto claims
     }, 30000) // Check every 30 seconds
 
     return () => {

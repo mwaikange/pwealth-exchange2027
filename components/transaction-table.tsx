@@ -144,41 +144,6 @@ export function TransactionTable({
     )
   }
 
-  // Find the getTransactionColor function and update it to handle auto-claim transactions
-  const getTransactionColor = (description: string) => {
-    if (description.startsWith("+")) {
-      return "text-green-500"
-    } else if (description.startsWith("-")) {
-      return "text-red-500"
-    } else if (description.includes("Auto Referral Claim")) {
-      return "text-green-500"
-    } else {
-      return "text-white"
-    }
-  }
-
-  // Update the renderDescription function to format auto-claim transactions
-  const renderDescription = (description: string) => {
-    if (description.startsWith("+") || description.startsWith("-")) {
-      return (
-        <>
-          <span className={getTransactionColor(description)}>{description.charAt(0)}</span>
-          <span className="text-white">{description.substring(1)}</span>
-        </>
-      )
-    } else if (description.includes("Auto Referral Claim")) {
-      // Format auto-claim transactions with a plus sign
-      return (
-        <>
-          <span className="text-green-500">+</span>
-          <span className="text-white">{description}</span>
-        </>
-      )
-    } else {
-      return <span className="text-white">{description}</span>
-    }
-  }
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
@@ -197,12 +162,15 @@ export function TransactionTable({
           {transactions.map((transaction) => {
             const isPositive = isPositiveTransaction(transaction)
             const formattedType = formatTransactionType(transaction)
-            //const signPart = formattedType.substring(0, 2) // Get the "+ " or "- " part
-            //const descriptionPart = formattedType.substring(2) // Get the rest of the description
+            const signPart = formattedType.substring(0, 2) // Get the "+ " or "- " part
+            const descriptionPart = formattedType.substring(2) // Get the rest of the description
 
             return (
               <tr key={transaction.id} className="border-b border-gray-700">
-                <td className="py-[6px] px-4 text-[10px]">{renderDescription(formattedType)}</td>
+                <td className="py-[6px] px-4 text-[10px]">
+                  <span className={isPositive ? "text-green-500" : "text-red-500"}>{signPart}</span>
+                  <span className="text-white">{descriptionPart}</span>
+                </td>
                 {showAccount && <td className="py-[6px] px-4 text-[10px]">{transaction.account}</td>}
                 <td className="py-[6px] px-4 text-[10px]">{transaction.date}</td>
                 {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}

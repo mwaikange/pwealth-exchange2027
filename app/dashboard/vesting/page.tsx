@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Check, RefreshCw } from "lucide-react"
+import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
 import { useTransactions } from "@/contexts/transaction-context" // Import useTransactions directly
@@ -13,13 +13,10 @@ export default function Vesting() {
   const [activateError, setActivateError] = useState("")
   const [investError, setInvestError] = useState("")
   const [claimError, setClaimError] = useState("")
-  const [resetError, setResetError] = useState("") // New state for reset errors
 
   const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
-  const [showResetConfirmation, setShowResetConfirmation] = useState(false) // New state for reset confirmation
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
-  const [pendingResetLevel, setPendingResetLevel] = useState<number | null>(null) // New state for pending reset level
 
   // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
@@ -32,20 +29,7 @@ export default function Vesting() {
   const { addTransaction } = useTransactions()
 
   // Get vesting functions
-  const {
-    vestingSchedules,
-    activateSchedule,
-    investInSchedule,
-    claimSchedule,
-    getSchedulesByLevel,
-    forceResetLevel,
-    refreshVestingSchedules,
-  } = useVesting()
-
-  // Refresh schedules on mount and tab change
-  useEffect(() => {
-    refreshVestingSchedules()
-  }, [activeTab, refreshVestingSchedules])
+  const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
 
   // Clear messages after 5 seconds
   useEffect(() => {
@@ -54,11 +38,10 @@ export default function Vesting() {
       if (activateError) setActivateError("")
       if (investError) setInvestError("")
       if (claimError) setClaimError("")
-      if (resetError) setResetError("")
     }, 5000)
 
     return () => clearTimeout(timer)
-  }, [claimSuccess, activateError, investError, claimError, resetError])
+  }, [claimSuccess, activateError, investError, claimError])
 
   // Get active level number
   const getActiveLevel = () => {
@@ -257,6 +240,8 @@ export default function Vesting() {
   }
 
   // Update the handleClaim function to only show confetti at 100% maturity
+  // Find the handleClaim function and replace it with this updated version:
+
   const handleClaim = async (scheduleId, progress) => {
     // Prevent action if already processing something
     if (isProcessing) return
@@ -280,44 +265,11 @@ export default function Vesting() {
       if (progress === 100) {
         setShowConfetti(true)
       }
-
-      // Refresh schedules to check if all are claimed
-      await refreshVestingSchedules()
     } catch (error) {
       console.error("Claim failed:", error)
       setClaimError(`Claim failed: ${error.message || "Unknown error"}`)
     } finally {
       setIsProcessing(false) // Set processing to false when done
-    }
-  }
-
-  // New function to handle manual reset
-  const handleReset = () => {
-    if (isProcessing) return
-
-    const level = getActiveLevel()
-    setPendingResetLevel(level)
-    setShowResetConfirmation(true)
-  }
-
-  // New function to confirm reset
-  const confirmReset = async () => {
-    if (pendingResetLevel === null) return
-
-    try {
-      setIsProcessing(true)
-      await forceResetLevel(pendingResetLevel)
-      setClaimSuccess(`Successfully reset all schedules in Level ${pendingResetLevel}`)
-
-      // Refresh schedules after reset
-      await refreshVestingSchedules()
-    } catch (error) {
-      console.error("Reset failed:", error)
-      setResetError(`Reset failed: ${error.message || "Unknown error"}`)
-    } finally {
-      setIsProcessing(false)
-      setShowResetConfirmation(false)
-      setPendingResetLevel(null)
     }
   }
 
@@ -341,35 +293,12 @@ export default function Vesting() {
     return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
   }
 
-  // Check if all schedules in the current level are claimed
-  const areAllSchedulesClaimed = () => {
-    const level = getActiveLevel()
-    const levelSchedules = getSchedulesByLevel(level)
-    return levelSchedules.length === 5 && levelSchedules.every((s) => s.claimed)
-  }
-
   return (
     <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
       {/* Page Title - adjusted to match other pages */}
-      <div className="px-6 mb-2 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">Vesting Schedules</h1>
-          <p className="text-gray-400 text-sm">Manage your investment schedules</p>
-        </div>
-
-        {/* Add manual reset button */}
-        {areAllSchedulesClaimed() && (
-          <button
-            onClick={handleReset}
-            disabled={isProcessing}
-            className={`flex items-center px-4 py-2 rounded text-sm ${
-              isProcessing ? "bg-gray-600 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
-            }`}
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Reset Level {getActiveLevel()}
-          </button>
-        )}
+      <div className="px-6 mb-2">
+        <h1 className="text-2xl font-bold">Vesting Schedules</h1>
+        <p className="text-gray-400 text-sm">Manage your investment schedules</p>
       </div>
 
       {/* Success and error messages */}
@@ -377,7 +306,6 @@ export default function Vesting() {
       {activateError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{activateError}</div>}
       {investError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{investError}</div>}
       {claimError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{claimError}</div>}
-      {resetError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{resetError}</div>}
 
       <div className="px-6 mt-2">
         <div
@@ -677,54 +605,6 @@ export default function Vesting() {
           </div>
         </div>
       )}
-
-      {/* Reset Confirmation Dialog */}
-      {showResetConfirmation && (
-        <div className="fixed inset-0 flexex items-center justify-center z-50 bg-black/50">
-          <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-white">Confirm Reset</h3>
-              <button onClick={() => setShowResetConfirmation(false)} className="text-gray-400 hover:text-white">
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="mb-6">
-              <p className="text-white mb-2">
-                This will reset all vesting schedules in Level {pendingResetLevel}. This action is irreversible.
-              </p>
-              <p className="text-yellow-300 text-sm">Are you sure you want to proceed?</p>
-            </div>
-
-            <div className="flex space-x-4">
-              <button
-                onClick={() => setShowResetConfirmation(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmReset}
-                disabled={isProcessing}
-                className={`flex-1 py-2 rounded-md font-medium transition-colors ${
-                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700 text-white"
-                }`}
-              >
-                {isProcessing ? "Processing..." : "Reset Level"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Confetti Celebration */}
       {showConfetti && <Celebration onComplete={() => setShowConfetti(false)} />}
     </div>

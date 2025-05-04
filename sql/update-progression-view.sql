@@ -1,4 +1,4 @@
--- Update the progression view to consider the reset status and auto-claims
+-- Update the progression view to consider the reset status
 CREATE OR REPLACE VIEW progression_view AS
 SELECT
   r.referred_uuid,
@@ -15,7 +15,7 @@ SELECT
         WHEN r.invested_count >= 5 THEN 'claimable'
         ELSE 'Locked'
       END
-    WHEN rc.status IN ('claimed', 'auto_claimed') THEN 'claimed'
+    WHEN rc.status = 'claimed' THEN 'claimed'
     ELSE 'Locked'
   END as button_state
 FROM
