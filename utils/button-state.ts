@@ -14,6 +14,7 @@ export interface ReferralData {
   claimed: boolean
   claim_date?: string | null
   level_reset?: boolean
+  auto_claimed?: boolean
 }
 
 /**
@@ -52,11 +53,13 @@ export function determineButtonState(referral: ReferralData): ButtonState {
     }
   }
 
-  // STATE 3: CLAIMED
+  // STATE 3: CLAIMED (manually or automatically)
   else if (referral.claimed) {
+    const buttonText = referral.auto_claimed ? "Auto-Claimed" : "Claimed"
+
     return {
       button_state: "claimed",
-      button_text: "claimed",
+      button_text: buttonText,
       button_color: "grey",
       text_color: "green",
       is_clickable: false,

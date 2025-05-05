@@ -23,6 +23,7 @@ interface FormattedReferral {
   status: string
   registerDate: string
   buttonState: "Locked" | "claimable" | "claimed"
+  autoClaimedStatus?: boolean
 }
 
 // Group type for organizing referrals by code
@@ -83,7 +84,10 @@ export default function Referrals() {
           referral_uuid,
           button_state_lvl_1,
           button_state_lvl_2,
-          button_state_lvl_3
+          button_state_lvl_3,
+          auto_claimed_lvl_1,
+          auto_claimed_lvl_2,
+          auto_claimed_lvl_3
         `)
         .eq("referral_uuid", user.id)
 
@@ -135,6 +139,7 @@ export default function Referrals() {
             status,
             registerDate,
             buttonState: item.button_state_lvl_1 as "Locked" | "claimable" | "claimed",
+            autoClaimedStatus: item.auto_claimed_lvl_1 || false,
           })
         }
 
@@ -155,6 +160,7 @@ export default function Referrals() {
             status,
             registerDate,
             buttonState: item.button_state_lvl_2 as "Locked" | "claimable" | "claimed",
+            autoClaimedStatus: item.auto_claimed_lvl_2 || false,
           })
         }
 
@@ -175,6 +181,7 @@ export default function Referrals() {
             status,
             registerDate,
             buttonState: item.button_state_lvl_3 as "Locked" | "claimable" | "claimed",
+            autoClaimedStatus: item.auto_claimed_lvl_3 || false,
           })
         }
       }
@@ -454,8 +461,10 @@ export default function Referrals() {
 
     switch (referral.buttonState) {
       case "claimed":
+        // Check if this was auto-claimed
+        const buttonText = referral.autoClaimedStatus ? "Auto-Claimed" : "Claimed"
         return {
-          text: "Claimed",
+          text: buttonText,
           className: "bg-gray-700 text-green-400 cursor-not-allowed",
           disabled: true,
         }
