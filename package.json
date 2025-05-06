@@ -69,8 +69,8 @@
     "howler": "latest",
     "@supabase/ssr": "latest",
     "uuid": "latest",
-    "react-markdown": "latest",
-    "openai": "latest"
+    "openai": "latest",
+    "react-markdown": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
