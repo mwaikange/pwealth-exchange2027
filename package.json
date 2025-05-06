@@ -61,13 +61,16 @@
     "@auth/core": "latest",
     "nodemailer": "latest",
     "@supabase/supabase-js": "latest",
+    "ws": "latest",
     "next-auth": "latest",
     "@vercel/postgres": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
     "canvas-confetti": "latest",
     "howler": "latest",
     "@supabase/ssr": "latest",
-    "uuid": "latest"
+    "uuid": "latest",
+    "react-markdown": "latest",
+    "openai": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

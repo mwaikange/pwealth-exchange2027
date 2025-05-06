@@ -313,8 +313,9 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               </button>
 
               <button
-                className="w-full bg-gray-500 text-white font-medium rounded-md py-3 flex items-center justify-center opacity-70 cursor-not-allowed"
-                disabled={true}
+                onClick={handleMobileWalletPayment}
+                className="w-full bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-md py-3 flex items-center justify-center"
+                disabled={isProcessing}
               >
                 Mobile/E-Wallet Payments
               </button>

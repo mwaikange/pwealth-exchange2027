@@ -7,12 +7,14 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
+import { PeerGPTChat } from "./peer-gpt-chat"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, signOut } = useAuth()
   const [referralCode, setReferralCode] = useState<string>("")
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   useEffect(() => {
     const fetchReferralCode = async () => {
@@ -128,7 +130,10 @@ export function DashboardSidebar() {
         </div>
 
         <div className="space-y-1">
-          <button className="w-full flex items-center px-2 py-1.5 bg-white text-black rounded text-xs">
+          <button
+            onClick={() => setIsChatOpen(true)}
+            className="w-full flex items-center px-2 py-1.5 bg-white text-black rounded text-xs"
+          >
             <HelpCircle className="mr-1.5 h-3 w-3" />
             Help & Support
           </button>
@@ -142,6 +147,7 @@ export function DashboardSidebar() {
           </button>
         </div>
       </div>
+      {isChatOpen && <PeerGPTChat onClose={() => setIsChatOpen(false)} />}
     </aside>
   )
 }

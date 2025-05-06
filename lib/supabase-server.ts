@@ -3,37 +3,29 @@ import { cookies } from "next/headers"
 import { env } from "./env"
 import type { Database } from "@/types/supabase"
 
-// Create a Supabase client for server components
 export const createServerSupabaseClient = () => {
-  try {
-    const cookieStore = cookies()
-    const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
+  const cookieStore = cookies()
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("Missing Supabase environment variables:", {
-        hasUrl: !!supabaseUrl,
-        hasKey: !!supabaseServiceKey,
-      })
-      return null
-    }
-
-    return createClient<Database>(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
+  return createClient<Database>(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      cookieOptions: {
+        name: "sb-auth-token",
+        domain: null,
+        path: "/",
+        secure: true,
       },
-      global: {
-        headers: {
-          cookie: cookieStore.toString(),
-        },
+    },
+    global: {
+      headers: {
+        cookie: cookieStore.toString(),
       },
-    })
-  } catch (error) {
-    console.error("Error creating Supabase client:", error)
-    return null
-  }
+    },
+  })
 }
 
-// Don't re-export createClient directly to avoid confusion
+export { createClient }
