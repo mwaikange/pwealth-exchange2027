@@ -23,7 +23,9 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const { user } = useAuth()
   const { aftBalance, receiveAft } = useWallet()
   const { addTransaction } = useTransactions()
-  const [currentView, setCurrentView] = useState<"form" | "paymentOptions" | "qrCode">("form")
+  const [currentView, setCurrentView] = useState<"form" | "paymentOptions" | "qrCode" | "mobilePayments">("form")
+  const [selectedCountry, setSelectedCountry] = useState("namibia")
+  const [screenshotUploaded, setScreenshotUploaded] = useState(false)
 
   if (!isOpen) return null
 
@@ -124,6 +126,14 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     setCurrentView("qrCode")
   }
 
+  const handleMobileWalletPayment = () => {
+    // Clear any previous error messages
+    setErrorMessage(null)
+
+    // Show mobile payments view
+    setCurrentView("mobilePayments")
+  }
+
   const handleBackToForm = () => {
     setErrorMessage(null)
     setCurrentView("form")
@@ -134,13 +144,76 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     setCurrentView("paymentOptions")
   }
 
+  const handleSubmitMobilePayment = () => {
+    // In a real implementation, this would submit the payment details
+    console.log("Mobile payment submitted")
+
+    // Close the modal
+    onClose()
+  }
+
   // Generate a random reference number for the QR code
   // In a real implementation, this would come from your backend
   const referenceNumber = "9588883402"
 
+  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedCountry(e.target.value)
+  }
+
+  const getCurrencyCode = (country: string) => {
+    switch (country) {
+      case "namibia":
+        return "NAD"
+      case "south_africa":
+        return "ZAR"
+      case "botswana":
+        return "Pula"
+      default:
+        return "USD"
+    }
+  }
+
+  // Get exchange rate based on country
+  const getExchangeRate = (country: string) => {
+    switch (country) {
+      case "namibia":
+        return 18.5 // 1 USD = 18.5 NAD (example rate)
+      case "south_africa":
+        return 19.2 // 1 USD = 19.2 ZAR (example rate)
+      case "botswana":
+        return 13.7 // 1 USD = 13.7 Pula (example rate)
+      default:
+        return 1 // Default to 1:1 for USD
+    }
+  }
+
+  // Calculate local currency amount rounded to nearest 10
+  const calculateLocalAmount = () => {
+    const usdAmount = Number.parseInt(amount) || 0
+    const exchangeRate = getExchangeRate(selectedCountry)
+    const exactLocalAmount = usdAmount * exchangeRate
+    const roundedLocalAmount = Math.round(exactLocalAmount / 10) * 10
+    return roundedLocalAmount.toString()
+  }
+
+  // Get current date in YYYY-MM-DD format
+  const getCurrentDate = () => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, "0")
+    const day = String(today.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setScreenshotUploaded(e.target.files && e.target.files.length > 0)
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[#2a2d3a] rounded-lg w-[400px] overflow-hidden">
+      <div
+        className={`bg-[#2a2d3a] rounded-lg ${currentView === "mobilePayments" ? "w-[1040px] max-h-[90vh] overflow-y-auto" : "w-[400px]"} overflow-hidden`}
+      >
         <div className="bg-yellow-500 px-4 py-2 flex justify-between items-center">
           <h3 className="text-black font-semibold">Buy Activation Fee Tokens (AFT)</h3>
           <button onClick={onClose} className="text-black hover:text-gray-700" disabled={isProcessing}>
@@ -240,6 +313,13 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               </button>
 
               <button
+                className="w-full bg-gray-500 text-white font-medium rounded-md py-3 flex items-center justify-center opacity-70 cursor-not-allowed"
+                disabled={true}
+              >
+                Mobile/E-Wallet Payments
+              </button>
+
+              <button
                 onClick={handleCardPayment}
                 className="w-full bg-green-500 hover:bg-green-600 text-white font-medium rounded-md py-3 flex items-center justify-center"
                 disabled={isProcessing}
@@ -303,6 +383,170 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               Scan with your bank app
               <br />
               or Scan to Pay app
+            </div>
+          </div>
+        )}
+
+        {currentView === "mobilePayments" && (
+          <div className="bg-[#2D3440] p-6">
+            <div className="mb-4 flex w-full">
+              <button onClick={handleBackToPaymentOptions} className="text-white hover:text-gray-200">
+                <ArrowLeft size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-[35fr_65fr] gap-6">
+              {/* Left Column */}
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-white text-sm block mb-1">Country</label>
+                    <select
+                      className="bg-[#D9D9D9] rounded p-2 w-full text-black"
+                      value={selectedCountry}
+                      onChange={handleCountryChange}
+                    >
+                      <option value="namibia">Namibia</option>
+                      <option value="south_africa" disabled className="text-gray-400">
+                        South Africa
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-white text-sm block mb-1">Bank</label>
+                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-black" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-white text-sm block mb-1">Amount (USD) - local conversion below.</label>
+                  <input
+                    type="text"
+                    className="bg-[#D9D9D9] rounded p-2 w-full text-black font-medium text-lg"
+                    value={amount}
+                    readOnly
+                  />
+                </div>
+
+                <div className="border-t border-yellow-400 pt-4">
+                  <p className="text-white text-sm mb-2">Make payment to this number:</p>
+                  <div className="bg-[#D9D9D9] rounded-md p-3 mb-2">
+                    <p className="text-black text-4xl font-bold text-center">085 8007296</p>
+                  </div>
+                  <p className="text-white text-sm mb-4">
+                    Network: <span className="font-semibold">Telecom Namibia</span>
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-white text-xs block mb-1">
+                      Name
+                      <span className="block text-xs opacity-70">
+                        (exactly as it Appears on recipients SMS - Full Name if Required)
+                      </span>
+                    </label>
+                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black" />
+                  </div>
+                  <div>
+                    <label className="text-white text-xs block mb-1">
+                      Date of Transaction
+                      <span className="block text-xs opacity-70">
+                        (Must be Today - the transaction must be made the day of submission)
+                      </span>
+                    </label>
+                    <input
+                      type="date"
+                      className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black"
+                      value={getCurrentDate()}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white text-xs block mb-1">Reference Number</label>
+                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black" />
+                  </div>
+                  <div>
+                    <label className="text-white text-xs block mb-1">Amount ({getCurrencyCode(selectedCountry)})</label>
+                    <input
+                      type="text"
+                      className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black"
+                      value={calculateLocalAmount()}
+                      readOnly
+                    />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-white text-xs block mb-1">Mobile Number</label>
+                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm h-[34px] text-black" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-white text-xs block mb-1">Upload Screenshot</label>
+                    <div className="bg-[#D9D9D9] rounded p-0 w-full h-[34px] flex items-center justify-center overflow-hidden">
+                      <input
+                        type="file"
+                        className="text-sm text-black cursor-pointer text-center"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                        onChange={handleFileChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column */}
+              <div className="w-full">
+                <div className="text-center mb-6">
+                  <h2 className="text-white text-4xl font-bold mb-1">Mobile Payments</h2>
+                  <p className="text-white text-xl">For: Activation Fee Token (AFT) Purchases</p>
+                </div>
+
+                <div className="bg-[#2D3440] border-l border-gray-600 pl-4 overflow-x-auto">
+                  {/* Table with exactly 13 rows total (1 header row + 12 data rows) */}
+                  <table className="w-full text-white text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-600">
+                        <th className="py-2 text-left w-1/5">Date</th>
+                        <th className="py-2 text-left w-1/5">Bank</th>
+                        <th className="py-2 text-left w-1/4">Reference</th>
+                        <th className="py-2 text-left w-1/5">Amount</th>
+                        <th className="py-2 text-left w-1/5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Limit to exactly 12 data rows for a total of 13 rows including header */}
+                      {Array(12)
+                        .fill(0)
+                        .map((_, i) => (
+                          <tr key={i} className="border-b border-gray-700">
+                            <td className="py-2">Date</td>
+                            <td className="py-2">Bank</td>
+                            <td className="py-2">Reference</td>
+                            <td className="py-2">Amount</td>
+                            <td className="py-2">Status</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-yellow-400 mt-6 pt-6 flex justify-center">
+              <button
+                onClick={handleSubmitMobilePayment}
+                className={`font-medium rounded-md py-2 px-8 ${
+                  screenshotUploaded
+                    ? "bg-green-500 hover:bg-green-600 text-white"
+                    : "bg-gray-500 text-gray-300 cursor-not-allowed"
+                }`}
+                disabled={!screenshotUploaded}
+              >
+                Submit
+              </button>
             </div>
           </div>
         )}
