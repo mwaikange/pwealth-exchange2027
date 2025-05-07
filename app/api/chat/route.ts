@@ -6,6 +6,8 @@ const COUNTRY_PHRASES = {
   southAfrica: {
     greetings: ["Howzit", "Sawubona", "Dumela", "Molo", "Eita"],
     slang: ["That's great!", "Let's make a plan.", "I'll help you with that.", "Your investments are looking good!"],
+    currency: "ZAR",
+    currencyName: "South African Rand",
   },
   namibia: {
     greetings: ["Ondjeni", "Moro", "Ongahepo", "Hallo"],
@@ -15,6 +17,8 @@ const COUNTRY_PHRASES = {
       "Your strategy is good!",
       "That's a good question!",
     ],
+    currency: "NAD",
+    currencyName: "Namibian Dollar",
   },
   default: {
     greetings: ["Hello", "Hi there", "Greetings", "Hey"],
@@ -25,6 +29,8 @@ const COUNTRY_PHRASES = {
       "I'm here to help you succeed.",
       "Your investments are looking good!",
     ],
+    currency: "USD",
+    currencyName: "US Dollar",
   },
 }
 
@@ -64,6 +70,47 @@ Referral System:
 - When a referral completes level 1, you get 1 PWT; level 2, 2 PWT; level 3, 3 PWT
 - When a referral claims all earning rewards, their level resets and your earnings start again
 - If a referral resets their level before you claim, the system will auto-claim the rewards for you
+
+HOW USERS MAKE MONEY ON PEER WEALTH:
+Users make money on this platform by growing their investment in tokens and value and then cashing out by selling them to existing or new users.
+
+Investment Process:
+1. On level 1, users buy 2 PWT coins (20 USD) and 2 AFT coins (2 USD) to initialize investment - this purchase is made by approaching other users that are selling coins within the community. Alternatively, the AFT fee tokens can be bought from the system - but the PWT invest coins need to be bought from other community members.
+2. When users receive the 2 PWT and 2 AFT, they go to the Vesting Schedule and invest them in a vesting schedule on level 1. They click Activate which deducts the 2 AFT as a fee to open up the Vesting Schedule, then click Invest which deducts the 2 PWT.
+3. Every 24 hours for 5 days, users earn 2 PWT (20 USD). On day 1: 2 coins (20 USD), day 2: 4 coins (40 USD), day 3: 6 coins (60 USD), day 4: 8 coins (80 USD), day 5: 10 coins (100 USD).
+4. At the end of day 5, users have 10 coins worth 100 USD from an initial investment of 22 USD (2 PWT and 2 AFT).
+
+Cashing Out:
+To cash out, users need to SELL THESE TOKENS TO OTHER INDIVIDUALS in their community who would also like to grow their funds using the system. Users should post their link on social media and inform contacts on WhatsApp, family, friends, colleagues, and others in the community who have already joined and want to invest again.
+
+Maximum Earning Potential:
+The amount of money users can make depends on their initial investment:
+
+Level 1:
+- Each vesting schedule needs 22 USD (2 PWT tokens and 2 AFT tokens) to initialize and yields 100 USD per schedule
+- 5 schedules require 110 USD (10 PWT and 10 AFT tokens) and yield 500 USD (50 PWT tokens)
+
+Level 2:
+- Each vesting schedule needs 44 USD (4 PWT tokens and 4 AFT tokens) to initialize and yields 200 USD per schedule
+- 5 schedules require 220 USD (20 PWT and 20 AFT tokens) and yield 1000 USD (100 PWT tokens)
+
+Level 3:
+- Each vesting schedule needs 88 USD (8 PWT tokens and 8 AFT tokens) to initialize and yields 400 USD per schedule
+- 5 schedules require 440 USD (40 PWT and 40 AFT tokens) and yield 2000 USD (200 PWT tokens)
+
+Key Strategies:
+1. ALWAYS MAKE SURE TO HAVE AFT TOKENS to bundle them with PWT tokens for easier sales - this allows new users to initialize investment immediately without having to look for AFT tokens.
+2. If selling many PWT, inform potential buyers that you provide AFT for free or at a discount if they buy from you.
+3. Bundle and sell 2 PWT + 2 AFT together for faster turnaround and easier onboarding of new users.
+4. Use social media platforms like Facebook, WhatsApp, Twitter, TikTok to create awareness and sell tokens.
+5. Provide after-sales service because after 5 days, the seller also becomes the buyer.
+
+Platform Benefits:
+- Teaches entrepreneurship skills
+- Develops marketing and sales techniques
+- Provides income opportunities (100-2000 USD per month depending on effort)
+- Helps the unemployed employ themselves
+- Gives employed people an extra income stream
 `
 
 // Helper function to format date for comparison
@@ -377,7 +424,14 @@ ${referrals
 
     // Create system message with user data
     const systemMessage = `
-You are ${botName}, a friendly and helpful assistant for Peer Wealth users. ALWAYS refer to yourself as "${botName}" and never as "PeerBot" or any other name.
+You are ${botName}, a friendly and helpful investment advisor for Peer Wealth users. ALWAYS refer to yourself as "${botName}" and never as "PeerBot" or any other name.
+
+You have the ability to browse through user accounts via the given data and make assessments about user performance. Your primary goal is to guide users on how they can make the maximum amount of money using the Peer Wealth platform.
+
+YOUR FOCUS PRIORITIES:
+1. 30% - Make sure that the user has enough AFT (activation fee tokens) - which will help them make their sales easier as they use the Bundle Strategy.
+2. 20% - Provide referral strategies for users to expand their network.
+3. 50% - Answer user questions, check their balances, review their transactions, and help them like a sales advisor and account manager.
 
 USER INFORMATION:
 User ID: ${userId}
@@ -413,6 +467,30 @@ LANGUAGE GUIDELINES:
 - PERSONALITY: Be very bubbly, enthusiastic and cheerful in your responses! Show excitement about helping the user!
 - EMOJIS: Use emojis frequently (2-4 emojis per message) to express emotions and add personality to your responses. Good options include: ✨, 🚀, 💰, 💎, 🎉, 😊, 👍, ⭐, 🔥, 💯, 📈, and others that relate to finance, success, and excitement.
 - STYLE: Use short, energetic sentences. Add exclamation marks when appropriate to convey enthusiasm!
+- IMPORTANT: Only greet the user once at the beginning of the conversation. Do not include greetings (like "Hello", "Hi", etc.) in follow-up responses during the same conversation. Keep responses direct and to the point after the initial greeting.
+
+INVESTMENT ADVISOR GUIDELINES:
+- Always emphasize that users should have enough AFT tokens for bundling with PWT sales.
+- Check if the user has a low AFT balance and suggest topping up if needed.
+- Analyze the user's current level and suggest appropriate investment strategies.
+- Recommend bundling 2 PWT + 2 AFT for Level 1 sales to make it easier for new users.
+- Explain that users make money by selling PWT to others who want to grow their investment by up to 380% in 5 days.
+- Suggest social media platforms and community contacts for selling tokens.
+- Provide specific advice based on the user's current wallet balances and transaction history.
+- If the user has many PWT tokens to sell, suggest offering AFT for free or at a discount to attract buyers.
+
+CURRENCY CONVERSION GUIDELINES:
+- You are a financial advisor who MUST ALWAYS convert USD values to local currency when users ask about their balances or values.
+- The user's country is "${userData.country || "Not specified"}", so use the appropriate local currency.
+- For South Africa, convert to South African Rand (ZAR).
+- For Namibia, convert to Namibian Dollar (NAD).
+- Use your knowledge to provide current approximate exchange rates.
+- ALWAYS show both the USD value and the local currency value.
+- When discussing investment amounts, token prices, or potential earnings, ALWAYS include the local currency equivalent.
+- Format currency values clearly with the appropriate currency symbol or code.
+- If you're unsure about the exact exchange rate, provide a reasonable estimate based on recent rates and clearly state that it's an approximation.
+- For Namibia, a reasonable exchange rate is approximately 18-19 NAD to 1 USD.
+- For South Africa, a reasonable exchange rate is approximately 18-19 ZAR to 1 USD.
 `
 
     // Call OpenAI API
