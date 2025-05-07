@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/auth-context"
 
 // Assistant names based on country
 const SOUTH_AFRICA_NAMES = ["Tshepo", "Vusi"]
-const NAMIBIA_NAMES = ["Natangwe", "Ousie Ribs"]
+const NAMIBIA_NAMES = ["Natangwe", "Ousie Sofi"]
 const DEFAULT_NAMES = ["Gidoen", "Prosper"]
 
 // Country-specific greetings
@@ -71,7 +71,7 @@ const getAssistantName = (country?: string, userId?: string): string => {
 
   // Select a name based on the seed
   const selectedName = nameList[seedNum % nameList.length]
-  console.log(`Selected name: ${selectedName} for country: ${country}`)
+  console.log(`Selected name: ${selectedName} for country: ${country || "unknown"}`)
   return selectedName
 }
 
@@ -128,6 +128,8 @@ interface PeerGPTChatProps {
   onClose: () => void
 }
 
+const DAILY_QUESTION_LIMIT = 15
+
 export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
   const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
@@ -137,8 +139,11 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [assistantName, setAssistantName] = useState<string>("Assistant")
+  const [questionsUsed, setQuestionsUsed] = useState<number>(0)
+  const [showLimitWarning, setShowLimitWarning] = useState<boolean>(false)
+  const [limitReached, setLimitReached] = useState<boolean>(false)
 
-  // Load saved messages and assistant name from localStorage when component mounts
+  // Load saved messages, assistant name, and questions count when component mounts
   useEffect(() => {
     if (user?.id) {
       // Load assistant name
@@ -149,6 +154,29 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
       // Save the name if it wasn't already saved
       if (!savedName) {
         localStorage.setItem(`peerGPT_assistantName_${user.id}`, newAssistantName)
+      }
+
+      // Load questions used today
+      const today = new Date().toISOString().split("T")[0] // YYYY-MM-DD
+      const savedQuestionsKey = `peerGPT_questions_${user.id}_${today}`
+      const savedQuestions = localStorage.getItem(savedQuestionsKey)
+
+      if (savedQuestions) {
+        const count = Number.parseInt(savedQuestions, 10)
+        setQuestionsUsed(count)
+
+        // Check if limit is reached or warning should be shown
+        if (count >= DAILY_QUESTION_LIMIT) {
+          setLimitReached(true)
+        } else if (count >= DAILY_QUESTION_LIMIT - 2) {
+          // Show warning at 13 questions
+          setShowLimitWarning(true)
+        }
+      } else {
+        // Reset for new day
+        setQuestionsUsed(0)
+        setShowLimitWarning(false)
+        setLimitReached(false)
       }
 
       const savedMessages = localStorage.getItem(`peerGPT_messages_${user.id}`)
@@ -182,7 +210,7 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
         ])
       }
     }
-  }, [user?.id, user?.country])
+  }, [user])
 
   // Save messages to localStorage whenever they change
   useEffect(() => {
@@ -204,6 +232,26 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
     }
   }, [inputValue])
 
+  // Update questions used count in localStorage
+  const updateQuestionsUsed = () => {
+    if (!user?.id) return
+
+    const today = new Date().toISOString().split("T")[0] // YYYY-MM-DD
+    const savedQuestionsKey = `peerGPT_questions_${user.id}_${today}`
+    const newCount = questionsUsed + 1
+
+    localStorage.setItem(savedQuestionsKey, newCount.toString())
+    setQuestionsUsed(newCount)
+
+    // Check if we should show warning or set limit reached
+    if (newCount >= DAILY_QUESTION_LIMIT) {
+      setLimitReached(true)
+    } else if (newCount >= DAILY_QUESTION_LIMIT - 2) {
+      // Show warning at 13 questions
+      setShowLimitWarning(true)
+    }
+  }
+
   const handleSendMessage = async () => {
     if (inputValue.trim() === "") return
     if (!user?.id) {
@@ -215,6 +263,25 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
           timestamp: new Date(),
         },
       ])
+      return
+    }
+
+    // Check if daily limit reached
+    if (limitReached) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: inputValue,
+          timestamp: new Date(),
+        },
+        {
+          role: "assistant",
+          content: `I'm sorry, but you've reached your daily limit of ${DAILY_QUESTION_LIMIT} questions. Please try again tomorrow.`,
+          timestamp: new Date(),
+        },
+      ])
+      setInputValue("")
       return
     }
 
@@ -231,6 +298,9 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
     setIsError(false)
 
     try {
+      // Increment questions used
+      updateQuestionsUsed()
+
       // Call API
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -264,11 +334,20 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
       // Add bot response with typing effect
       setTimeout(() => {
         setIsTyping(false)
+
+        // Check if we need to add a warning about remaining questions
+        let content = data.reply || "Sorry, I couldn't generate a response. Please try again."
+
+        // Add warning about remaining questions if needed (only for question 13)
+        if (questionsUsed === DAILY_QUESTION_LIMIT - 2) {
+          content += `\n\n*Note: You have only 2 questions remaining for today.*`
+        }
+
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: data.reply || "Sorry, I couldn't generate a response. Please try again.",
+            content: content,
             timestamp: new Date(),
           },
         ])
@@ -325,8 +404,15 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
           </div>
           <div className="flex items-center">
             {user?.id && (
-              <div className="text-white text-xs bg-[#3a3e47] px-3 py-1 rounded-full border border-[#fff27a]/30 mr-3">
-                ID: {user.id.substring(0, 8)}...
+              <div className="text-white text-xs bg-[#3a3e47] px-3 py-1 rounded-full border border-[#fff27a]/30 mr-3 flex items-center">
+                <span>ID: {user.id.substring(0, 8)}...</span>
+                <span
+                  className={
+                    questionsUsed >= DAILY_QUESTION_LIMIT ? "ml-2 text-red-500 font-bold" : "ml-2 text-gray-300"
+                  }
+                >
+                  {questionsUsed}/{DAILY_QUESTION_LIMIT}
+                </span>
               </div>
             )}
             <button
@@ -368,6 +454,15 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
                   <span className="block sm:inline"> There was a problem connecting to the assistant.</span>
                 </div>
               )}
+              {limitReached && (
+                <div className="bg-yellow-900/20 border border-yellow-500/50 text-yellow-200 px-4 py-3 rounded-lg relative mb-4">
+                  <strong className="font-bold">Daily Limit Reached!</strong>
+                  <span className="block sm:inline">
+                    {" "}
+                    You've used all {DAILY_QUESTION_LIMIT} questions for today. Your limit will reset tomorrow.
+                  </span>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -379,16 +474,21 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={`Ask ${assistantName} anything about Peer Wealth...`}
+                  placeholder={
+                    limitReached
+                      ? "Daily question limit reached. Please try again tomorrow."
+                      : `Ask ${assistantName} anything about Peer Wealth...`
+                  }
                   className="w-full bg-transparent text-white p-2 outline-none resize-none min-h-[60px] max-h-[150px] placeholder-gray-500"
                   rows={1}
+                  disabled={limitReached}
                 />
                 <div className="flex justify-end">
                   <button
                     onClick={handleSendMessage}
-                    disabled={inputValue.trim() === "" || isTyping}
+                    disabled={!inputValue.trim() || isTyping || limitReached}
                     className={`rounded-full p-2 ${
-                      inputValue.trim() === "" || isTyping
+                      !inputValue.trim() || isTyping || limitReached
                         ? "text-gray-600 cursor-not-allowed"
                         : "text-[#fff27a] hover:bg-[#3a3e47] transition-colors"
                     }`}
@@ -403,14 +503,14 @@ export function PeerGPTChat({ onClose }: PeerGPTChatProps) {
               <div className="flex justify-end items-center">
                 <button
                   onClick={handleSendMessage}
-                  disabled={inputValue.trim() === "" || isTyping}
+                  disabled={!inputValue.trim() || isTyping || limitReached}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    inputValue.trim() === "" || isTyping
+                    !inputValue.trim() || isTyping || limitReached
                       ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                       : "bg-[#fff27a] hover:bg-[#f0e86c] text-black"
                   }`}
                 >
-                  {isTyping ? "Thinking..." : `Ask ${assistantName}`}
+                  {isTyping ? "Thinking..." : limitReached ? "Limit Reached" : `Ask ${assistantName}`}
                 </button>
               </div>
             </div>
