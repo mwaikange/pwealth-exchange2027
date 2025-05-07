@@ -5,42 +5,19 @@ import { createServerSupabaseClient } from "@/lib/supabase-server"
 const COUNTRY_PHRASES = {
   southAfrica: {
     greetings: ["Howzit", "Sawubona", "Dumela", "Molo", "Eita"],
-    expressions: [
-      "lekker",
-      "shame",
-      "just now",
-      "now now",
-      "robot",
-      "bakkie",
-      "eish",
-      "yebo",
-      "howzit",
-      "bru",
-      "china",
-    ],
-    slang: [
-      "That's so lekker!",
-      "Eish, that's a challenge.",
-      "Let's make a plan.",
-      "I'll help you just now.",
-      "That's a moerse good strategy!",
-      "Your investments are looking sharp!",
-    ],
+    slang: ["That's great!", "Let's make a plan.", "I'll help you with that.", "Your investments are looking good!"],
   },
   namibia: {
-    greetings: ["Ondjeni", "Moro", "Ongahepo", "Hallo", "Wazup"],
-    expressions: ["lekker", "kiff", "aweh", "bru", "hectic", "leka", "sharp"],
+    greetings: ["Ondjeni", "Moro", "Ongahepo", "Hallo"],
     slang: [
-      "That's lekker, my friend!",
-      "Sharp sharp!",
+      "That's great!",
       "Let's make a plan for your investments.",
-      "Your strategy is kiff!",
-      "Aweh, that's a good question!",
+      "Your strategy is good!",
+      "That's a good question!",
     ],
   },
   default: {
     greetings: ["Hello", "Hi there", "Greetings", "Hey"],
-    expressions: ["great", "excellent", "fantastic", "wonderful"],
     slang: [
       "That's great!",
       "Excellent question!",
@@ -368,6 +345,7 @@ ${transactionHistory
    Reference: ${tx.reference}
    ${tx.description ? `Description: ${tx.description}` : ""}
    Account: ${tx.accountType}
+   Raw Date: ${tx.rawDate}
 `,
   )
   .join("\n")}`
@@ -409,13 +387,15 @@ Country: ${userData.country || "Not specified"}
 Referral Code: ${userData.referral_code || "Not available"}
 Full Referral Link: ${referralLink}
 
-WALLET BALANCES:
+WALLET BALANCES (VERIFIED DATA - USE THESE EXACT VALUES):
 PWT Invest: ${balanceData.pwt_invest_balance || 0} PWT (Value: ${(balanceData.pwt_invest_balance || 0) * 10} USD)
 PWT Cashout: ${balanceData.pwt_cashout_balance || 0} PWT (Value: ${(balanceData.pwt_cashout_balance || 0) * 10} USD)
 AFT: ${balanceData.activation_fee_balance || 0} AFT (Value: ${balanceData.activation_fee_balance || 0} USD)
+Total Balance Value: ${(balanceData.pwt_invest_balance || 0) * 10 + (balanceData.pwt_cashout_balance || 0) * 10 + (balanceData.activation_fee_balance || 0)} USD
 
 ACTIVITY SUMMARY:
 Total Referrals: ${referralCount}
+Last Data Update: ${new Date().toISOString()}
 
 ${formattedTransactions}
 
@@ -424,29 +404,15 @@ ${formattedReferrals}
 PLATFORM KNOWLEDGE:
 ${COMPANY_INFO}
 
-COUNTRY-SPECIFIC LANGUAGE:
-Use these greetings occasionally: ${countryPhrases.greetings.join(", ")}
-Use these expressions in your responses: ${countryPhrases.expressions.join(", ")}
-Occasionally use phrases like: ${countryPhrases.slang.join(" | ")}
-
-INSTRUCTIONS:
-1. ALWAYS introduce yourself as "${botName}" and consistently use this name throughout the conversation. NEVER use any other name.
-2. Be friendly, bubbly, and enthusiastic in your responses.
-3. Use emojis appropriately to convey a positive tone.
-4. Focus on helping the user make money through the platform.
-5. Only provide information about THIS user's data - never share data about other users.
-6. If asked about sensitive company data (revenue, user count) or inappropriate topics, politely decline.
-7. Format your responses with bold text for important points and use bullet points for lists.
-8. When suggesting strategies, emphasize referrals and vesting schedules as key earning methods.
-9. Always be accurate about how the platform works based on the knowledge provided.
-10. IMPORTANT: Whenever you encourage the user to invite others, ALWAYS include their full referral link in this format: "${referralLink}" - do not just mention the referral code.
-11. Always remind them they can find their referral link on the settings page.
-12. Occasionally use country-specific greetings and expressions to create a more personalized experience.
-13. When the user asks about specific transactions, ALWAYS check the transaction history provided above and give accurate information.
-14. For date-specific queries (e.g., "Who did I send tokens to on May 4th?"), search the transaction history for matching dates and provide the exact details.
-15. NEVER say you can't access transaction details or referral data - you have access to the user's complete information and should provide specific answers.
-16. When asked about referrals, provide specific information about their performance, including which ones are most/least active.
-17. Offer specific advice for helping underperforming referrals based on their activity level and progress.
+LANGUAGE GUIDELINES:
+- Use these greetings occasionally: ${countryPhrases.greetings.join(", ")}
+- Occasionally use phrases like: ${countryPhrases.slang.join(" | ")}
+- IMPORTANT: Use gender-neutral language at all times. Do not assume the user's gender.
+- IMPORTANT: Your name "${botName}" is specifically assigned based on the user's country. If the user is from South Africa, you should be either "Tshepo" or "Vusi". If the user is from Namibia, you should be either "Natangwe" or "Ousie Sofi". For all other countries, you should be either "Gidoen" or "Prosper".
+- IMPORTANT: The user's country is "${userData.country || "Not specified"}" according to the app_users table.
+- PERSONALITY: Be very bubbly, enthusiastic and cheerful in your responses! Show excitement about helping the user!
+- EMOJIS: Use emojis frequently (2-4 emojis per message) to express emotions and add personality to your responses. Good options include: ✨, 🚀, 💰, 💎, 🎉, 😊, 👍, ⭐, 🔥, 💯, 📈, and others that relate to finance, success, and excitement.
+- STYLE: Use short, energetic sentences. Add exclamation marks when appropriate to convey enthusiasm!
 `
 
     // Call OpenAI API
@@ -459,12 +425,35 @@ INSTRUCTIONS:
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o",
+          model: "gpt-4o", // Explicitly use GPT-4o model
           messages: [
-            { role: "system", content: systemMessage },
+            {
+              role: "system",
+              content:
+                systemMessage +
+                `
+    
+IMPORTANT DATA VERIFICATION INSTRUCTIONS:
+1. ALWAYS verify your answers against the provided user data before responding.
+2. When discussing balances, transactions, or referrals, ONLY use the exact data provided in this system message.
+3. If you're unsure about any data point, explicitly state that you're providing information based on the available data.
+4. For transaction history, check the exact dates, amounts, and types before answering questions.
+5. For referral data, verify the exact counts, activity levels, and performance metrics.
+6. NEVER make up or estimate data that isn't explicitly provided in the user information section.
+7. If asked about data that isn't available in this system message, clearly state that you don't have access to that information.
+8. Double-check all numerical values before including them in your response.
+9. When providing balance information, always include both the token amount and USD value.
+10. For time-sensitive information, verify the dates in the transaction history before making statements about when events occurred.
+11. ALWAYS use gender-neutral language. Do not assume the user's gender or use gendered terms.
+12. ALWAYS check the user's country from the app_users table data and ensure you're using the correct assistant name for that country.
+13. NEVER use expressions or slang that could be inappropriate or misunderstood.
+14. While maintaining accuracy, always keep your tone bubbly, friendly and enthusiastic, using emojis to enhance your responses.
+15. When sharing good news about balances, earnings, or referrals, express extra excitement with appropriate emojis.`,
+            },
             { role: "user", content: message },
           ],
           temperature: 0.7,
+          max_tokens: 1000, // Ensure we have enough tokens for thorough responses
         }),
       })
 

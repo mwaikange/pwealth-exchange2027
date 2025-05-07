@@ -39,8 +39,20 @@ export function DashboardContent() {
     setExpectedVestingYield(expectedYield)
   }, [vestingSchedules])
 
-  // Placeholder value for referral claims
-  const totalReferralClaims = 0
+  // Calculate total referral claims from transactions
+  useEffect(() => {
+    // Filter transactions to get only REFERRAL CLAIM types (including all levels)
+    const referralClaims = transactions.filter((tx) => tx.type.includes("REFERRAL CLAIM"))
+
+    // Sum up the token amounts
+    const totalClaims = referralClaims.reduce((sum, tx) => sum + tx.amount, 0)
+
+    // Update the state
+    setTotalReferralClaims(totalClaims)
+  }, [transactions])
+
+  // State for referral claims
+  const [totalReferralClaims, setTotalReferralClaims] = useState(0)
 
   // Get most active schedule for each level
   const level1Schedule = getMostActiveSchedule(vestingSchedules, 1)
@@ -158,7 +170,7 @@ export function DashboardContent() {
         {/* Total Referral Claims sum */}
         <div className="bg-yellow-500 rounded-lg h-20 p-2 flex flex-col justify-center relative overflow-hidden">
           <div className="text-[10px] text-yellow-800">Total Referral Claims to Date</div>
-          <div className="text-3xl font-bold">0</div>
+          <div className="text-3xl font-bold">{totalReferralClaims}</div>
           <div className="text-[10px]">tokens</div>
           <div className="absolute bottom-0 left-0 right-0 h-8 opacity-30">
             <svg viewBox="0 0 100 20" className="w-full h-full">
