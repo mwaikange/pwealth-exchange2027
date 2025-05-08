@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X, Loader2, ArrowLeft } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
 import { getFriendlyErrorMessage } from "@/utils/error-handling"
+import { useMobilePaymentForm } from "@/hooks/use-mobile-payment-form"
 
 interface AFTPurchaseModalProps {
   isOpen: boolean
@@ -26,6 +27,44 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const [currentView, setCurrentView] = useState<"form" | "paymentOptions" | "qrCode" | "mobilePayments">("form")
   const [selectedCountry, setSelectedCountry] = useState("namibia")
   const [screenshotUploaded, setScreenshotUploaded] = useState(false)
+
+  // Use the mobile payment form hook
+  const {
+    countries,
+    banks,
+    networks,
+    config,
+    submissions,
+    selectedCountry: selectedCountryMobile,
+    setSelectedCountry: setSelectedCountryMobile,
+    selectedBank,
+    setSelectedBank,
+    selectedNetwork,
+    setSelectedNetwork,
+    paymentNumber,
+    amount: mobileAmount,
+    setAmount: setMobileAmount,
+    name,
+    setName,
+    transactionDate,
+    setTransactionDate,
+    referenceNumber: mobileReferenceNumber,
+    setReferenceNumber: setMobileReferenceNumber,
+    mobileNumber,
+    setMobileNumber,
+    screenshot,
+    isLoading,
+    isSubmitting,
+    error,
+    success,
+    handleSubmit,
+    handleFileChange,
+  } = useMobilePaymentForm()
+
+  // Set the amount from the parent component
+  useEffect(() => {
+    setMobileAmount(amount)
+  }, [amount, setMobileAmount])
 
   if (!isOpen) return null
 
@@ -205,7 +244,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     return `${year}-${month}-${day}`
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChangeQr = (e: React.ChangeEvent<HTMLInputElement>) => {
     setScreenshotUploaded(e.target.files && e.target.files.length > 0)
   }
 
@@ -396,159 +435,286 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               </button>
             </div>
 
-            <div className="grid grid-cols-[35fr_65fr] gap-6">
-              {/* Left Column */}
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-white text-sm block mb-1">Country</label>
-                    <select
-                      className="bg-[#D9D9D9] rounded p-2 w-full text-black"
-                      value={selectedCountry}
-                      onChange={handleCountryChange}
-                    >
-                      <option value="namibia">Namibia</option>
-                      <option value="south_africa" disabled className="text-gray-400">
-                        South Africa
-                      </option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-white text-sm block mb-1">Bank</label>
-                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-black" />
-                  </div>
-                </div>
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-[35fr_65fr] gap-6">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* Show error or success message */}
+                  {error && (
+                    <div className="bg-red-500/20 border border-red-500 px-3 py-2 rounded text-white text-sm">
+                      {error}
+                    </div>
+                  )}
+                  {success && (
+                    <div className="bg-green-500/20 border border-green-500 px-3 py-2 rounded text-white text-sm">
+                      {success}
+                    </div>
+                  )}
 
-                <div>
-                  <label className="text-white text-sm block mb-1">Amount (USD) - local conversion below.</label>
-                  <input
-                    type="text"
-                    className="bg-[#D9D9D9] rounded p-2 w-full text-black font-medium text-lg"
-                    value={amount}
-                    readOnly
-                  />
-                </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-white text-sm block mb-1">Country</label>
+                      <select
+                        className="bg-[#D9D9D9] rounded p-2 w-full text-black"
+                        value={selectedCountryMobile}
+                        onChange={(e) => setSelectedCountryMobile(e.target.value)}
+                        disabled={isLoading || isSubmitting}
+                      >
+                        <option value="">Select Country</option>
+                        {countries.map((country) => (
+                          <option key={country.id} value={country.id}>
+                            {country.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-white text-sm block mb-1">Bank</label>
+                      <select
+                        className="bg-[#D9D9D9] rounded p-2 w-full text-black"
+                        value={selectedBank}
+                        onChange={(e) => setSelectedBank(e.target.value)}
+                        disabled={!selectedCountryMobile || isLoading || isSubmitting}
+                      >
+                        <option value="">Select Bank</option>
+                        {banks.map((bank) => (
+                          <option key={bank.id} value={bank.id}>
+                            {bank.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
-                <div className="border-t border-yellow-400 pt-4">
-                  <p className="text-white text-sm mb-2">Make payment to this number:</p>
-                  <div className="bg-[#D9D9D9] rounded-md p-3 mb-2">
-                    <p className="text-black text-4xl font-bold text-center">085 8007296</p>
-                  </div>
-                  <p className="text-white text-sm mb-4">
-                    Network: <span className="font-semibold">Telecom Namibia</span>
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-white text-xs block mb-1">
-                      Name
-                      <span className="block text-xs opacity-70">
-                        (exactly as it Appears on recipients SMS - Full Name if Required)
-                      </span>
-                    </label>
-                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black" />
-                  </div>
-                  <div>
-                    <label className="text-white text-xs block mb-1">
-                      Date of Transaction
-                      <span className="block text-xs opacity-70">
-                        (Must be Today - the transaction must be made the day of submission)
-                      </span>
-                    </label>
-                    <input
-                      type="date"
-                      className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black"
-                      value={getCurrentDate()}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="text-white text-xs block mb-1">Reference Number</label>
-                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black" />
-                  </div>
-                  <div>
-                    <label className="text-white text-xs block mb-1">Amount ({getCurrencyCode(selectedCountry)})</label>
+                    <label className="text-white text-sm block mb-1">Amount (USD) - local conversion below.</label>
                     <input
                       type="text"
-                      className="bg-[#D9D9D9] rounded p-2 w-full text-sm text-black"
-                      value={calculateLocalAmount()}
-                      readOnly
+                      className="bg-[#D9D9D9] rounded p-2 w-full text-black font-medium text-lg"
+                      value={mobileAmount}
+                      onChange={(e) => setMobileAmount(e.target.value)}
+                      disabled={isSubmitting}
                     />
                   </div>
-                  <div className="flex flex-col">
-                    <label className="text-white text-xs block mb-1">Mobile Number</label>
-                    <input type="text" className="bg-[#D9D9D9] rounded p-2 w-full text-sm h-[34px] text-black" />
+
+                  <div className="border-t border-yellow-400 pt-4">
+                    <p className="text-white text-sm mb-2">Make payment to this number:</p>
+                    <div className="bg-[#D9D9D9] rounded-md p-3 mb-2">
+                      <p className="text-black text-4xl font-bold text-center">
+                        {config && config.mobile_number ? config.mobile_number : paymentNumber || "Select a bank"}
+                      </p>
+                    </div>
+                    <p className="text-white text-sm mb-4">
+                      Network:{" "}
+                      <span className="font-semibold">
+                        {config && config.network_id
+                          ? networks.find((n) => n.id === config.network_id)?.name || "Network not found"
+                          : networks.find((n) => n.id === selectedNetwork)?.name || "Telecom Namibia"}
+                      </span>
+                    </p>
                   </div>
-                  <div className="flex flex-col">
-                    <label className="text-white text-xs block mb-1">Upload Screenshot</label>
-                    <div className="bg-[#D9D9D9] rounded p-0 w-full h-[34px] flex items-center justify-center overflow-hidden">
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Name field - always visible but disabled if not required */}
+                    <div>
+                      <label className="text-white text-xs block mb-1">
+                        Name
+                        <span className="block text-xs opacity-70">
+                          (exactly as it Appears on recipients SMS - Full Name if Required)
+                        </span>
+                      </label>
                       <input
-                        type="file"
-                        className="text-sm text-black cursor-pointer text-center"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                        onChange={handleFileChange}
+                        type="text"
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
+                          config && !config.requires_name ? "opacity-50" : ""
+                        }`}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        disabled={isSubmitting || (config && !config.requires_name)}
+                        placeholder={config && !config.requires_name ? "Not required" : ""}
                       />
+                    </div>
+
+                    {/* Date field - always visible but disabled if not required */}
+                    <div>
+                      <label className="text-white text-xs block mb-1">
+                        Date of Transaction
+                        <span className="block text-xs opacity-70">
+                          (Must be Today - the transaction must be made the day of submission)
+                        </span>
+                      </label>
+                      <input
+                        type="date"
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
+                          config && !config.requires_date ? "opacity-50" : ""
+                        }`}
+                        value={transactionDate}
+                        onChange={(e) => setTransactionDate(e.target.value)}
+                        disabled={isSubmitting || (config && !config.requires_date)}
+                      />
+                    </div>
+
+                    {/* Reference Number field - always visible but disabled if not required */}
+                    <div>
+                      <label className="text-white text-xs block mb-1">Reference Number</label>
+                      <input
+                        type="text"
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
+                          config && !config.requires_ref_number ? "opacity-50" : ""
+                        }`}
+                        value={mobileReferenceNumber}
+                        onChange={(e) => setMobileReferenceNumber(e.target.value)}
+                        disabled={isSubmitting || (config && !config.requires_ref_number)}
+                        placeholder={config && !config.requires_ref_number ? "Not required" : ""}
+                      />
+                    </div>
+
+                    {/* Amount field - always visible but disabled if not required */}
+                    <div>
+                      <label className="text-white text-xs block mb-1">
+                        Amount (
+                        {selectedCountryMobile
+                          ? countries.find((c) => c.id === selectedCountryMobile)?.currency_code || "NAD"
+                          : "NAD"}
+                        )
+                      </label>
+                      <input
+                        type="text"
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
+                          config && !config.requires_amount ? "opacity-50" : ""
+                        }`}
+                        value={
+                          selectedCountryMobile && mobileAmount
+                            ? (
+                                Number.parseFloat(mobileAmount) *
+                                (countries.find((c) => c.id === selectedCountryMobile)?.exchange_rate || 18.5)
+                              ).toFixed(2)
+                            : ""
+                        }
+                        readOnly
+                      />
+                    </div>
+
+                    {/* Mobile Number field - always visible but disabled if not required */}
+                    <div className="flex flex-col">
+                      <label className="text-white text-xs block mb-1">Mobile Number</label>
+                      <input
+                        type="text"
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm h-[34px] text-black ${
+                          config && !config.requires_sender_mobile ? "opacity-50" : ""
+                        }`}
+                        value={mobileNumber}
+                        onChange={(e) => setMobileNumber(e.target.value)}
+                        disabled={isSubmitting || (config && !config.requires_sender_mobile)}
+                        placeholder={config && !config.requires_sender_mobile ? "Not required" : ""}
+                      />
+                    </div>
+
+                    {/* Screenshot field - always visible but disabled if not required */}
+                    <div className="flex flex-col">
+                      <label className="text-white text-xs block mb-1">Upload Screenshot</label>
+                      <div
+                        className={`bg-[#D9D9D9] rounded p-0 w-full h-[34px] flex items-center justify-center overflow-hidden ${
+                          config && !config.requires_screenshot ? "opacity-50" : ""
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          className="text-sm text-black cursor-pointer text-center"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          onChange={handleFileChange}
+                          disabled={isSubmitting || (config && !config.requires_screenshot)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Right Column */}
+                <div className="w-full">
+                  <div className="text-center mb-6">
+                    <h2 className="text-white text-4xl font-bold mb-1">Mobile Payments</h2>
+                    <p className="text-white text-xl">For: Activation Fee Token (AFT) Purchases</p>
+                  </div>
+
+                  <div className="bg-[#2D3440] border-l border-gray-600 pl-4 overflow-x-auto">
+                    {/* Table with transaction history */}
+                    <table className="w-full text-white text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-600">
+                          <th className="py-2 text-left w-1/5">Date</th>
+                          <th className="py-2 text-left w-1/5">Bank</th>
+                          <th className="py-2 text-left w-1/4">Reference</th>
+                          <th className="py-2 text-left w-1/5">Amount</th>
+                          <th className="py-2 text-left w-1/5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {submissions.length > 0
+                          ? submissions.map((submission) => (
+                              <tr key={submission.id} className="border-b border-gray-700">
+                                <td className="py-2">{new Date(submission.created_at).toLocaleDateString()}</td>
+                                <td className="py-2">{submission.pay_banks?.name || "Bank"}</td>
+                                <td className="py-2">{submission.reference_number || "-"}</td>
+                                <td className="py-2">{submission.amount_usd.toFixed(2)} USD</td>
+                                <td className="py-2 capitalize">
+                                  <span
+                                    className={
+                                      submission.status === "processed"
+                                        ? "text-green-400"
+                                        : submission.status === "declined"
+                                          ? "text-red-400"
+                                          : "text-yellow-400"
+                                    }
+                                  >
+                                    {submission.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          : // Fill with empty rows if no submissions
+                            Array(12)
+                              .fill(0)
+                              .map((_, i) => (
+                                <tr key={i} className="border-b border-gray-700">
+                                  <td className="py-2">-</td>
+                                  <td className="py-2">-</td>
+                                  <td className="py-2">-</td>
+                                  <td className="py-2">-</td>
+                                  <td className="py-2">-</td>
+                                </tr>
+                              ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
 
-              {/* Right Column */}
-              <div className="w-full">
-                <div className="text-center mb-6">
-                  <h2 className="text-white text-4xl font-bold mb-1">Mobile Payments</h2>
-                  <p className="text-white text-xl">For: Activation Fee Token (AFT) Purchases</p>
-                </div>
-
-                <div className="bg-[#2D3440] border-l border-gray-600 pl-4 overflow-x-auto">
-                  {/* Table with exactly 13 rows total (1 header row + 12 data rows) */}
-                  <table className="w-full text-white text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-600">
-                        <th className="py-2 text-left w-1/5">Date</th>
-                        <th className="py-2 text-left w-1/5">Bank</th>
-                        <th className="py-2 text-left w-1/4">Reference</th>
-                        <th className="py-2 text-left w-1/5">Amount</th>
-                        <th className="py-2 text-left w-1/5">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Limit to exactly 12 data rows for a total of 13 rows including header */}
-                      {Array(12)
-                        .fill(0)
-                        .map((_, i) => (
-                          <tr key={i} className="border-b border-gray-700">
-                            <td className="py-2">Date</td>
-                            <td className="py-2">Bank</td>
-                            <td className="py-2">Reference</td>
-                            <td className="py-2">Amount</td>
-                            <td className="py-2">Status</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="border-t border-yellow-400 mt-6 pt-6 flex justify-center">
+                <button
+                  type="submit"
+                  className={`font-medium rounded-md py-2 px-8 ${
+                    isSubmitting
+                      ? "bg-gray-500 text-gray-300 cursor-not-allowed"
+                      : "bg-green-500 hover:bg-green-600 text-white"
+                  }`}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Submit"
+                  )}
+                </button>
               </div>
-            </div>
-
-            <div className="border-t border-yellow-400 mt-6 pt-6 flex justify-center">
-              <button
-                onClick={handleSubmitMobilePayment}
-                className={`font-medium rounded-md py-2 px-8 ${
-                  screenshotUploaded
-                    ? "bg-green-500 hover:bg-green-600 text-white"
-                    : "bg-gray-500 text-gray-300 cursor-not-allowed"
-                }`}
-                disabled={!screenshotUploaded}
-              >
-                Submit
-              </button>
-            </div>
+            </form>
           </div>
         )}
       </div>

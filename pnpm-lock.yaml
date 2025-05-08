@@ -10,10 +10,10 @@ importers:
     dependencies:
       '@auth/core':
         specifier: latest
-        version: 0.39.0(nodemailer@7.0.2)
+        version: 0.39.0(nodemailer@7.0.3)
       '@hookform/resolvers':
         specifier: latest
-        version: 5.0.1(react-hook-form@7.56.2(react@19.0.0))
+        version: 5.0.1(react-hook-form@7.56.3(react@19.0.0))
       '@radix-ui/react-accordion':
         specifier: 1.2.2
         version: 1.2.2(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -142,13 +142,13 @@ importers:
         version: 15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       next-auth:
         specifier: latest
-        version: 4.24.11(@auth/core@0.39.0(nodemailer@7.0.2))(next@15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(nodemailer@7.0.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+        version: 4.24.11(@auth/core@0.39.0(nodemailer@7.0.3))(next@15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(nodemailer@7.0.3)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       next-themes:
         specifier: ^0.4.4
         version: 0.4.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       nodemailer:
         specifier: latest
-        version: 7.0.2
+        version: 7.0.3
       openai:
         specifier: latest
         version: 4.97.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.24.4)
@@ -163,7 +163,7 @@ importers:
         version: 19.0.0(react@19.0.0)
       react-hook-form:
         specifier: latest
-        version: 7.56.2(react@19.0.0)
+        version: 7.56.3(react@19.0.0)
       react-markdown:
         specifier: latest
         version: 10.1.0(@types/react@19.0.0)(react@19.0.0)
@@ -1417,8 +1417,8 @@ packages:
   '@types/node-fetch@2.6.12':
     resolution: {integrity: sha512-8nneRWKCg3rMtF69nLQJnOYUcbafYeFSjqkw3jCRLsqkWFlHaoQrr5mXmofFGOx3DKn7UfmBMyov8ySvLRVldA==}
 
-  '@types/node@18.19.97':
-    resolution: {integrity: sha512-4r3Y9EuCJjWduiam85Fo4GBQtneaEuoaBSdiKo+o6qwQUh0JFVBe7cRUK6I6yVzA0S1gBJJfoQx4VtBH4e5ikg==}
+  '@types/node@18.19.99':
+    resolution: {integrity: sha512-tNGqoGjjI4vY5jfm3lnqgR6yS8wyT76SfsWefLWRyh/cEK4UHmPVyqHZdafI/SNu1PQzfo2JLBWfG8eMmD7KrQ==}
 
   '@types/node@22.0.0':
     resolution: {integrity: sha512-VT7KSYudcPOzP5Q0wfbowyNLaVR8QWUdw+088uFWwfvpY6uCWaXpqV6ieLAu9WBcnTa7H4Z5RLK8I5t2FuOcqw==}
@@ -1722,8 +1722,8 @@ packages:
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
 
-  electron-to-chromium@1.5.150:
-    resolution: {integrity: sha512-rOOkP2ZUMx1yL4fCxXQKDHQ8ZXwisb2OycOQVKHgvB3ZI4CvehOd4y2tfnnLDieJ3Zs1RL1Dlp3cMkyIn7nnXA==}
+  electron-to-chromium@1.5.151:
+    resolution: {integrity: sha512-Rl6uugut2l9sLojjS4H4SAr3A4IgACMLgpuEMPYCVcKydzfyPrn5absNRju38IhQOf/NwjJY8OGWjlteqYeBCA==}
 
   embla-carousel-react@8.5.1:
     resolution: {integrity: sha512-z9Y0K84BJvhChXgqn2CFYbfEi6AwEr+FFVVKm/MqbTQ2zIzO1VQri6w67LcfpVF0AjbhwVMywDZqY4alYkjW5w==}
@@ -2175,8 +2175,8 @@ packages:
   node-releases@2.0.19:
     resolution: {integrity: sha512-xxOWJsBKtzAq7DY0J+DTzuz58K8e7sJbdgwkbMWQe8UYB6ekmsQ45q0M/tJDsGaZmbC+l7n57UV8Hl5tHxO9uw==}
 
-  nodemailer@7.0.2:
-    resolution: {integrity: sha512-SYsisPeLFYli5Q+BCGSyHT5CVvezPmQjHgINV9KVvVLV1aktuoD4E0Np9Q3ND9I481qIHzUQzVT+Tl/Tw7Ivdg==}
+  nodemailer@7.0.3:
+    resolution: {integrity: sha512-Ajq6Sz1x7cIK3pN6KesGTah+1gnwMnx5gKl3piQlQQE/PwyJ4Mbc8is2psWYxK3RJTVeqsDaCv8ZzXLCDHMTZw==}
     engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
@@ -2364,8 +2364,8 @@ packages:
   prop-types@15.8.1:
     resolution: {integrity: sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==}
 
-  property-information@7.0.0:
-    resolution: {integrity: sha512-7D/qOz/+Y4X/rzSB6jKxKUsQnphO046ei8qxG59mtM3RG3DHgTK81HrxrmoDVINJb8NKT5ZsRbwHvQ6B68Iyhg==}
+  property-information@7.1.0:
+    resolution: {integrity: sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ==}
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -2381,8 +2381,8 @@ packages:
     peerDependencies:
       react: ^19.0.0
 
-  react-hook-form@7.56.2:
-    resolution: {integrity: sha512-vpfuHuQMF/L6GpuQ4c3ZDo+pRYxIi40gQqsCmmfUBwm+oqvBhKhwghCuj2o00YCgSfU6bR9KC/xnQGWm3Gr08A==}
+  react-hook-form@7.56.3:
+    resolution: {integrity: sha512-IK18V6GVbab4TAo1/cz3kqajxbDPGofdF0w7VHdCo0Nt8PrPlOZcuuDq9YYIV1BtjcX78x0XsldbQRQnQXWXmw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: ^16.8.0 || ^17 || ^18 || ^19
@@ -2765,7 +2765,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@auth/core@0.39.0(nodemailer@7.0.2)':
+  '@auth/core@0.39.0(nodemailer@7.0.3)':
     dependencies:
       '@panva/hkdf': 1.2.1
       jose: 6.0.11
@@ -2773,7 +2773,7 @@ snapshots:
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
     optionalDependencies:
-      nodemailer: 7.0.2
+      nodemailer: 7.0.3
 
   '@babel/runtime@7.27.1': {}
 
@@ -2799,10 +2799,10 @@ snapshots:
 
   '@floating-ui/utils@0.2.9': {}
 
-  '@hookform/resolvers@5.0.1(react-hook-form@7.56.2(react@19.0.0))':
+  '@hookform/resolvers@5.0.1(react-hook-form@7.56.3(react@19.0.0))':
     dependencies:
       '@standard-schema/utils': 0.3.0
-      react-hook-form: 7.56.2(react@19.0.0)
+      react-hook-form: 7.56.3(react@19.0.0)
 
   '@img/sharp-darwin-arm64@0.33.5':
     optionalDependencies:
@@ -3949,7 +3949,7 @@ snapshots:
       '@types/node': 22.0.0
       form-data: 4.0.2
 
-  '@types/node@18.19.97':
+  '@types/node@18.19.99':
     dependencies:
       undici-types: 5.26.5
 
@@ -4051,7 +4051,7 @@ snapshots:
   browserslist@4.24.5:
     dependencies:
       caniuse-lite: 1.0.30001717
-      electron-to-chromium: 1.5.150
+      electron-to-chromium: 1.5.151
       node-releases: 2.0.19
       update-browserslist-db: 1.1.3(browserslist@4.24.5)
 
@@ -4238,7 +4238,7 @@ snapshots:
 
   eastasianwidth@0.2.0: {}
 
-  electron-to-chromium@1.5.150: {}
+  electron-to-chromium@1.5.151: {}
 
   embla-carousel-react@8.5.1(react@19.0.0):
     dependencies:
@@ -4386,7 +4386,7 @@ snapshots:
       mdast-util-mdx-expression: 2.0.1
       mdast-util-mdx-jsx: 3.2.0
       mdast-util-mdxjs-esm: 2.0.1
-      property-information: 7.0.0
+      property-information: 7.1.0
       space-separated-tokens: 2.0.2
       style-to-js: 1.1.16
       unist-util-position: 5.0.0
@@ -4751,7 +4751,7 @@ snapshots:
 
   nanoid@3.3.11: {}
 
-  next-auth@4.24.11(@auth/core@0.39.0(nodemailer@7.0.2))(next@15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(nodemailer@7.0.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
+  next-auth@4.24.11(@auth/core@0.39.0(nodemailer@7.0.3))(next@15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(nodemailer@7.0.3)(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
     dependencies:
       '@babel/runtime': 7.27.1
       '@panva/hkdf': 1.2.1
@@ -4766,8 +4766,8 @@ snapshots:
       react-dom: 19.0.0(react@19.0.0)
       uuid: 8.3.2
     optionalDependencies:
-      '@auth/core': 0.39.0(nodemailer@7.0.2)
-      nodemailer: 7.0.2
+      '@auth/core': 0.39.0(nodemailer@7.0.3)
+      nodemailer: 7.0.3
 
   next-themes@0.4.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
     dependencies:
@@ -4809,7 +4809,7 @@ snapshots:
 
   node-releases@2.0.19: {}
 
-  nodemailer@7.0.2: {}
+  nodemailer@7.0.3: {}
 
   normalize-path@3.0.0: {}
 
@@ -4831,7 +4831,7 @@ snapshots:
 
   openai@4.97.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.24.4):
     dependencies:
-      '@types/node': 18.19.97
+      '@types/node': 18.19.99
       '@types/node-fetch': 2.6.12
       abort-controller: 3.0.0
       agentkeepalive: 4.6.0
@@ -4979,7 +4979,7 @@ snapshots:
       object-assign: 4.1.1
       react-is: 16.13.1
 
-  property-information@7.0.0: {}
+  property-information@7.1.0: {}
 
   queue-microtask@1.2.3: {}
 
@@ -4993,7 +4993,7 @@ snapshots:
       react: 19.0.0
       scheduler: 0.25.0
 
-  react-hook-form@7.56.2(react@19.0.0):
+  react-hook-form@7.56.3(react@19.0.0):
     dependencies:
       react: 19.0.0
 
