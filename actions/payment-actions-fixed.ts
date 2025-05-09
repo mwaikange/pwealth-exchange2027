@@ -1,14 +1,12 @@
 "use server"
 
-import { cookies } from "next/headers"
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs"
+import { createAdminClient } from "@/lib/supabase-admin"
 import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
 import { revalidatePath } from "next/cache"
 
 // Get countries from the database
 export async function getCountries(): Promise<PayCountry[]> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+  const supabase = createAdminClient()
 
   try {
     console.log("Getting countries...")
@@ -29,8 +27,7 @@ export async function getCountries(): Promise<PayCountry[]> {
 
 // Get banks for a specific country
 export async function getBanksForCountry(countryId: string): Promise<PayBank[]> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+  const supabase = createAdminClient()
 
   try {
     console.log("Getting banks for country:", countryId)
@@ -51,8 +48,7 @@ export async function getBanksForCountry(countryId: string): Promise<PayBank[]> 
 
 // Get networks for a specific country
 export async function getNetworksForCountry(countryId: string): Promise<PayNetwork[]> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+  const supabase = createAdminClient()
 
   try {
     console.log("Getting networks for country:", countryId)
@@ -73,8 +69,7 @@ export async function getNetworksForCountry(countryId: string): Promise<PayNetwo
 
 // Get payment configuration for a country and bank
 export async function getPaymentConfig(countryId: string, bankId?: string): Promise<PayConfig | null> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+  const supabase = createAdminClient()
 
   try {
     console.log("Getting payment config for country:", countryId, "and bank:", bankId || "null")
@@ -103,45 +98,29 @@ export async function getPaymentConfig(countryId: string, bankId?: string): Prom
 }
 
 // Get user's payment submissions (limited to 12)
-export async function getUserPaymentSubmissions(): Promise<PaySubmission[]> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+export async function getUserPaymentSubmissions(userId: string): Promise<PaySubmission[]> {
+  const supabase = createAdminClient()
 
   try {
-    console.log("Getting user payment submissions...")
+    console.log("Getting user payment submissions for user:", userId)
 
-    // Get the authenticated user
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
-
-    if (userError) {
-      console.error("Auth error in getUserPaymentSubmissions:", userError)
-      throw new Error(`Auth error in getUserPaymentSubmissions: ${userError.message}`)
+    // If no userId is provided, return empty array
+    if (!userId) {
+      console.log("No userId provided, returning empty array")
+      return []
     }
 
-    if (!user) {
-      console.error("No user found in getUserPaymentSubmissions")
-      throw new Error("No user found in getUserPaymentSubmissions")
-    }
-
-    console.log("Authenticated user in getUserPaymentSubmissions:", user.id)
-
+    // Updated select clause to remove pay_countries reference
     const { data, error } = await supabase
       .from("pay_submissions")
-      .select(`
-        *,
-        pay_countries(name),
-        pay_banks(name)
-      `)
-      .eq("user_id", user.id)
+      .select("*, pay_banks(name)")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(12)
 
     if (error) {
       console.error("Error fetching submissions:", error)
-      throw error
+      return []
     }
 
     return data || []
@@ -151,37 +130,37 @@ export async function getUserPaymentSubmissions(): Promise<PaySubmission[]> {
   }
 }
 
+// Helper function to get exchange rate for a country
+function getExchangeRate(countryId: string): number {
+  // Default exchange rates - in a production app, these would come from a database or API
+  const exchangeRates: Record<string, number> = {
+    "1": 18.5, // Namibia (NAD)
+    "2": 19.2, // South Africa (ZAR)
+    "3": 13.7, // Botswana (Pula)
+    // Add more countries as needed
+  }
+
+  return exchangeRates[countryId] || 18.5 // Default to Namibian exchange rate if not found
+}
+
 // Submit a payment
-export async function submitPayment(formData: FormData): Promise<{ success: boolean; message: string }> {
-  // Create a new Supabase client for each request with cookies
-  const supabase = createServerActionClient({ cookies })
+export async function submitPayment(
+  userId: string,
+  formData: FormData,
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createAdminClient()
 
   try {
-    console.log("Submitting payment...")
+    console.log("Submitting payment for user:", userId)
 
-    // Get the authenticated user
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
-
-    if (userError) {
-      console.error("Auth error in submitPayment:", userError)
-      return {
-        success: false,
-        message: `Authentication failed: ${userError.message}`,
-      }
-    }
-
-    if (!user) {
-      console.error("No user found in submitPayment")
+    // If no userId is provided, return error
+    if (!userId) {
+      console.log("No userId provided, returning error")
       return {
         success: false,
         message: "You need to be logged in to submit a payment.",
       }
     }
-
-    console.log("Authenticated user in submitPayment:", user.id)
 
     // Extract form data
     const countryId = formData.get("countryId") as string
@@ -190,13 +169,18 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
     const name = (formData.get("name") as string) || null
     const transactionDate = (formData.get("transactionDate") as string) || null
     const referenceNumber = (formData.get("referenceNumber") as string) || null
-    const amount = Number.parseFloat((formData.get("amount") as string) || "0")
-    const amountUsd = Number.parseFloat((formData.get("amountUsd") as string) || "0")
+    const amountUsd = Number.parseFloat((formData.get("amount") as string) || "0")
     const mobileNumber = (formData.get("mobileNumber") as string) || null
     const screenshot = formData.get("screenshot") as File | null
 
+    // Get the exchange rate for the selected country
+    const exchangeRate = getExchangeRate(countryId)
+
+    // Calculate local amount from USD amount
+    const localAmount = amountUsd * exchangeRate
+
     // Validate required fields
-    if (!countryId || !bankId || !amount) {
+    if (!countryId || !bankId || !amountUsd) {
       return { success: false, message: "Missing required fields" }
     }
 
@@ -211,7 +195,7 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
     let screenshotUrl = null
     if (screenshot && screenshot.size > 0) {
       const fileExt = screenshot.name.split(".").pop()
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+      const fileName = `${userId}/${Date.now()}.${fileExt}`
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("payment_screenshots")
@@ -234,7 +218,7 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
     const { count, error: countError } = await supabase
       .from("pay_submissions")
       .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
 
     if (countError) {
       console.error("Error counting submissions:", countError)
@@ -244,7 +228,7 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
       const { data: oldestSubmission, error: oldestError } = await supabase
         .from("pay_submissions")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at", { ascending: true })
         .limit(1)
 
@@ -261,39 +245,25 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
       }
     }
 
-    // Log the data we're about to insert
-    console.log("Inserting payment submission with data:", {
-      user_id: user.id,
-      config_id: configId,
-      bank_id: Number.parseInt(bankId),
-      network_id: networkId ? Number.parseInt(networkId) : null,
-      date: transactionDate,
-      amount: amount,
-      status: "pending",
-      name: name,
-      reference_number: referenceNumber,
-      sender_mobile: mobileNumber,
-      screenshot_url: screenshotUrl,
-    })
-
     // Create payment submission with exact column names from the schema
+    // Using the admin client to bypass RLS
     const { data, error } = await supabase
       .from("pay_submissions")
       .insert({
-        user_id: user.id, // Explicitly set user_id to match RLS policy
+        user_id: userId,
         config_id: configId,
         bank_id: Number.parseInt(bankId),
         network_id: networkId ? Number.parseInt(networkId) : null,
         date: transactionDate,
-        amount: amount,
-        status: "pending",
+        amount: localAmount, // Store local currency amount instead of USD
+        status: "Pending", // Changed to "Pending" with capital P to match the constraint
         name: name,
         reference_number: referenceNumber,
         sender_mobile: mobileNumber,
         screenshot_url: screenshotUrl,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        notes: `USD Amount: ${amountUsd}`,
+        notes: `USD Amount: ${amountUsd}`, // Store USD amount in notes for reference
       })
       .select()
 

@@ -1,360 +1,347 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, type FormEvent } from "react"
+import { useAuth } from "@/contexts/auth-context"
+import { useRouter } from "next/navigation"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import {
   getCountries,
   getBanksForCountry,
   getNetworksForCountry,
   getPaymentConfig,
   getUserPaymentSubmissions,
-  submitPayment,
-} from "@/actions/payment-actions"
-import type { PayCountry, PayBank, PayNetwork, PayConfig, PaySubmission } from "@/types/payment-types"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+} from "@/actions/payment-actions-fixed"
+import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
+import { submitMobilePayment, refreshUserSession } from "@/actions/mobile-payment-actions"
 
 export function useMobilePaymentForm() {
-  // Form state
+  const router = useRouter()
+  const { user, session } = useAuth()
   const [countries, setCountries] = useState<PayCountry[]>([])
   const [banks, setBanks] = useState<PayBank[]>([])
   const [networks, setNetworks] = useState<PayNetwork[]>([])
   const [config, setConfig] = useState<PayConfig | null>(null)
   const [submissions, setSubmissions] = useState<PaySubmission[]>([])
-
-  // Selected values
-  const [selectedCountry, setSelectedCountry] = useState<string>("")
-  const [selectedBank, setSelectedBank] = useState<string>("")
-  const [selectedNetwork, setSelectedNetwork] = useState<string>("")
-  const [paymentNumber, setPaymentNumber] = useState<string>("")
-
-  // Form values
-  const [amount, setAmount] = useState<string>("")
-  const [name, setName] = useState<string>("")
-  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split("T")[0])
-  const [referenceNumber, setReferenceNumber] = useState<string>("")
-  const [mobileNumber, setMobileNumber] = useState<string>("")
+  const [selectedCountry, setSelectedCountry] = useState("")
+  const [selectedBank, setSelectedBank] = useState("")
+  const [selectedNetwork, setSelectedNetwork] = useState("")
+  const [paymentNumber, setPaymentNumber] = useState("")
+  const [amount, setAmount] = useState("")
+  const [name, setName] = useState("")
+  const [transactionDate, setTransactionDate] = useState(getCurrentDate())
+  const [referenceNumber, setReferenceNumber] = useState("")
+  const [mobileNumber, setMobileNumber] = useState("")
   const [screenshot, setScreenshot] = useState<File | null>(null)
-
-  // UI state
-  const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true) // Assume authenticated by default
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false)
 
   // Create a Supabase client for client-side operations
-  const supabase = createClientComponentClient({
-    options: {
-      global: {
-        headers: {
-          Accept: "application/json", // Use standard JSON accept header
-        },
-      },
-    },
-  })
+  const supabase = createClientComponentClient()
 
-  // Refresh the session on component mount
-  useEffect(() => {
-    async function refreshSession() {
-      try {
-        const { data, error } = await supabase.auth.getSession()
-        if (error) {
-          console.error("Error refreshing session:", error)
-          setIsAuthenticated(false)
-          setError("Your session has expired. Please refresh the page and log in again.")
-        } else if (!data.session) {
-          setIsAuthenticated(false)
-          setError("You need to be logged in to use this feature.")
-        } else {
-          setIsAuthenticated(true)
-        }
-      } catch (err) {
-        console.error("Error in refreshSession:", err)
-        setIsAuthenticated(false)
-        setError("Failed to verify your login status. Please refresh the page.")
-      }
+  // Get current date in YYYY-MM-DD format
+  function getCurrentDate() {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, "0")
+    const day = String(today.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  // Calculate local amount based on USD amount and country exchange rate
+  function calculateLocalAmount(usdAmount: string, countryId: string): number {
+    const numericAmount = Number.parseFloat(usdAmount) || 0
+
+    // Get exchange rate for the country
+    let exchangeRate = 18.5 // Default to Namibian exchange rate
+    const country = countries.find((c) => c.id === countryId)
+    if (country && country.exchange_rate) {
+      exchangeRate = country.exchange_rate
     }
 
-    refreshSession()
-  }, [supabase.auth])
+    return numericAmount * exchangeRate
+  }
 
-  // Load countries on mount
+  // Function to check if the user is authenticated
+  const checkAuth = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      // First check if we have user and session from context
+      if (user && session) {
+        console.log("User authenticated from context:", user.id)
+        setIsAuthenticated(true)
+        return true
+      }
+
+      // If not, check with Supabase directly
+      const { data, error } = await supabase.auth.getSession()
+
+      if (error) {
+        console.error("Error getting session:", error)
+        setIsAuthenticated(false)
+        setError("Session error: " + error.message)
+        return false
+      }
+
+      if (!data.session) {
+        console.log("No active session")
+        setIsAuthenticated(false)
+        setError("You need to be logged in to use this feature.")
+        return false
+      }
+
+      // We have a session, check if we have a user
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+
+      if (userError) {
+        console.error("Error getting user:", userError)
+        setIsAuthenticated(false)
+        setError("User error: " + userError.message)
+        return false
+      }
+
+      if (!userData.user) {
+        console.log("No user found")
+        setIsAuthenticated(false)
+        setError("You need to be logged in to use this feature.")
+        return false
+      }
+
+      console.log("User authenticated from Supabase:", userData.user.id)
+      setIsAuthenticated(true)
+      setError(null)
+      return true
+    } catch (err) {
+      console.error("Error in checkAuth:", err)
+      setIsAuthenticated(false)
+      setError("An error occurred while checking authentication.")
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase.auth, user, session])
+
+  // Function to refresh the session
+  const refreshSession = useCallback(async () => {
+    setIsRefreshingSession(true)
+    setError(null)
+
+    try {
+      const result = await refreshUserSession()
+
+      if (result.error) {
+        console.error("Error refreshing session:", result.error)
+        setError("Failed to refresh your session. Please try logging out and back in.")
+        return false
+      }
+
+      setError(null)
+      setIsAuthenticated(true)
+      return true
+    } catch (err) {
+      console.error("Exception refreshing session:", err)
+      setError("An unexpected error occurred. Please try again later.")
+      return false
+    } finally {
+      setIsRefreshingSession(false)
+    }
+  }, [])
+
+  // Check authentication on mount and when user/session changes
+  useEffect(() => {
+    checkAuth()
+  }, [checkAuth])
+
+  // Load countries on initial render
   useEffect(() => {
     async function loadCountries() {
-      setIsLoading(true)
       try {
-        // First refresh the session
-        await supabase.auth.getSession()
-
-        const data = await getCountries()
-        setCountries(data)
-
-        // Load submissions - this will return an empty array if not authenticated
-        const submissionsData = await getUserPaymentSubmissions()
-        setSubmissions(submissionsData)
+        const countriesData = await getCountries()
+        setCountries(countriesData)
       } catch (err) {
-        console.error("Error in loadCountries:", err)
-        if (
-          err instanceof Error &&
-          (err.message.includes("not authenticated") ||
-            err.message.includes("JWT expired") ||
-            err.message.includes("Auth session missing") ||
-            err.message.includes("session expired"))
-        ) {
-          setIsAuthenticated(false)
-          setError("Your session has expired. Please refresh the page and log in again.")
-        } else {
-          setError("Failed to load data")
-        }
+        console.error("Error loading countries:", err)
+        setError("Failed to load countries")
       } finally {
         setIsLoading(false)
       }
     }
 
     loadCountries()
-  }, [supabase.auth])
+  }, [])
+
+  // Load user's payment submissions if authenticated
+  useEffect(() => {
+    async function loadSubmissions() {
+      if (isAuthenticated && user?.id) {
+        try {
+          const submissionsData = await getUserPaymentSubmissions(user.id)
+          setSubmissions(submissionsData)
+        } catch (err) {
+          console.error("Error loading submissions:", err)
+        }
+      }
+    }
+
+    loadSubmissions()
+  }, [isAuthenticated, user?.id])
 
   // Load banks when country changes
   useEffect(() => {
-    if (!selectedCountry) {
-      setBanks([])
-      setNetworks([])
-      setConfig(null)
-      return
-    }
-
-    async function loadBanksAndNetworks() {
-      setIsLoading(true)
-      try {
-        // First refresh the session
-        await supabase.auth.getSession()
-
-        const [banksData, networksData, configData] = await Promise.all([
-          getBanksForCountry(selectedCountry),
-          getNetworksForCountry(selectedCountry),
-          getPaymentConfig(selectedCountry),
-        ])
-
-        setBanks(banksData)
-        setNetworks(networksData)
-        setConfig(configData)
-      } catch (err) {
-        console.error("Error loading banks and networks:", err)
-
-        // Check for auth errors
-        if (
-          err instanceof Error &&
-          (err.message.includes("auth") || err.message.includes("session") || err.message.includes("JWT"))
-        ) {
-          setIsAuthenticated(false)
-          setError("Your session has expired. Please refresh the page and log in again.")
-        } else {
-          setError("Failed to load banks and networks")
+    async function loadBanks() {
+      if (selectedCountry) {
+        setIsLoading(true)
+        try {
+          const banksData = await getBanksForCountry(selectedCountry)
+          setBanks(banksData)
+          setSelectedBank("")
+        } catch (err) {
+          console.error("Error loading banks:", err)
+          setError("Failed to load banks")
+        } finally {
+          setIsLoading(false)
         }
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadBanksAndNetworks()
-  }, [selectedCountry, supabase.auth])
-
-  // Load payment number and config when bank changes
-  useEffect(() => {
-    if (!selectedBank || !selectedCountry) {
-      setPaymentNumber("")
-      return
-    }
-
-    async function loadBankDetails() {
-      setIsLoading(true)
-      try {
-        // First refresh the session
-        await supabase.auth.getSession()
-
-        const [bankData, configData] = await Promise.all([
-          banks.find((bank) => bank.id === selectedBank),
-          getPaymentConfig(selectedCountry, selectedBank),
-        ])
-
-        if (bankData) {
-          setPaymentNumber(bankData.payment_number)
-        }
-
-        if (configData) {
-          setConfig(configData)
-        }
-      } catch (err) {
-        console.error("Error loading bank details:", err)
-
-        // Check for auth errors
-        if (
-          err instanceof Error &&
-          (err.message.includes("auth") || err.message.includes("session") || err.message.includes("JWT"))
-        ) {
-          setIsAuthenticated(false)
-          setError("Your session has expired. Please refresh the page and log in again.")
-        } else {
-          setError("Failed to load bank details")
-        }
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadBankDetails()
-  }, [selectedBank, selectedCountry, banks, supabase.auth])
-
-  // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setSuccess(null)
-
-    // Refresh the session before submitting
-    try {
-      const { data, error } = await supabase.auth.getSession()
-      if (error || !data.session) {
-        setIsAuthenticated(false)
-        setError("Your session has expired. Please refresh the page and log in again.")
-        return
-      }
-    } catch (err) {
-      console.error("Error refreshing session before submit:", err)
-      setIsAuthenticated(false)
-      setError("Failed to verify your login status. Please refresh the page.")
-      return
-    }
-
-    // Validate form
-    if (!selectedCountry || !selectedBank || !amount) {
-      setError("Please fill in all required fields")
-      return
-    }
-
-    // Check config requirements
-    if (config) {
-      if (config.require_name && !name) {
-        setError("Name is required")
-        return
-      }
-
-      if (config.require_date && !transactionDate) {
-        setError("Transaction date is required")
-        return
-      }
-
-      if (config.require_reference && !referenceNumber) {
-        setError("Reference number is required")
-        return
-      }
-
-      if (config.require_mobile && !mobileNumber) {
-        setError("Mobile number is required")
-        return
-      }
-
-      if (config.require_screenshot && !screenshot) {
-        setError("Screenshot is required")
-        return
-      }
-    }
-
-    setIsSubmitting(true)
-
-    try {
-      // Create form data
-      const formData = new FormData()
-      formData.append("countryId", selectedCountry)
-      formData.append("bankId", selectedBank)
-
-      if (selectedNetwork) {
-        formData.append("networkId", selectedNetwork)
-      }
-
-      formData.append("name", name)
-      formData.append("transactionDate", transactionDate)
-      formData.append("referenceNumber", referenceNumber)
-      formData.append("amount", amount)
-
-      // Calculate USD amount based on country exchange rate
-      const country = countries.find((c) => c.id === selectedCountry)
-      const amountUsd = country ? Number.parseFloat(amount) / country.exchange_rate : 0
-      formData.append("amountUsd", amountUsd.toString())
-
-      formData.append("mobileNumber", mobileNumber)
-
-      if (screenshot) {
-        formData.append("screenshot", screenshot)
-      }
-
-      const result = await submitPayment(formData)
-
-      if (result.success) {
-        setSuccess(result.message)
-
-        // Reset form
-        setAmount("")
-        setName("")
-        setTransactionDate(new Date().toISOString().split("T")[0])
-        setReferenceNumber("")
-        setMobileNumber("")
-        setScreenshot(null)
-
-        // Refresh submissions
-        const submissionsData = await getUserPaymentSubmissions()
-        setSubmissions(submissionsData)
       } else {
-        setError(result.message)
-
-        // If authentication error, update authentication state
-        if (
-          result.message.includes("log in") ||
-          result.message.includes("session") ||
-          result.message.includes("identity") ||
-          result.message.includes("authenticated")
-        ) {
-          setIsAuthenticated(false)
-        }
+        setBanks([])
+        setSelectedBank("")
       }
-    } catch (err) {
-      console.error("Error submitting payment:", err)
-      const errorMessage = err instanceof Error ? err.message : "Failed to submit payment"
-      setError(errorMessage)
-
-      // Check for auth errors in the caught exception
-      if (
-        err instanceof Error &&
-        (errorMessage.includes("auth") ||
-          errorMessage.includes("session") ||
-          errorMessage.includes("log in") ||
-          errorMessage.includes("JWT"))
-      ) {
-        setIsAuthenticated(false)
-      }
-    } finally {
-      setIsSubmitting(false)
     }
-  }
+
+    async function loadNetworks() {
+      if (selectedCountry) {
+        try {
+          const networksData = await getNetworksForCountry(selectedCountry)
+          setNetworks(networksData)
+        } catch (err) {
+          console.error("Error loading networks:", err)
+        }
+      } else {
+        setNetworks([])
+      }
+    }
+
+    loadBanks()
+    loadNetworks()
+  }, [selectedCountry])
+
+  // Load payment config when bank changes
+  useEffect(() => {
+    async function loadConfig() {
+      if (selectedCountry && selectedBank) {
+        try {
+          const configData = await getPaymentConfig(selectedCountry, selectedBank)
+          setConfig(configData)
+
+          // Set payment number from config if available
+          if (configData && configData.mobile_number) {
+            setPaymentNumber(configData.mobile_number)
+          }
+
+          // Set network from config if available
+          if (configData && configData.network_id) {
+            setSelectedNetwork(configData.network_id.toString())
+          }
+        } catch (err) {
+          console.error("Error loading payment config:", err)
+        }
+      } else {
+        setConfig(null)
+        setPaymentNumber("")
+      }
+    }
+
+    loadConfig()
+  }, [selectedCountry, selectedBank])
 
   // Handle file change
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setScreenshot(e.target.files[0])
+    } else {
+      setScreenshot(null)
+    }
+  }
+
+  // Function to redirect to login
+  const redirectToLogin = useCallback(() => {
+    router.push("/login?redirect=/dashboard")
+  }, [router])
+
+  // Handle form submission
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      // Check authentication first
+      const isAuthValid = await checkAuth()
+      if (!isAuthValid) {
+        throw new Error("You need to be logged in to submit a payment")
+      }
+
+      if (!user?.id) {
+        throw new Error("User ID not found. Please log in again.")
+      }
+
+      if (!selectedCountry || !selectedBank || !amount) {
+        throw new Error("Please fill in all required fields")
+      }
+
+      // Create form data
+      const formData = new FormData()
+      formData.append("countryId", selectedCountry)
+      formData.append("bankId", selectedBank)
+      if (selectedNetwork) formData.append("networkId", selectedNetwork)
+      if (name) formData.append("name", name)
+      if (transactionDate) formData.append("transactionDate", transactionDate)
+      if (referenceNumber) formData.append("referenceNumber", referenceNumber)
+      formData.append("amount", amount) // This is USD amount
+
+      // Calculate and append local amount
+      const localAmount = calculateLocalAmount(amount, selectedCountry)
+      formData.append("localAmount", localAmount.toString())
+
+      if (mobileNumber) formData.append("mobileNumber", mobileNumber)
+      if (screenshot) formData.append("screenshot", screenshot)
+
+      const result = await submitMobilePayment(user.id, formData)
+
+      if (result.success) {
+        setSuccess(result.message)
+
+        // Reset form
+        setName("")
+        setReferenceNumber("")
+        setMobileNumber("")
+        setScreenshot(null)
+
+        // Reload submissions
+        const submissionsData = await getUserPaymentSubmissions(user.id)
+        setSubmissions(submissionsData)
+      } else {
+        setError(result.message)
+      }
+    } catch (err) {
+      console.error("Error submitting payment:", err)
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   return {
-    // Data
     countries,
     banks,
     networks,
     config,
     submissions,
-    isAuthenticated,
-
-    // Selected values
     selectedCountry,
     setSelectedCountry,
     selectedBank,
@@ -362,8 +349,6 @@ export function useMobilePaymentForm() {
     selectedNetwork,
     setSelectedNetwork,
     paymentNumber,
-
-    // Form values
     amount,
     setAmount,
     name,
@@ -371,20 +356,21 @@ export function useMobilePaymentForm() {
     transactionDate,
     setTransactionDate,
     referenceNumber,
-    setReferenceNumber,
+    setReferenceNumber: setReferenceNumber,
     mobileNumber,
     setMobileNumber,
     screenshot,
-    setScreenshot,
-
-    // UI state
     isLoading,
     isSubmitting,
     error,
     success,
-
-    // Handlers
     handleSubmit,
     handleFileChange,
+    isAuthenticated,
+    isRefreshingSession,
+    refreshSession,
+    redirectToLogin,
+    checkAuth,
+    calculateLocalAmount,
   }
 }

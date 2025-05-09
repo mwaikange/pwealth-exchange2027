@@ -3,13 +3,14 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { X, Loader2, ArrowLeft } from "lucide-react"
+import { X, Loader2, ArrowLeft, RefreshCw } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
 import { getFriendlyErrorMessage } from "@/utils/error-handling"
 import { useMobilePaymentForm } from "@/hooks/use-mobile-payment-form"
+import { refreshUserSession } from "@/actions/mobile-payment-actions"
 
 interface AFTPurchaseModalProps {
   isOpen: boolean
@@ -21,12 +22,13 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isBelowMinimum, setIsBelowMinimum] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const { user } = useAuth()
+  const { user, session } = useAuth()
   const { aftBalance, receiveAft } = useWallet()
   const { addTransaction } = useTransactions()
   const [currentView, setCurrentView] = useState<"form" | "paymentOptions" | "qrCode" | "mobilePayments">("form")
   const [selectedCountry, setSelectedCountry] = useState("namibia")
   const [screenshotUploaded, setScreenshotUploaded] = useState(false)
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false)
 
   // Use the mobile payment form hook
   const {
@@ -59,12 +61,34 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     success,
     handleSubmit,
     handleFileChange,
+    isAuthenticated,
+    refreshSession: refreshMobileSession,
+    redirectToLogin,
   } = useMobilePaymentForm()
 
   // Set the amount from the parent component
   useEffect(() => {
     setMobileAmount(amount)
   }, [amount, setMobileAmount])
+
+  // Function to manually refresh the session
+  const refreshSession = async () => {
+    setIsRefreshingSession(true)
+    setErrorMessage(null)
+
+    try {
+      const success = await refreshUserSession()
+      if (success) {
+        // Force a reload of the page to ensure all components pick up the new session
+        window.location.reload()
+      }
+    } catch (err) {
+      console.error("Exception refreshing session:", err)
+      setErrorMessage("An unexpected error occurred. Please try again later.")
+    } finally {
+      setIsRefreshingSession(false)
+    }
+  }
 
   if (!isOpen) return null
 
@@ -227,13 +251,13 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   }
 
   // Calculate local currency amount rounded to nearest 10
-  const calculateLocalAmount = () => {
-    const usdAmount = Number.parseInt(amount) || 0
-    const exchangeRate = getExchangeRate(selectedCountry)
-    const exactLocalAmount = usdAmount * exchangeRate
-    const roundedLocalAmount = Math.round(exactLocalAmount / 10) * 10
-    return roundedLocalAmount.toString()
-  }
+  // const calculateLocalAmount = () => {
+  //   const usdAmount = Number.parseInt(amount) || 0
+  //   const exchangeRate = getExchangeRate(selectedCountry)
+  //   const exactLocalAmount = usdAmount * exchangeRate
+  //   const roundedLocalAmount = Math.round(exactLocalAmount / 10) * 10
+  //   return roundedLocalAmount.toString()
+  // }
 
   // Get current date in YYYY-MM-DD format
   const getCurrentDate = () => {
@@ -435,7 +459,46 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            {/* Authentication error with refresh button */}
+            {!isAuthenticated && (
+              <div className="bg-red-500/20 border border-red-500 px-4 py-3 rounded text-white mb-6">
+                <div className="flex items-center justify-between">
+                  <p>You need to be logged in to use this feature.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={refreshSession}
+                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded flex items-center"
+                      disabled={isRefreshingSession}
+                    >
+                      {isRefreshingSession ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Refresh Session
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={redirectToLogin}
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+                    >
+                      Login
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                await handleSubmit(e)
+              }}
+            >
               <div className="grid grid-cols-[35fr_65fr] gap-6">
                 {/* Left Column */}
                 <div className="space-y-6">
@@ -458,7 +521,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         className="bg-[#D9D9D9] rounded p-2 w-full text-black"
                         value={selectedCountryMobile}
                         onChange={(e) => setSelectedCountryMobile(e.target.value)}
-                        disabled={isLoading || isSubmitting}
+                        disabled={isLoading || isSubmitting || !isAuthenticated}
                       >
                         <option value="">Select Country</option>
                         {countries.map((country) => (
@@ -474,7 +537,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         className="bg-[#D9D9D9] rounded p-2 w-full text-black"
                         value={selectedBank}
                         onChange={(e) => setSelectedBank(e.target.value)}
-                        disabled={!selectedCountryMobile || isLoading || isSubmitting}
+                        disabled={!selectedCountryMobile || isLoading || isSubmitting || !isAuthenticated}
                       >
                         <option value="">Select Bank</option>
                         {banks.map((bank) => (
@@ -493,7 +556,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       className="bg-[#D9D9D9] rounded p-2 w-full text-black font-medium text-lg"
                       value={mobileAmount}
                       onChange={(e) => setMobileAmount(e.target.value)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !isAuthenticated}
                     />
                   </div>
 
@@ -530,7 +593,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         }`}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        disabled={isSubmitting || (config && !config.requires_name)}
+                        disabled={isSubmitting || (config && !config.requires_name) || !isAuthenticated}
                         placeholder={config && !config.requires_name ? "Not required" : ""}
                       />
                     </div>
@@ -550,7 +613,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         }`}
                         value={transactionDate}
                         onChange={(e) => setTransactionDate(e.target.value)}
-                        disabled={isSubmitting || (config && !config.requires_date)}
+                        disabled={isSubmitting || (config && !config.requires_date) || !isAuthenticated}
                       />
                     </div>
 
@@ -564,7 +627,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         }`}
                         value={mobileReferenceNumber}
                         onChange={(e) => setMobileReferenceNumber(e.target.value)}
-                        disabled={isSubmitting || (config && !config.requires_ref_number)}
+                        disabled={isSubmitting || (config && !config.requires_ref_number) || !isAuthenticated}
                         placeholder={config && !config.requires_ref_number ? "Not required" : ""}
                       />
                     </div>
@@ -580,7 +643,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       </label>
                       <input
                         type="text"
-                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
+                        className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black font-medium ${
                           config && !config.requires_amount ? "opacity-50" : ""
                         }`}
                         value={
@@ -605,7 +668,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                         }`}
                         value={mobileNumber}
                         onChange={(e) => setMobileNumber(e.target.value)}
-                        disabled={isSubmitting || (config && !config.requires_sender_mobile)}
+                        disabled={isSubmitting || (config && !config.requires_sender_mobile) || !isAuthenticated}
                         placeholder={config && !config.requires_sender_mobile ? "Not required" : ""}
                       />
                     </div>
@@ -627,7 +690,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                             justifyContent: "center",
                           }}
                           onChange={handleFileChange}
-                          disabled={isSubmitting || (config && !config.requires_screenshot)}
+                          disabled={isSubmitting || (config && !config.requires_screenshot) || !isAuthenticated}
                         />
                       </div>
                     </div>
@@ -660,7 +723,10 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                                 <td className="py-2">{new Date(submission.created_at).toLocaleDateString()}</td>
                                 <td className="py-2">{submission.pay_banks?.name || "Bank"}</td>
                                 <td className="py-2">{submission.reference_number || "-"}</td>
-                                <td className="py-2">{submission.amount_usd.toFixed(2)} USD</td>
+                                <td className="py-2">
+                                  {submission.amount ? submission.amount.toFixed(2) : "0.00"}{" "}
+                                  {submission.pay_countries?.currency_code || "NAD"}
+                                </td>
                                 <td className="py-2 capitalize">
                                   <span
                                     className={
@@ -698,17 +764,19 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                 <button
                   type="submit"
                   className={`font-medium rounded-md py-2 px-8 ${
-                    isSubmitting
+                    isSubmitting || !isAuthenticated || !screenshot
                       ? "bg-gray-500 text-gray-300 cursor-not-allowed"
                       : "bg-green-500 hover:bg-green-600 text-white"
                   }`}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isAuthenticated || !screenshot}
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />
                       Processing...
                     </>
+                  ) : !screenshot ? (
+                    "Upload Screenshot First"
                   ) : (
                     "Submit"
                   )}
