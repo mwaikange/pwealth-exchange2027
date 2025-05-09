@@ -42,6 +42,7 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
       bankId,
       name: name ? "provided" : "not provided",
       transactionDate: transactionDate ? "provided" : "not provided",
+      referenceNumber: referenceNumber ? "provided" : "not provided",
       amount,
       localAmount,
       mobileNumber: mobileNumber ? "provided" : "not provided",
@@ -96,16 +97,21 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
     // Insert payment submission using admin client to bypass RLS
     console.log("Inserting payment submission...")
 
-    // Include bank_id in the insert data, but omit status to use database default
+    // Map fields to their correct columns in the database
     const insertData = {
       user_id: userId,
       bank_id: bankIdNumber,
       amount: localAmount,
-      // Status field omitted - database will default to 'PENDING'
-      notes: `USD Amount: ${amount}${name ? `, Name: ${name}` : ""}${
-        transactionDate ? `, Transaction Date: ${transactionDate}` : ""
-      }${referenceNumber ? `, Reference: ${referenceNumber}` : ""}${mobileNumber ? `, Mobile: ${mobileNumber}` : ""}`,
+      reference_number: referenceNumber, // Use dedicated column
+      sender_mobile: mobileNumber, // Use dedicated column
       screenshot_url: screenshotUrl,
+      notes: `USD Amount: ${amount}`, // Only USD Amount in notes
+      name: name, // Use dedicated column
+    }
+
+    // If transaction date is provided, use it for created_at
+    if (transactionDate) {
+      insertData.created_at = new Date(transactionDate).toISOString()
     }
 
     console.log("Full insert data:", insertData)
