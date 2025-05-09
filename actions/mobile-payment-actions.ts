@@ -30,6 +30,7 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
 
     // Extract form data
     const bankId = formData.get("bankId") as string
+    const networkId = formData.get("networkId") as string
     const name = (formData.get("name") as string) || null
     const transactionDate = (formData.get("transactionDate") as string) || null
     const referenceNumber = (formData.get("referenceNumber") as string) || null
@@ -40,6 +41,7 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
 
     console.log("Form data extracted:", {
       bankId,
+      networkId,
       name: name ? "provided" : "not provided",
       transactionDate: transactionDate ? "provided" : "not provided",
       referenceNumber: referenceNumber ? "provided" : "not provided",
@@ -65,6 +67,16 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
     if (isNaN(bankIdNumber)) {
       console.error("Invalid bank ID format")
       return { success: false, message: "Invalid bank ID format." }
+    }
+
+    // Convert networkId to a number (if provided)
+    let networkIdNumber = null
+    if (networkId) {
+      networkIdNumber = Number(networkId)
+      if (isNaN(networkIdNumber)) {
+        console.error("Invalid network ID format")
+        return { success: false, message: "Invalid network ID format." }
+      }
     }
 
     // Upload screenshot if provided
@@ -94,6 +106,22 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
       console.log("Screenshot uploaded successfully:", screenshotUrl)
     }
 
+    // Prepare the transaction date
+    let transactionDateTime = null
+    if (transactionDate) {
+      transactionDateTime = new Date(transactionDate)
+      if (isNaN(transactionDateTime.getTime())) {
+        console.error("Invalid transaction date format")
+        return { success: false, message: "Invalid transaction date format." }
+      }
+    } else {
+      // Use current date if not provided
+      transactionDateTime = new Date()
+    }
+
+    // Format the date as ISO string
+    const isoDate = transactionDateTime.toISOString()
+
     // Insert payment submission using admin client to bypass RLS
     console.log("Inserting payment submission...")
 
@@ -101,17 +129,15 @@ export async function submitMobilePayment(userId: string, formData: FormData) {
     const insertData = {
       user_id: userId,
       bank_id: bankIdNumber,
+      network_id: networkIdNumber, // Add network_id as a number
       amount: localAmount,
-      reference_number: referenceNumber, // Use dedicated column
-      sender_mobile: mobileNumber, // Use dedicated column
+      reference_number: referenceNumber,
+      sender_mobile: mobileNumber,
       screenshot_url: screenshotUrl,
-      notes: `USD Amount: ${amount}`, // Only USD Amount in notes
-      name: name, // Use dedicated column
-    }
-
-    // If transaction date is provided, use it for created_at
-    if (transactionDate) {
-      insertData.created_at = new Date(transactionDate).toISOString()
+      notes: `USD Amount: ${amount}`,
+      name: name,
+      created_at: isoDate, // Set created_at to the transaction date
+      date: isoDate, // Also set date column to the same value
     }
 
     console.log("Full insert data:", insertData)
