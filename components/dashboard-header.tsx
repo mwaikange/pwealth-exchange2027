@@ -51,12 +51,16 @@ export function DashboardHeader() {
     }
   }, [dismissedNotifications])
 
-  // Filter notifications - IN-PWT RECEIPT, IN-AFT GIFT, and BUY-AFT RECEIPT transactions
+  // Filter notifications - Include all AFT Wallet transactions, IN-PWT RECEIPT, IN-AFT GIFT, and BUY-AFT RECEIPT transactions
   // And exclude dismissed notifications
   const notifications = transactions
     .filter(
       (tx) =>
-        (tx.type === "IN-PWT RECEIPT" || tx.type === "IN-AFT GIFT" || tx.type === "BUY-AFT RECEIPT") &&
+        (tx.type === "IN-PWT RECEIPT" ||
+          tx.type === "IN-AFT GIFT" ||
+          tx.type === "BUY-AFT RECEIPT" ||
+          (tx.account && tx.account.includes("AFT")) ||
+          (tx.type && tx.type.includes("AFT"))) &&
         !dismissedNotifications.includes(tx.id),
     )
     .slice(0, 5) // Show only the 5 most recent
@@ -132,7 +136,13 @@ export function DashboardHeader() {
                             ? "PWT Received"
                             : notification.type === "IN-AFT GIFT"
                               ? "AFT Gift Received"
-                              : "AFT Top-Up"}
+                              : notification.type === "BUY-AFT RECEIPT"
+                                ? "AFT TopUp Purchase"
+                                : notification.account && notification.account.includes("AFT")
+                                  ? "AFT Transaction"
+                                  : notification.type && notification.type.includes("AFT")
+                                    ? "AFT Transaction"
+                                    : "Transaction"}
                         </div>
                         <div className="text-sm text-gray-300">
                           You received {notification.amount} {notification.type.includes("PWT") ? "PWT" : "AFT"}

@@ -159,6 +159,11 @@ export function TransactionTable({
       return true
     }
 
+    // Special case for AFT wallet incoming transactions
+    if (transaction.account === "AFT Wallet" && type.includes("AFT") && !type.includes("OUT-")) {
+      return true
+    }
+
     return false
   }
 
@@ -168,6 +173,11 @@ export function TransactionTable({
     return (
       type.includes("AFT") || type === "ACTIVATE FEE" || (transaction.account && transaction.account.includes("AFT"))
     )
+  }
+
+  // Helper function to check if a transaction should trigger a notification
+  const shouldNotify = (transaction: Transaction): boolean => {
+    return isAftTransaction(transaction) && isPositiveTransaction(transaction)
   }
 
   return (
@@ -202,9 +212,14 @@ export function TransactionTable({
                 {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
                 {showRecipient && (
                   <td className="py-[6px] px-4 text-[10px]">
-                    {isTypeInList(transaction.type || transaction.transaction_type, ["IN-PWT RECEIPT", "IN-AFT GIFT"])
-                      ? transaction.sender || "-"
-                      : transaction.recipient || "-"}
+                    {isAftTransaction(transaction) && isPositiveTransaction(transaction)
+                      ? "system@peer-wealth.com"
+                      : isTypeInList(transaction.type || transaction.transaction_type, [
+                            "IN-PWT RECEIPT",
+                            "IN-AFT GIFT",
+                          ])
+                        ? transaction.sender || "-"
+                        : transaction.recipient || "-"}
                   </td>
                 )}
                 <td className="py-[6px] px-4 text-[10px]">
