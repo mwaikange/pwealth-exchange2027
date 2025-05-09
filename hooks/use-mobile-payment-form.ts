@@ -15,7 +15,13 @@ import {
 import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
 import { submitMobilePayment, refreshUserSession } from "@/actions/mobile-payment-actions"
 
-export function useMobilePaymentForm() {
+interface UseMobilePaymentFormProps {
+  aftTokenAmount?: string // Add this to accept token amount from parent
+  onSuccess?: (data: any) => void
+  onError?: (error: string) => void
+}
+
+export function useMobilePaymentForm({ aftTokenAmount, onSuccess, onError }: UseMobilePaymentFormProps = {}) {
   const router = useRouter()
   const { user, session } = useAuth()
   const [countries, setCountries] = useState<PayCountry[]>([])
@@ -27,7 +33,7 @@ export function useMobilePaymentForm() {
   const [selectedBank, setSelectedBank] = useState("")
   const [selectedNetwork, setSelectedNetwork] = useState("")
   const [paymentNumber, setPaymentNumber] = useState("")
-  const [amount, setAmount] = useState("")
+  const [amount, setAmount] = useState(aftTokenAmount || "")
   const [name, setName] = useState("")
   const [transactionDate, setTransactionDate] = useState(getCurrentDate())
   const [referenceNumber, setReferenceNumber] = useState("")
@@ -42,6 +48,13 @@ export function useMobilePaymentForm() {
 
   // Create a Supabase client for client-side operations
   const supabase = createClientComponentClient()
+
+  // Update amount when aftTokenAmount changes
+  useEffect(() => {
+    if (aftTokenAmount) {
+      setAmount(aftTokenAmount)
+    }
+  }, [aftTokenAmount])
 
   // Get current date in YYYY-MM-DD format
   function getCurrentDate() {
@@ -85,14 +98,12 @@ export function useMobilePaymentForm() {
       if (error) {
         console.error("Error getting session:", error)
         setIsAuthenticated(false)
-        setError("Session error: " + error.message)
         return false
       }
 
       if (!data.session) {
         console.log("No active session")
         setIsAuthenticated(false)
-        setError("You need to be logged in to use this feature.")
         return false
       }
 
@@ -102,14 +113,12 @@ export function useMobilePaymentForm() {
       if (userError) {
         console.error("Error getting user:", userError)
         setIsAuthenticated(false)
-        setError("User error: " + userError.message)
         return false
       }
 
       if (!userData.user) {
         console.log("No user found")
         setIsAuthenticated(false)
-        setError("You need to be logged in to use this feature.")
         return false
       }
 
@@ -120,7 +129,6 @@ export function useMobilePaymentForm() {
     } catch (err) {
       console.error("Error in checkAuth:", err)
       setIsAuthenticated(false)
-      setError("An error occurred while checking authentication.")
       return false
     } finally {
       setIsLoading(false)
@@ -135,7 +143,7 @@ export function useMobilePaymentForm() {
     try {
       const result = await refreshUserSession()
 
-      if (result.error) {
+      if (!result.success) {
         console.error("Error refreshing session:", result.error)
         setError("Failed to refresh your session. Please try logging out and back in.")
         return false
@@ -280,7 +288,7 @@ export function useMobilePaymentForm() {
     setSuccess(null)
 
     try {
-      // Check authentication first
+      // Check authentication
       const isAuthValid = await checkAuth()
       if (!isAuthValid) {
         throw new Error("You need to be logged in to submit a payment")
@@ -290,14 +298,22 @@ export function useMobilePaymentForm() {
         throw new Error("User ID not found. Please log in again.")
       }
 
-      if (!selectedCountry || !selectedBank || !amount) {
-        throw new Error("Please fill in all required fields")
+      if (!selectedBank) {
+        throw new Error("Please select a bank")
+      }
+
+      if (!amount || Number(amount) <= 0) {
+        throw new Error("Please enter a valid amount")
+      }
+
+      if (!screenshot) {
+        throw new Error("Please upload a screenshot of your payment")
       }
 
       // Create form data
       const formData = new FormData()
-      formData.append("countryId", selectedCountry)
-      formData.append("bankId", selectedBank)
+      formData.append("bankId", selectedBank) // Make sure bank ID is included
+      if (selectedCountry) formData.append("countryId", selectedCountry)
       if (selectedNetwork) formData.append("networkId", selectedNetwork)
       if (name) formData.append("name", name)
       if (transactionDate) formData.append("transactionDate", transactionDate)
@@ -311,37 +327,47 @@ export function useMobilePaymentForm() {
       if (mobileNumber) formData.append("mobileNumber", mobileNumber)
       if (screenshot) formData.append("screenshot", screenshot)
 
+      console.log("Submitting payment with bank ID:", selectedBank)
+
+      // Pass the user ID to the server action
       const result = await submitMobilePayment(user.id, formData)
 
-      if (result.success) {
-        setSuccess(result.message)
+      if (!result.success) {
+        throw new Error(result.message || "Failed to submit payment")
+      }
 
-        // Reset form
-        setName("")
-        setReferenceNumber("")
-        setMobileNumber("")
-        setScreenshot(null)
+      setSuccess("Payment submitted successfully! We will process it shortly.")
 
-        // Reload submissions
+      if (onSuccess) {
+        onSuccess(result)
+      }
+
+      // Reset form
+      setName("")
+      setReferenceNumber("")
+      setMobileNumber("")
+      setScreenshot(null)
+
+      // Reload submissions if authenticated
+      if (isAuthenticated && user?.id) {
         const submissionsData = await getUserPaymentSubmissions(user.id)
         setSubmissions(submissionsData)
-      } else {
-        setError(result.message)
       }
     } catch (err) {
       console.error("Error submitting payment:", err)
-      setError(err instanceof Error ? err.message : "An unknown error occurred")
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred"
+      setError(errorMessage)
+
+      if (onError) {
+        onError(errorMessage)
+      }
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return {
-    countries,
-    banks,
-    networks,
-    config,
-    submissions,
+    // Form data
     selectedCountry,
     setSelectedCountry,
     selectedBank,
@@ -360,14 +386,25 @@ export function useMobilePaymentForm() {
     mobileNumber,
     setMobileNumber,
     screenshot,
+
+    // Data
+    countries,
+    banks,
+    networks,
+    config,
+    submissions,
+
+    // UI state
     isLoading,
     isSubmitting,
     error,
     success,
-    handleSubmit,
-    handleFileChange,
     isAuthenticated,
     isRefreshingSession,
+
+    // Actions
+    handleFileChange,
+    handleSubmit,
     refreshSession,
     redirectToLogin,
     checkAuth,

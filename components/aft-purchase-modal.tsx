@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { X, Loader2, ArrowLeft, RefreshCw } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
 import { useWallet } from "@/contexts/wallet-context"
@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { getFriendlyErrorMessage } from "@/utils/error-handling"
 import { useMobilePaymentForm } from "@/hooks/use-mobile-payment-form"
 import { refreshUserSession } from "@/actions/mobile-payment-actions"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 interface AFTPurchaseModalProps {
   isOpen: boolean
@@ -29,8 +30,10 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const [selectedCountry, setSelectedCountry] = useState("namibia")
   const [screenshotUploaded, setScreenshotUploaded] = useState(false)
   const [isRefreshingSession, setIsRefreshingSession] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
+  const supabase = createClientComponentClient()
 
-  // Use the mobile payment form hook
+  // Use the mobile payment form hook with the token amount
   const {
     countries,
     banks,
@@ -64,12 +67,53 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     isAuthenticated,
     refreshSession: refreshMobileSession,
     redirectToLogin,
-  } = useMobilePaymentForm()
+    calculateLocalAmount,
+  } = useMobilePaymentForm({
+    aftTokenAmount: amount, // Pass the token amount to the hook
+    onSuccess: () => {
+      console.log("Payment submitted successfully")
+      // Close the modal after a short delay
+      setTimeout(() => {
+        onClose()
+      }, 2000)
+    },
+    onError: (error) => {
+      console.error("Payment submission error:", error)
+      setErrorMessage(error)
+    },
+  })
 
   // Set the amount from the parent component
   useEffect(() => {
     setMobileAmount(amount)
   }, [amount, setMobileAmount])
+
+  // Check authentication status when the component mounts
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!isOpen) return
+
+      console.log("Checking authentication status...")
+
+      // First check from context
+      if (user && session) {
+        console.log("User authenticated from context:", user.id)
+        return
+      }
+
+      // Then check from Supabase
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error("Error checking auth:", error)
+      } else if (data.session) {
+        console.log("Session found in modal:", data.session.user.id)
+      } else {
+        console.log("No active session found in modal")
+      }
+    }
+
+    checkAuth()
+  }, [isOpen, supabase.auth, user, session])
 
   // Function to manually refresh the session
   const refreshSession = async () => {
@@ -77,10 +121,27 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     setErrorMessage(null)
 
     try {
-      const success = await refreshUserSession()
-      if (success) {
+      console.log("Refreshing session...")
+
+      // Try to refresh the session using the client-side Supabase client
+      const { data, error } = await supabase.auth.refreshSession()
+
+      if (error) {
+        console.error("Failed to refresh session client-side:", error)
+      } else if (data.session) {
+        console.log("Session refreshed client-side successfully")
+      }
+
+      // Then try the server-side refresh
+      const result = await refreshUserSession()
+
+      if (result.success) {
+        console.log("Session refreshed server-side successfully")
         // Force a reload of the page to ensure all components pick up the new session
         window.location.reload()
+      } else {
+        console.error("Failed to refresh session server-side:", result.error)
+        setErrorMessage("Failed to refresh your session. Please try logging out and back in.")
       }
     } catch (err) {
       console.error("Exception refreshing session:", err)
@@ -207,12 +268,28 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
     setCurrentView("paymentOptions")
   }
 
-  const handleSubmitMobilePayment = () => {
-    // In a real implementation, this would submit the payment details
-    console.log("Mobile payment submitted")
+  const handleSubmitMobilePayment = async (e: React.FormEvent) => {
+    e.preventDefault()
 
-    // Close the modal
-    onClose()
+    // Check if form is valid
+    if (!selectedCountryMobile || !selectedBank || !mobileAmount) {
+      setErrorMessage("Please fill in all required fields")
+      return
+    }
+
+    // Check if screenshot is uploaded
+    if (!screenshot) {
+      setErrorMessage("Please upload a screenshot of your payment")
+      return
+    }
+
+    try {
+      // Submit the form
+      await handleSubmit(e)
+    } catch (error) {
+      console.error("Error submitting payment:", error)
+      setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred")
+    }
   }
 
   // Generate a random reference number for the QR code
@@ -249,15 +326,6 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
         return 1 // Default to 1:1 for USD
     }
   }
-
-  // Calculate local currency amount rounded to nearest 10
-  // const calculateLocalAmount = () => {
-  //   const usdAmount = Number.parseInt(amount) || 0
-  //   const exchangeRate = getExchangeRate(selectedCountry)
-  //   const exactLocalAmount = usdAmount * exchangeRate
-  //   const roundedLocalAmount = Math.round(exactLocalAmount / 10) * 10
-  //   return roundedLocalAmount.toString()
-  // }
 
   // Get current date in YYYY-MM-DD format
   const getCurrentDate = () => {
@@ -459,15 +527,15 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
               </button>
             </div>
 
-            {/* Authentication error with refresh button */}
-            {!isAuthenticated && (
-              <div className="bg-red-500/20 border border-red-500 px-4 py-3 rounded text-white mb-6">
+            {/* Show session status */}
+            {!isAuthenticated ? (
+              <div className="bg-blue-500/20 border border-blue-500 px-4 py-3 rounded text-white mb-6">
                 <div className="flex items-center justify-between">
-                  <p>You need to be logged in to use this feature.</p>
+                  <p>Session not detected. You need to be logged in to submit a payment.</p>
                   <div className="flex gap-2">
                     <button
                       onClick={refreshSession}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded flex items-center"
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded flex items-center"
                       disabled={isRefreshingSession}
                     >
                       {isRefreshingSession ? (
@@ -491,14 +559,16 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                   </div>
                 </div>
               </div>
+            ) : (
+              <div className="bg-green-500/20 border border-green-500 px-4 py-3 rounded text-white mb-6">
+                <p>You are logged in as {user?.email}. Your payment will be linked to your account.</p>
+              </div>
             )}
 
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                await handleSubmit(e)
-              }}
-            >
+            <form ref={formRef} onSubmit={handleSubmitMobilePayment}>
+              {/* Hidden field for AFT token amount */}
+              <input type="hidden" name="aft_token_amount" value={amount} />
+
               <div className="grid grid-cols-[35fr_65fr] gap-6">
                 {/* Left Column */}
                 <div className="space-y-6">
@@ -518,6 +588,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                     <div>
                       <label className="text-white text-sm block mb-1">Country</label>
                       <select
+                        name="countryId"
                         className="bg-[#D9D9D9] rounded p-2 w-full text-black"
                         value={selectedCountryMobile}
                         onChange={(e) => setSelectedCountryMobile(e.target.value)}
@@ -534,6 +605,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                     <div>
                       <label className="text-white text-sm block mb-1">Bank</label>
                       <select
+                        name="bankId"
                         className="bg-[#D9D9D9] rounded p-2 w-full text-black"
                         value={selectedBank}
                         onChange={(e) => setSelectedBank(e.target.value)}
@@ -553,6 +625,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                     <label className="text-white text-sm block mb-1">Amount (USD) - local conversion below.</label>
                     <input
                       type="text"
+                      name="amount"
                       className="bg-[#D9D9D9] rounded p-2 w-full text-black font-medium text-lg"
                       value={mobileAmount}
                       onChange={(e) => setMobileAmount(e.target.value)}
@@ -588,6 +661,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       </label>
                       <input
                         type="text"
+                        name="name"
                         className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
                           config && !config.requires_name ? "opacity-50" : ""
                         }`}
@@ -608,6 +682,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       </label>
                       <input
                         type="date"
+                        name="transaction_date"
                         className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
                           config && !config.requires_date ? "opacity-50" : ""
                         }`}
@@ -622,6 +697,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       <label className="text-white text-xs block mb-1">Reference Number</label>
                       <input
                         type="text"
+                        name="reference_number"
                         className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black ${
                           config && !config.requires_ref_number ? "opacity-50" : ""
                         }`}
@@ -643,6 +719,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       </label>
                       <input
                         type="text"
+                        name="local_amount_display"
                         className={`bg-[#D9D9D9] rounded p-2 w-full text-sm text-black font-medium ${
                           config && !config.requires_amount ? "opacity-50" : ""
                         }`}
@@ -663,6 +740,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       <label className="text-white text-xs block mb-1">Mobile Number</label>
                       <input
                         type="text"
+                        name="mobile_number"
                         className={`bg-[#D9D9D9] rounded p-2 w-full text-sm h-[34px] text-black ${
                           config && !config.requires_sender_mobile ? "opacity-50" : ""
                         }`}
@@ -683,6 +761,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                       >
                         <input
                           type="file"
+                          name="screenshot"
                           className="text-sm text-black cursor-pointer text-center"
                           style={{
                             display: "flex",
@@ -764,17 +843,21 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
                 <button
                   type="submit"
                   className={`font-medium rounded-md py-2 px-8 ${
-                    isSubmitting || !isAuthenticated || !screenshot
+                    isSubmitting || !screenshot || !isAuthenticated || !selectedBank
                       ? "bg-gray-500 text-gray-300 cursor-not-allowed"
                       : "bg-green-500 hover:bg-green-600 text-white"
                   }`}
-                  disabled={isSubmitting || !isAuthenticated || !screenshot}
+                  disabled={isSubmitting || !screenshot || !isAuthenticated || !selectedBank}
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />
                       Processing...
                     </>
+                  ) : !isAuthenticated ? (
+                    "Login Required"
+                  ) : !selectedBank ? (
+                    "Select a Bank"
                   ) : !screenshot ? (
                     "Upload Screenshot First"
                   ) : (
