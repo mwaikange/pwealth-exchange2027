@@ -35,8 +35,9 @@ export async function callOpenAI(systemMessage: string, userMessage: string): Pr
   const enhancedSystemMessage = `${systemMessage}
   
 Important information to share with users:
-- We have an official WhatsApp community at https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ
-- When users ask about selling tokens, trading strategies, or connecting with buyers/sellers, always mention this WhatsApp group
+- We have an official WhatsApp community called "PeerWealthNetwork" at https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ
+- When users ask about groups they can join, networks, communities, selling tokens, trading strategies, or connecting with buyers/sellers, always mention this WhatsApp group
+- Always refer to the WhatsApp community by its name: "PeerWealthNetwork"
 - Periodically remind users about this community resource, especially when discussing token sales or community features`
 
   const completion = await openai.chat.completions.create({

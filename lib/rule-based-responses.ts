@@ -167,11 +167,17 @@ export const PATTERN_HANDLERS: PatternHandler[] = [
       "buy and sell",
       "trading group",
       "peer community",
+      "groups to join",
+      "networks",
+      "communities",
+      "join group",
+      "join community",
+      "join network",
     ],
     handler: async () => {
-      return `📱 **WhatsApp Community**
+      return `📱 **PeerWealthNetwork WhatsApp Community**
 
-Join our official WhatsApp community for:
+Join our official PeerWealthNetwork WhatsApp community for:
 - Latest updates and announcements
 - Buy and sell opportunities for your tokens
 - Trading strategies and market insights
@@ -180,7 +186,7 @@ Join our official WhatsApp community for:
 
 **Join link**: https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ
 
-This is the best place to learn about selling your tokens and connecting with potential buyers!`
+This is the best place to learn about selling your tokens, connecting with potential buyers, and staying updated with the latest Peer Wealth news!`
     },
   },
 ]
