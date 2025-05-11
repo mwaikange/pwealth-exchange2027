@@ -603,12 +603,12 @@ export default function Settings() {
                     </svg>
                   </div>
                   <a
-                    href="https://www.whatsapp.com/channel/0029Vb6FKcACBtxMB0awaA40"
+                    href="https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full flex items-center justify-center px-3 py-2 bg-white text-black rounded text-xs hover:bg-gray-100"
                   >
-                    Join Whatsapp Channel
+                    Join Whatsapp Group
                   </a>
                 </div>
               </div>

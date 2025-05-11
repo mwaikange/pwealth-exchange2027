@@ -31,10 +31,18 @@ export function getOpenAIClient() {
 export async function callOpenAI(systemMessage: string, userMessage: string): Promise<string> {
   const openai = getOpenAIClient()
 
+  // Add WhatsApp information to the system message
+  const enhancedSystemMessage = `${systemMessage}
+  
+Important information to share with users:
+- We have an official WhatsApp community at https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ
+- When users ask about selling tokens, trading strategies, or connecting with buyers/sellers, always mention this WhatsApp group
+- Periodically remind users about this community resource, especially when discussing token sales or community features`
+
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
-      { role: "system", content: systemMessage },
+      { role: "system", content: enhancedSystemMessage },
       { role: "user", content: userMessage },
     ],
     temperature: 0.7,

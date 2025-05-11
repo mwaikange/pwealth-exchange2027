@@ -152,6 +152,37 @@ export const PATTERN_HANDLERS: PatternHandler[] = [
     patterns: ["vesting progress", "level progress", "how far am i", "progression status", "show me my progress"],
     handler: getVestingProgressHandler,
   },
+  {
+    patterns: [
+      "whatsapp",
+      "whatsapp group",
+      "whatsapp community",
+      "community",
+      "chat group",
+      "sell tokens",
+      "selling strategy",
+      "how to sell",
+      "token sales",
+      "marketplace",
+      "buy and sell",
+      "trading group",
+      "peer community",
+    ],
+    handler: async () => {
+      return `📱 **WhatsApp Community**
+
+Join our official WhatsApp community for:
+- Latest updates and announcements
+- Buy and sell opportunities for your tokens
+- Trading strategies and market insights
+- Direct communication with other community members
+- Support from experienced traders
+
+**Join link**: https://chat.whatsapp.com/JlEcYCQCbD21a3ldDd9mTJ
+
+This is the best place to learn about selling your tokens and connecting with potential buyers!`
+    },
+  },
 ]
 
 // Try to get a rule-based response
