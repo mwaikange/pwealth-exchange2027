@@ -14,7 +14,6 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [showPopup, setShowPopup] = useState(true)
   const [isEmailNotConfirmed, setIsEmailNotConfirmed] = useState(false)
   const [resendingEmail, setResendingEmail] = useState(false)
   const [resendSuccess, setResendSuccess] = useState(false)
@@ -142,59 +141,6 @@ export default function Login() {
           "url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/peerWealth_Cursor.png-c2lG2VfEYHcmowwpSnYj2xfYm1gZv5.jpeg')",
       }}
     >
-      {showPopup && (
-        <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-md bg-[#2e3137] rounded-xl shadow-lg overflow-hidden z-50 border border-gray-700">
-          <div className="relative p-5">
-            <button
-              onClick={() => setShowPopup(false)}
-              className="absolute top-2 right-2 text-gray-400 hover:text-white"
-              aria-label="Close"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-
-            <div className="text-center text-white">
-              <p className="mb-3">
-                Please note: We are currently in the Soft Launch Phase and the platform is available as a desktop
-                application, working seamlessly on laptop and tablet devices.
-              </p>
-              <p className="mb-3">
-                As an Early Adopter, you don't need to pay anything to begin until the 15 May 2025.
-              </p>
-              <p className="mb-3">
-                Simply sign up, and once you receive your tokens, invest them. After 5 days, you can sell your tokens to
-                earn approximately R2000.
-              </p>
-              <p className="mb-4">
-                For more information, click on "How it Works" next to the Privacy Policy on the Home Page.
-              </p>
-              <p className="mb-4">Would you like to visit the Home Page to learn more?</p>
-
-              <a
-                href="https://peer-wealth.vercel.app/"
-                className="inline-block px-6 py-2 bg-[#fff27a] hover:bg-yellow-400 text-black font-medium rounded-full transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Visit Home Page
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="w-full max-w-md mx-auto rounded-2xl overflow-hidden shadow-lg transform scale-75 origin-center">
         <div className="bg-[#2e3137] p-6 space-y-4">
           {/* Logo */}
