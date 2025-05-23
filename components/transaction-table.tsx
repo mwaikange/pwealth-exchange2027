@@ -212,14 +212,13 @@ export function TransactionTable({
                 {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
                 {showRecipient && (
                   <td className="py-[6px] px-4 text-[10px]">
-                    {isAftTransaction(transaction) && isPositiveTransaction(transaction)
-                      ? "system@peer-wealth.com"
-                      : isTypeInList(transaction.type || transaction.transaction_type, [
-                            "IN-PWT RECEIPT",
-                            "IN-AFT GIFT",
-                          ])
-                        ? transaction.sender || "-"
-                        : transaction.recipient || "-"}
+                    {transaction.type === "IN-AFT GIFT"
+                      ? transaction.sender || "-"
+                      : isAftTransaction(transaction) && isPositiveTransaction(transaction)
+                        ? "system@peer-wealth.com"
+                        : isTypeInList(transaction.type || transaction.transaction_type, ["IN-PWT RECEIPT"])
+                          ? transaction.sender || "-"
+                          : transaction.recipient || "-"}
                   </td>
                 )}
                 <td className="py-[6px] px-4 text-[10px]">
