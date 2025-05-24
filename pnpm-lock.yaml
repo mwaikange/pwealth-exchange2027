@@ -151,7 +151,7 @@ importers:
         version: 7.0.3
       openai:
         specifier: latest
-        version: 4.103.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.25.23)
+        version: 4.103.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.25.28)
       react:
         specifier: ^19
         version: 19.0.0
@@ -193,7 +193,7 @@ importers:
         version: 8.18.2(bufferutil@4.0.9)
       zod:
         specifier: latest
-        version: 3.25.23
+        version: 3.25.28
     devDependencies:
       '@types/node':
         specifier: ^22
@@ -2755,8 +2755,8 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
-  zod@3.25.23:
-    resolution: {integrity: sha512-Od2bdMosahjSrSgJtakrwjMDb1zM1A3VIHCPGveZt/3/wlrTWBya2lmEh2OYe4OIu8mPTmmr0gnLHIWQXdtWBg==}
+  zod@3.25.28:
+    resolution: {integrity: sha512-/nt/67WYKnr5by3YS7LroZJbtcCBurDKKPBPWWzaxvVCGuG/NOsiKkrjoOhI8mJ+SQUXEbUzeB3S+6XDUEEj7Q==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -4829,7 +4829,7 @@ snapshots:
 
   oidc-token-hash@5.1.0: {}
 
-  openai@4.103.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.25.23):
+  openai@4.103.0(ws@8.18.2(bufferutil@4.0.9))(zod@3.25.28):
     dependencies:
       '@types/node': 18.19.103
       '@types/node-fetch': 2.6.12
@@ -4840,7 +4840,7 @@ snapshots:
       node-fetch: 2.7.0
     optionalDependencies:
       ws: 8.18.2(bufferutil@4.0.9)
-      zod: 3.25.23
+      zod: 3.25.28
     transitivePeerDependencies:
       - encoding
 
@@ -5430,6 +5430,6 @@ snapshots:
 
   yaml@2.8.0: {}
 
-  zod@3.25.23: {}
+  zod@3.25.28: {}
 
   zwitch@2.0.4: {}
