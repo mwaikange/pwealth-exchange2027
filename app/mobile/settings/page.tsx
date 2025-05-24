@@ -73,20 +73,7 @@ export default function MobileSettingsPage() {
 
   return (
     <MobileLayout currentPage="settings">
-      <MobileSettingsContent
-        newPassword={newPassword}
-        setNewPassword={setNewPassword}
-        confirmPassword={confirmPassword}
-        setConfirmPassword={setConfirmPassword}
-        passwordError={passwordError}
-        setPasswordError={setPasswordError}
-        passwordSuccess={passwordSuccess}
-        setPasswordSuccess={setPasswordSuccess}
-        referralCode={referralCode}
-        referralUrl={referralUrl}
-        copyReferralCode={copyReferralCode}
-        copied={copied}
-      />
+      <MobileSettingsContent />
     </MobileLayout>
   )
 }

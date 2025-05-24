@@ -6,6 +6,19 @@ import { MobileLayout } from "@/components/mobile/mobile-layout"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useMobile } from "@/hooks/use-mobile"
 import { X } from "lucide-react"
+import dynamic from "next/dynamic"
+
+const MobileTransactionsContent = dynamic(() => import("@/components/mobile/mobile-transactions-content"), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-screen bg-gradient-to-br from-[#1a1d29] via-[#2a2d3a] to-[#1a1d29] text-white flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+        <div>Loading Transactions...</div>
+      </div>
+    </div>
+  ),
+})
 
 export default function MobileTransactionsPage() {
   const router = useRouter()
@@ -36,36 +49,7 @@ export default function MobileTransactionsPage() {
         )}
 
         {/* Transactions table */}
-        <div className="bg-[#2a2d3a] rounded overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className="py-2 px-2 text-left">Description</th>
-                <th className="py-2 px-2 text-left">Date</th>
-                <th className="py-2 px-2 text-left">Peer-Email</th>
-                <th className="py-2 px-2 text-right">USD Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.length > 0 ? (
-                transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-gray-700">
-                    <td className="py-2 px-2">{tx.description}</td>
-                    <td className="py-2 px-2">{tx.date}</td>
-                    <td className="py-2 px-2 text-xs">{tx.sender || tx.recipient || "System"}</td>
-                    <td className="py-2 px-2 text-right">${tx.amountUsd || "0.00"}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="py-4 text-center text-gray-400">
-                    No transactions found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <MobileTransactionsContent transactions={transactions} />
       </div>
     </MobileLayout>
   )
