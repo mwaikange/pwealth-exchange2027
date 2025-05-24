@@ -98,6 +98,9 @@ importers:
       '@supabase/auth-helpers-nextjs':
         specifier: latest
         version: 0.10.0(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))
+      '@supabase/auth-helpers-react':
+        specifier: latest
+        version: 0.5.0(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))
       '@supabase/ssr':
         specifier: latest
         version: 0.6.1(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))
@@ -1326,6 +1329,12 @@ packages:
 
   '@supabase/auth-helpers-nextjs@0.10.0':
     resolution: {integrity: sha512-2dfOGsM4yZt0oS4TPiE7bD4vf7EVz7NRz/IJrV6vLg0GP7sMUx8wndv2euLGq4BjN9lUCpu6DG/uCC8j+ylwPg==}
+    deprecated: This package is now deprecated - please use the @supabase/ssr package instead.
+    peerDependencies:
+      '@supabase/supabase-js': ^2.39.8
+
+  '@supabase/auth-helpers-react@0.5.0':
+    resolution: {integrity: sha512-5QSaV2CGuhDhd7RlQCoviVEAYsP7XnrFMReOcBazDvVmqSIyjKcDwhLhWvnrxMOq5qjOaA44MHo7wXqDiF0puQ==}
     deprecated: This package is now deprecated - please use the @supabase/ssr package instead.
     peerDependencies:
       '@supabase/supabase-js': ^2.39.8
@@ -3841,6 +3850,10 @@ snapshots:
       '@supabase/auth-helpers-shared': 0.7.0(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))
       '@supabase/supabase-js': 2.49.8(bufferutil@4.0.9)
       set-cookie-parser: 2.7.1
+
+  '@supabase/auth-helpers-react@0.5.0(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))':
+    dependencies:
+      '@supabase/supabase-js': 2.49.8(bufferutil@4.0.9)
 
   '@supabase/auth-helpers-shared@0.7.0(@supabase/supabase-js@2.49.8(bufferutil@4.0.9))':
     dependencies:

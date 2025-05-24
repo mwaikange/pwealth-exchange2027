@@ -2,6 +2,9 @@ import type React from "react"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
+import { WalletProvider } from "@/contexts/wallet-context"
+import { TransactionProvider } from "@/contexts/transaction-context"
+import { VestingProvider } from "@/contexts/vesting-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -22,7 +25,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} bg-[#1c1e26] text-white`}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <WalletProvider>
+            <TransactionProvider>
+              <VestingProvider>{children}</VestingProvider>
+            </TransactionProvider>
+          </WalletProvider>
+        </AuthProvider>
       </body>
     </html>
   )
