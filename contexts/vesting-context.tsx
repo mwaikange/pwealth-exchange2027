@@ -11,42 +11,54 @@ export type VestingSlotData = {
   startDate?: number
   amount?: number
   progress?: number
+  level?: number
+}
+
+// Define vesting levels with their limits
+export const VESTING_LEVELS = {
+  1: { name: "Retail", min: 1, max: 50 },
+  2: { name: "Small Business", min: 51, max: 500 },
+  3: { name: "Corporate", min: 501, max: Number.POSITIVE_INFINITY },
 }
 
 // Define the context type
 type VestingContextType = {
   vestingSlots: VestingSlotData[]
-  vestShares: (slotIndex: number, amount: number) => Promise<void>
+  vestShares: (slotIndex: number, amount: number, level: number) => Promise<void>
   claimShares: (slotIndex: number) => Promise<void>
   getTotalVestingInProgress: () => number
   getTotalClaimableShares: () => number
   getSchedulesByLevel: (level: number) => VestingSlotData[]
   getScheduleById: (id: string) => VestingSlotData | undefined
+  validateVestingAmount: (amount: number, level: number) => { valid: boolean; error?: string }
   loading: boolean
 }
 
 // Create the context
 const VestingContext = createContext<VestingContextType | undefined>(undefined)
 
-// Static mock data for testing
+// Static mock data for testing - now with 6 slots
 const mockVestingSlots: VestingSlotData[] = [
   {
     id: "slot-1",
     status: "in_progress",
     startDate: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
-    amount: 5,
+    amount: 25,
     progress: 40,
+    level: 1,
   },
   {
     id: "slot-2",
     status: "claimable",
     startDate: Date.now() - 5 * 24 * 60 * 60 * 1000, // 5 days ago
-    amount: 3,
+    amount: 100,
     progress: 100,
+    level: 2,
   },
   { id: "slot-3", status: "empty" },
   { id: "slot-4", status: "empty" },
   { id: "slot-5", status: "empty" },
+  { id: "slot-6", status: "empty" },
 ]
 
 // Provider component
@@ -89,9 +101,27 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval)
   }, [])
 
+  // Validate vesting amount based on level
+  const validateVestingAmount = (amount: number, level: number) => {
+    const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
+    if (!levelConfig) {
+      return { valid: false, error: "Invalid vesting level" }
+    }
+
+    if (amount < levelConfig.min) {
+      return { valid: false, error: `Minimum ${levelConfig.min} shares required for ${levelConfig.name} level` }
+    }
+
+    if (amount > levelConfig.max) {
+      return { valid: false, error: `Maximum ${levelConfig.max} shares allowed for ${levelConfig.name} level` }
+    }
+
+    return { valid: true }
+  }
+
   // Vest shares function (mock implementation)
-  const vestShares = async (slotIndex: number, amount: number) => {
-    if (!user || slotIndex < 0 || slotIndex >= 5) return
+  const vestShares = async (slotIndex: number, amount: number, level: number) => {
+    if (!user || slotIndex < 0 || slotIndex >= 6) return
 
     try {
       setLoading(true)
@@ -99,6 +129,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       // Check if slot is empty
       if (vestingSlots[slotIndex].status !== "empty") {
         throw new Error("Slot is not empty")
+      }
+
+      // Validate amount for level
+      const validation = validateVestingAmount(amount, level)
+      if (!validation.valid) {
+        throw new Error(validation.error)
       }
 
       // Update the slot
@@ -110,11 +146,14 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           startDate: Date.now(),
           amount: amount,
           progress: 0,
+          level: level,
         }
         return newSlots
       })
 
-      console.log(`Mock: Vested ${amount} shares in slot ${slotIndex + 1}`)
+      console.log(
+        `Mock: Vested ${amount} shares in slot ${slotIndex + 1} at ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} level`,
+      )
     } catch (error) {
       console.error("Error vesting shares:", error)
       throw error
@@ -125,7 +164,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Claim shares function (mock implementation)
   const claimShares = async (slotIndex: number) => {
-    if (!user || slotIndex < 0 || slotIndex >= 5) return
+    if (!user || slotIndex < 0 || slotIndex >= 6) return
 
     try {
       setLoading(true)
@@ -168,13 +207,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       .reduce((total, slot) => total + (slot.amount || 0), 0)
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Legacy helpers kept for backward compatibility with pages
-  // that still expect the multi-level API. They return sensible
-  // defaults so the UI can render without crashing.
-  const getSchedulesByLevel = (_level: number) => [] // no levels any more
-  const getScheduleById = (_id: string) => undefined // id lookup not used
-  // ────────────────────────────────────────────────────────────
+  // Legacy helpers kept for backward compatibility
+  const getSchedulesByLevel = (_level: number) => []
+  const getScheduleById = (_id: string) => undefined
 
   // Context value
   const value = {
@@ -183,6 +218,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     claimShares,
     getTotalVestingInProgress,
     getTotalClaimableShares,
+    validateVestingAmount,
     // legacy
     getSchedulesByLevel,
     getScheduleById,

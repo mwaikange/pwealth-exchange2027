@@ -1,16 +1,16 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Check } from "lucide-react"
 import { useWallet } from "@/contexts/wallet-context"
-import { useVesting } from "@/contexts/vesting-context"
-import { useTransactions } from "@/contexts/transaction-context" // Import useTransactions directly
+import { useVesting, VESTING_LEVELS } from "@/contexts/vesting-context"
+import { useTransactions } from "@/contexts/transaction-context"
 import Celebration from "@/components/celebration"
 import { VestingSlot } from "@/components/vesting-slot"
+import { VestConfirmationModal } from "@/components/vest-confirmation-modal"
 import { AlertCircle } from "lucide-react"
 
 export default function Vesting() {
-  const [activeTab, setActiveTab] = useState("LEVEL 1")
+  const [activeTab, setActiveTab] = useState("Retail")
   const [vestError, setVestError] = useState("")
   const [claimSuccess, setClaimSuccess] = useState("")
   const [activateError, setActivateError] = useState("")
@@ -19,8 +19,9 @@ export default function Vesting() {
 
   const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
+  const [showVestModal, setShowVestModal] = useState(false)
+  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
-  const [slotIndex, setSlotIndex] = useState<number | null>(null) // Declare slotIndex variable
 
   // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
@@ -45,6 +46,7 @@ export default function Vesting() {
     claimShares,
     getTotalVestingInProgress,
     getTotalClaimableShares,
+    validateVestingAmount,
     loading,
   } = useVesting()
 
@@ -63,7 +65,16 @@ export default function Vesting() {
 
   // Get active level number
   const getActiveLevel = () => {
-    return Number.parseInt(activeTab.split(" ")[1])
+    switch (activeTab) {
+      case "Retail":
+        return 1
+      case "Small Business":
+        return 2
+      case "Corporate":
+        return 3
+      default:
+        return 1
+    }
   }
 
   // Get schedules for the active level
@@ -72,11 +83,11 @@ export default function Vesting() {
   // Function to get the circle number based on active tab
   const getCircleNumber = () => {
     switch (activeTab) {
-      case "LEVEL 1":
+      case "Retail":
         return "2"
-      case "LEVEL 2":
+      case "Small Business":
         return "4"
-      case "LEVEL 3":
+      case "Corporate":
         return "8"
       default:
         return "2"
@@ -86,11 +97,11 @@ export default function Vesting() {
   // Function to get the activation cost based on active tab
   const getActivationCost = () => {
     switch (activeTab) {
-      case "LEVEL 1":
+      case "Retail":
         return 2
-      case "LEVEL 2":
+      case "Small Business":
         return 4
-      case "LEVEL 3":
+      case "Corporate":
         return 8
       default:
         return 2
@@ -100,11 +111,11 @@ export default function Vesting() {
   // Function to get the investment cost based on active tab
   const getInvestmentCost = () => {
     switch (activeTab) {
-      case "LEVEL 1":
+      case "Retail":
         return 2
-      case "LEVEL 2":
+      case "Small Business":
         return 4
-      case "LEVEL 3":
+      case "Corporate":
         return 8
       default:
         return 2
@@ -257,18 +268,19 @@ export default function Vesting() {
     }
   }
 
-  // Update the handleClaim function to only show confetti at 100% maturity
-  // Find the handleClaim function and replace it with this updated version:
-
+  // Handle claim action
   const handleClaimSlot = async (slotIndex: number) => {
     if (isProcessing) return
 
     try {
-      setIsProcessing(true) // Set processing to true at the start
+      setIsProcessing(true)
       const slot = vestingSlots[slotIndex]
       await claimShares(slotIndex)
 
       setClaimSuccess(`Successfully claimed ${slot.amount} shares from Slot ${slotIndex + 1}!`)
+
+      // Show confetti for completed claims
+      setShowConfetti(true)
     } catch (error) {
       console.error("Claim failed:", error)
       setVestError(`Claim failed: ${error.message || "Unknown error"}`)
@@ -277,25 +289,36 @@ export default function Vesting() {
     }
   }
 
-  // Handle vest action
-  const handleVestSlot = async (slotIndex: number, amount: number) => {
-    if (isProcessing) return
+  // Handle vest action - opens modal
+  const handleVestSlot = (slotIndex: number) => {
+    setSelectedSlotIndex(slotIndex)
+    setShowVestModal(true)
+  }
+
+  // Handle vest confirmation from modal
+  const handleVestConfirm = async (amount: number, level: number) => {
+    if (selectedSlotIndex === null) return
 
     try {
       setIsProcessing(true)
       setVestError("")
 
-      // Check if user has enough shares in pre-hold
-      const availableShares = holdWalletPreHold
-      if (amount > availableShares) {
-        setVestError(`Insufficient shares. You have ${availableShares} shares available in your Hold Wallet.`)
-        return
-      }
+      await vestShares(selectedSlotIndex, amount, level)
 
-      await vestShares(slotIndex, amount)
+      // Record transaction
+      if (typeof addTransaction === "function") {
+        await addTransaction({
+          type: "VEST",
+          account: "Hold Wallet (Pre-Hold)",
+          amount: amount,
+          amountUsd: amount * 100, // Assuming N$100 per share
+          description: `Vested ${amount} shares in Slot ${selectedSlotIndex + 1} (${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name})`,
+        })
+      }
     } catch (error) {
       console.error("Vest failed:", error)
       setVestError(`Vesting failed: ${error.message || "Unknown error"}`)
+      throw error // Re-throw so modal can handle it
     } finally {
       setIsProcessing(false)
     }
@@ -305,11 +328,11 @@ export default function Vesting() {
   const totalClaimable = getTotalClaimableShares()
 
   return (
-    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-auto">
-      {/* Page Title - adjusted to match other pages */}
+    <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+      {/* Page Title */}
       <div className="px-6 mb-2">
-        <h1 className="text-2xl font-bold">Vesting Schedules</h1>
-        <p className="text-gray-400 text-sm">Manage your investment schedules</p>
+        <h1 className="text-2xl font-bold text-slate-100">Vesting Schedules</h1>
+        <p className="text-slate-400 text-sm">Lock shares for 5 days to move them to Post-Hold</p>
       </div>
 
       {/* Success and error messages */}
@@ -326,243 +349,76 @@ export default function Vesting() {
 
       {/* Wallet Summary */}
       <div className="px-6 mb-6">
-        <div className="bg-[#2a2d3a] rounded-lg p-4 border border-gray-700">
-          <h3 className="text-lg font-medium mb-3">Hold Wallet Summary</h3>
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <h3 className="text-lg font-medium mb-3 text-slate-100">Hold Wallet Summary</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <div className="text-gray-400">Available (Pre-Hold)</div>
+              <div className="text-slate-400">Available (Pre-Hold)</div>
               <div className="text-xl font-bold text-blue-400">{holdWalletPreHold}</div>
-              <div className="text-xs text-gray-500">shares</div>
+              <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
-              <div className="text-gray-400">Currently Vesting</div>
+              <div className="text-slate-400">Currently Vesting</div>
               <div className="text-xl font-bold text-yellow-400">{totalVesting}</div>
-              <div className="text-xs text-gray-500">shares</div>
+              <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
-              <div className="text-gray-400">Ready to Claim</div>
+              <div className="text-slate-400">Ready to Claim</div>
               <div className="text-xl font-bold text-green-400">{totalClaimable}</div>
-              <div className="text-xs text-gray-500">shares</div>
+              <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
-              <div className="text-gray-400">Post-Hold</div>
+              <div className="text-slate-400">Post-Hold</div>
               <div className="text-xl font-bold text-purple-400">{holdWalletPostHold}</div>
-              <div className="text-xs text-gray-500">shares</div>
+              <div className="text-xs text-slate-500">shares</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="px-6 mt-2">
-        <div
-          className="bg-[#1c1e26] rounded-lg overflow-hidden"
-          style={{ transform: "scale(0.95)", transformOrigin: "top left", width: "105%" }}
-        >
-          <div className="flex mb-px">
-            <button
-              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
-                activeTab === "LEVEL 1" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
-              }`}
-              onClick={() => setActiveTab("LEVEL 1")}
-            >
-              LEVEL 1
-            </button>
-            <button
-              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
-                activeTab === "LEVEL 2" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
-              }`}
-              onClick={() => setActiveTab("LEVEL 2")}
-            >
-              LEVEL 2
-            </button>
-            <button
-              className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
-                activeTab === "LEVEL 3" ? "bg-[#4285f4] text-white" : "bg-[#1e1e21] text-gray-400"
-              }`}
-              onClick={() => setActiveTab("LEVEL 3")}
-            >
-              LEVEL 3
-            </button>
-          </div>
+      {/* Level Tabs */}
+      <div className="px-6 mb-6">
+        <div className="flex mb-4">
+          <button
+            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              activeTab === "Retail" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
+            }`}
+            onClick={() => setActiveTab("Retail")}
+          >
+            Retail (1-50 shares)
+          </button>
+          <button
+            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              activeTab === "Small Business" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
+            }`}
+            onClick={() => setActiveTab("Small Business")}
+          >
+            Small Business (51-500 shares)
+          </button>
+          <button
+            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+              activeTab === "Corporate" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
+            }`}
+            onClick={() => setActiveTab("Corporate")}
+          >
+            Corporate (501+ shares)
+          </button>
+        </div>
 
-          {/* Vesting Schedule Cards - with left alignment adjusted */}
-          <div className="space-y-[6px] pl-0">
-            {activeSchedules.map((schedule, index) => (
-              <div
-                key={schedule.id}
-                className={`border-l-4 ${
-                  schedule.color === "green-500"
-                    ? "border-green-500 border-b-green-500"
-                    : schedule.color === "blue-500"
-                      ? "border-blue-500 border-b-blue-500"
-                      : schedule.color === "pink-500"
-                        ? "border-pink-500 border-b-pink-500"
-                        : schedule.color === "yellow-500"
-                          ? "border-yellow-500 border-b-yellow-500"
-                          : schedule.color === "red-500"
-                            ? "border-red-500 border-b-red-500"
-                            : "border-gray-500 border-b-gray-500"
-                } bg-[#1c1e26] relative border-b-2`}
-              >
-                <div className="flex py-2 px-4">
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-600"></div>
-                  <div className="absolute left-[10px] top-1/2 transform -translate-y-1/2">
-                    {/* Vertical line running through the circle */}
-                    <div className="absolute left-[21px] top-[-10px] w-[1px] h-[60px] bg-gray-600 z-0"></div>
-                    {/* Circle with number */}
-                    <div className="relative w-[42px] h-[42px] rounded-full bg-gray-300 text-black flex items-center justify-center font-bold text-2xl z-10">
-                      {getCircleNumber()}
-                    </div>
-                  </div>
-
-                  <div className="ml-20 flex-1">
-                    <div className="flex justify-between items-start">
-                      <div className="text-xs text-gray-300">
-                        {schedule.invested
-                          ? `Maturity Date -${formatMaturityDate(schedule.startTime)} | Expected Yield ${getMaxYieldAmount(schedule.level)} PWT-Cashout`
-                          : "| Maturity Date -Not set | Not Set | No expectation"}
-                      </div>
-                      <div className="text-xs font-medium">|{schedule.id}</div>
-                    </div>
-
-                    <div className="mt-1.5 w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className={
-                          schedule.progress > 0 ? "bg-green-500 h-2 rounded-full" : "bg-white h-2 rounded-full"
-                        }
-                        style={{ width: `${schedule.progress}%` }}
-                      ></div>
-                    </div>
-
-                    <div className="flex justify-between mt-0.5">
-                      {schedule.progress > 0 && (
-                        <div className="text-xs">
-                          {schedule.claimed ? (
-                            <>
-                              Maturity Yield: {getYieldAmount(schedule.level, schedule.progress)} tokens |{" "}
-                              {schedule.prematurelyClaimed ? (
-                                <span className="text-red-400">(Claimed before maturity)</span>
-                              ) : (
-                                <span className="text-green-500">(Claimed on maturity)</span>
-                              )}
-                            </>
-                          ) : (
-                            <>Maturity Yield: {getYieldAmount(schedule.level, schedule.progress)} tokens |</>
-                          )}
-                        </div>
-                      )}
-                      {schedule.progress === 0 && <div className="text-xs">&nbsp;</div>}
-                      <div className="text-xs font-bold text-green-500">
-                        {schedule.progress > 0 ? `${schedule.progress}%` : ""}
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-gray-300 mt-0.5">
-                      Earn {getCircleNumber()} PWT tokens every 24 hours for 5 days | Claim anytime | Premature claims
-                      end vesting schedule | Vesting Schedule Activation Fee is {getActivationCost()} USD in AFT Tokens
-                    </div>
-                  </div>
-
-                  <div className="ml-4 flex flex-col justify-between items-end">
-                    {/* Activate Fee Button */}
-                    <div className="flex items-center mb-1">
-                      {schedule.activated ? (
-                        <>
-                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                            <Check className="h-3 w-3 text-white" />
-                          </div>
-                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
-                            Fee Paid
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-4 mr-1.5"></div>
-                          <button
-                            onClick={() => handleActivate(schedule.id)}
-                            disabled={isProcessing}
-                            className={`w-20 py-0.5 rounded text-[10px] ${
-                              isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-white text-black"
-                            }`}
-                          >
-                            {isProcessing ? "Wait..." : "Activate"}
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Invest Button */}
-                    <div className="flex items-center mb-1">
-                      {schedule.invested ? (
-                        <>
-                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                            <Check className="h-3 w-3 text-white" />
-                          </div>
-                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
-                            Invested
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-4 mr-1.5"></div>
-                          <button
-                            onClick={() => handleInvest(schedule.id)}
-                            disabled={!schedule.activated || isProcessing}
-                            className={`w-20 py-0.5 rounded text-[10px] ${
-                              !schedule.activated || isProcessing
-                                ? "bg-gray-600 text-white cursor-not-allowed"
-                                : "bg-white text-black"
-                            }`}
-                          >
-                            {isProcessing ? "Wait..." : "Invest"}
-                          </button>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Claim Button */}
-                    <div className="flex items-center">
-                      {schedule.claimed ? (
-                        <>
-                          <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center mr-1.5">
-                            <Check className="h-3 w-3 text-white" />
-                          </div>
-                          <button className="w-20 py-0.5 rounded text-[10px] bg-gray-500 text-green-300">
-                            Claimed
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-4 mr-1.5"></div>
-                          <button
-                            onClick={() => {
-                              setSlotIndex(index)
-                              handleClaimSlot(index)
-                            }}
-                            disabled={!schedule.invested || schedule.progress < 20 || isProcessing}
-                            className={`w-20 py-0.5 rounded text-[10px] ${
-                              !schedule.invested || schedule.progress < 20 || isProcessing
-                                ? "bg-gray-600 text-white cursor-not-allowed"
-                                : "bg-white text-black"
-                            }`}
-                          >
-                            {isProcessing ? "Wait..." : "Claim"}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Level Info */}
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-6">
+          <h3 className="text-lg font-medium mb-2 text-slate-100">{activeTab} Level</h3>
+          <p className="text-slate-300 text-sm">
+            {activeTab === "Retail" && "Perfect for individual investors. Vest 1-50 shares per slot."}
+            {activeTab === "Small Business" && "Ideal for small business investments. Vest 51-500 shares per slot."}
+            {activeTab === "Corporate" && "For large-scale corporate investments. Vest 501+ shares per slot."}
+          </p>
         </div>
       </div>
 
-      {/* Vesting Slots */}
+      {/* Vesting Slots - Now 6 slots */}
       <div className="px-6 pb-6">
-        <h3 className="text-lg font-medium mb-4">Your Vesting Slots (5 Available)</h3>
+        <h3 className="text-lg font-medium mb-4 text-slate-100">Your Vesting Slots (6 Available)</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {vestingSlots.map((slot, index) => (
             <VestingSlot
@@ -578,11 +434,15 @@ export default function Vesting() {
 
       {/* Info Section */}
       <div className="px-6 pb-6">
-        <div className="bg-[#2a2d3a] rounded-lg p-4 border border-gray-700">
-          <h3 className="text-lg font-medium mb-3">How Vesting Works</h3>
-          <div className="space-y-2 text-sm text-gray-300">
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <h3 className="text-lg font-medium mb-3 text-slate-100">How Vesting Works</h3>
+          <div className="space-y-2 text-sm text-slate-300">
             <p>
               • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for exactly 5 days
+            </p>
+            <p>
+              • <strong>Levels:</strong> Choose Retail (1-50), Small Business (51-500), or Corporate (501+) based on
+              amount
             </p>
             <p>
               • <strong>Progress:</strong> Watch your shares vest over the 5-day period
@@ -591,7 +451,7 @@ export default function Vesting() {
               • <strong>Claim:</strong> After 5 days, claim your shares to your Post-Hold balance
             </p>
             <p>
-              • <strong>Slots:</strong> You can use up to 5 vesting slots simultaneously
+              • <strong>Slots:</strong> You can use up to 6 vesting slots simultaneously
             </p>
             <p>
               • <strong>Exchange:</strong> Only Post-Hold shares can be sold on the exchange
@@ -600,13 +460,25 @@ export default function Vesting() {
         </div>
       </div>
 
-      {/* Activate Confirmation Dialog */}
+      {/* Vest Confirmation Modal */}
+      <VestConfirmationModal
+        isOpen={showVestModal}
+        onClose={() => setShowVestModal(false)}
+        onConfirm={handleVestConfirm}
+        availableShares={holdWalletPreHold}
+        slotIndex={selectedSlotIndex || 0}
+      />
+
+      {/* Legacy confirmation dialogs - keeping for backward compatibility */}
       {showActivateConfirmation && (
         <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-          <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-white">Confirm Activation</h3>
-              <button onClick={() => setShowActivateConfirmation(false)} className="text-gray-400 hover:text-white">
+              <h3 className="text-xl font-bold text-slate-100">Confirm Activation</h3>
+              <button
+                onClick={() => setShowActivateConfirmation(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -620,7 +492,7 @@ export default function Vesting() {
             </div>
 
             <div className="mb-6">
-              <p className="text-white mb-2">
+              <p className="text-slate-100 mb-2">
                 This transaction is irreversible. {getActivationCost()} AFT will be deducted from your wallet.
               </p>
               <p className="text-yellow-300 text-sm">Are you sure you want to proceed?</p>
@@ -629,7 +501,7 @@ export default function Vesting() {
             <div className="flex space-x-4">
               <button
                 onClick={() => setShowActivateConfirmation(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-slate-100 py-2 rounded-md font-medium transition-colors"
               >
                 Cancel
               </button>
@@ -637,7 +509,7 @@ export default function Vesting() {
                 onClick={confirmActivate}
                 disabled={isProcessing}
                 className={`flex-1 py-2 rounded-md font-medium transition-colors ${
-                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#34a853] hover:bg-green-600 text-white"
+                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"
                 }`}
               >
                 {isProcessing ? "Processing..." : "Proceed"}
@@ -650,10 +522,10 @@ export default function Vesting() {
       {/* Invest Confirmation Dialog */}
       {showInvestConfirmation && (
         <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
-          <div className="bg-[#2a2d3a] border border-gray-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-white">Confirm Investment</h3>
-              <button onClick={() => setShowInvestConfirmation(false)} className="text-gray-400 hover:text-white">
+              <h3 className="text-xl font-bold text-slate-100">Confirm Investment</h3>
+              <button onClick={() => setShowInvestConfirmation(false)} className="text-slate-400 hover:text-slate-200">
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -667,7 +539,7 @@ export default function Vesting() {
             </div>
 
             <div className="mb-6">
-              <p className="text-white mb-2">
+              <p className="text-slate-100 mb-2">
                 This transaction is irreversible. {getInvestmentCost()} PWT will be deducted from your PWT Invest
                 wallet.
               </p>
@@ -677,7 +549,7 @@ export default function Vesting() {
             <div className="flex space-x-4">
               <button
                 onClick={() => setShowInvestConfirmation(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-md font-medium transition-colors"
+                className="flex-1 bg-slate-600 hover:bg-slate-500 text-slate-100 py-2 rounded-md font-medium transition-colors"
               >
                 Cancel
               </button>
@@ -685,7 +557,7 @@ export default function Vesting() {
                 onClick={confirmInvest}
                 disabled={isProcessing}
                 className={`flex-1 py-2 rounded-md font-medium transition-colors ${
-                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#34a853] hover:bg-green-600 text-white"
+                  isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"
                 }`}
               >
                 {isProcessing ? "Processing..." : "Proceed"}
@@ -694,28 +566,9 @@ export default function Vesting() {
           </div>
         </div>
       )}
+
       {/* Confetti Celebration */}
       {showConfetti && <Celebration onComplete={() => setShowConfetti(false)} />}
     </div>
   )
-}
-
-// Function to format maturity date
-const formatMaturityDate = (startTime) => {
-  if (!startTime) return "Not set | Not Set"
-
-  // Add 5 days (for live production)
-  const maturityTime = new Date(startTime + 5 * 24 * 60 * 60 * 1000)
-
-  // Format as DD/MM/YYYY | HH:MM:SS am/pm
-  const day = maturityTime.getDate().toString().padStart(2, "0")
-  const month = (maturityTime.getMonth() + 1).toString().padStart(2, "0")
-  const year = maturityTime.getFullYear()
-
-  const hours = maturityTime.getHours() % 12 || 12
-  const minutes = maturityTime.getMinutes().toString().padStart(2, "0")
-  const seconds = maturityTime.getSeconds().toString().padStart(2, "0")
-  const ampm = maturityTime.getHours() >= 12 ? "pm" : "am"
-
-  return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
 }
