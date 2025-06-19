@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { Bell, ChevronLeft, X } from "lucide-react"
-import { useWallet } from "@/contexts/wallet-context"
+import { useWallet, formatCurrency } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useState, useEffect } from "react"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
@@ -14,7 +14,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 
 export function DashboardHeader() {
-  const { pwtInvestBalance, pwtCashoutBalance, aftBalance, loading } = useWallet()
+  const { buyWalletBalance, holdWalletBalance, cashoutWalletBalance, loading } = useWallet()
   const { transactions } = useTransactions()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAFTModal, setShowAFTModal] = useState(false)
@@ -133,7 +133,7 @@ export function DashboardHeader() {
 
                         <div className="font-medium">
                           {notification.type === "IN-PWT RECEIPT"
-                            ? "PWT Received"
+                            ? "Shares Received"
                             : notification.type === "IN-AFT GIFT"
                               ? "AFT Gift Received"
                               : notification.type === "BUY-AFT RECEIPT"
@@ -145,8 +145,10 @@ export function DashboardHeader() {
                                     : "Transaction"}
                         </div>
                         <div className="text-sm text-gray-300">
-                          You received {notification.amount} {notification.type.includes("PWT") ? "PWT" : "AFT"}
-                          {notification.type.includes("PWT") ? ` (${notification.amountUsd} USD)` : ""}
+                          You received {notification.amount} {notification.type.includes("PWT") ? "shares" : "AFT"}
+                          {notification.type.includes("PWT")
+                            ? ` (${formatCurrency(Number(notification.amountUsd) || 0)})`
+                            : ""}
                         </div>
                         <div className="text-xs text-gray-400 mt-1">From: {notification.sender || "System"}</div>
                         <div className="text-xs text-gray-400">{notification.date}</div>
@@ -160,22 +162,21 @@ export function DashboardHeader() {
             )}
           </div>
 
+          {/* NEW 3-WALLET DISPLAY */}
           <div className="flex items-center space-x-2">
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
-              <div className="text-xs text-gray-400">PWT Invest</div>
-              <div className="text-xl font-bold">{loading ? "..." : pwtInvestBalance}</div>
+              <div className="text-xs text-gray-400">Buy Wallet</div>
+              <div className="text-xl font-bold">{loading ? "..." : formatCurrency(buyWalletBalance)}</div>
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
-              <div className="text-xs text-gray-400">PWT Cashout</div>
-              <div className="text-xl font-bold">{loading ? "..." : pwtCashoutBalance}</div>
+              <div className="text-xs text-gray-400">Hold Wallet</div>
+              <div className="text-xl font-bold">{loading ? "..." : `${holdWalletBalance.toFixed(4)} shares`}</div>
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
-              <div className="text-xs text-gray-400">Activation Token</div>
-              <div className="text-xl font-bold">
-                {loading ? "..." : aftBalance} <span className="text-xs">USD</span>
-              </div>
+              <div className="text-xs text-gray-400">Cashout Wallet</div>
+              <div className="text-xl font-bold">{loading ? "..." : formatCurrency(cashoutWalletBalance)}</div>
             </div>
           </div>
 
@@ -184,7 +185,7 @@ export function DashboardHeader() {
             onClick={() => setShowAFTModal(true)}
           >
             <div className="font-medium text-sm">Top Up</div>
-            <div className="text-xs">Activation Token (AFT)</div>
+            <div className="text-xs">Buy Wallet</div>
           </button>
         </div>
       </header>

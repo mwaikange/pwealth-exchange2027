@@ -6,9 +6,12 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
 import { useTransactions } from "@/contexts/transaction-context" // Import useTransactions directly
 import Celebration from "@/components/celebration"
+import { VestingSlot } from "@/components/vesting-slot"
+import { AlertCircle } from "lucide-react"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("LEVEL 1")
+  const [vestError, setVestError] = useState("")
   const [claimSuccess, setClaimSuccess] = useState("")
   const [activateError, setActivateError] = useState("")
   const [investError, setInvestError] = useState("")
@@ -17,23 +20,38 @@ export default function Vesting() {
   const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
   const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
+  const [slotIndex, setSlotIndex] = useState<number | null>(null) // Declare slotIndex variable
 
   // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
 
   // Get wallet functions
-  const { pwtInvestBalance, aftBalance, updateAftBalance } = useWallet()
+  const { pwtInvestBalance, aftBalance, updateAftBalance, holdWalletBalance, holdWalletPreHold, holdWalletPostHold } =
+    useWallet()
 
   // Get transaction functions directly from the transaction context
   const { addTransaction } = useTransactions()
 
   // Get vesting functions
-  const { vestingSchedules, activateSchedule, investInSchedule, claimSchedule, getSchedulesByLevel } = useVesting()
+  const {
+    vestingSchedules,
+    activateSchedule,
+    investInSchedule,
+    claimSchedule,
+    getSchedulesByLevel,
+    vestingSlots,
+    vestShares,
+    claimShares,
+    getTotalVestingInProgress,
+    getTotalClaimableShares,
+    loading,
+  } = useVesting()
 
   // Clear messages after 5 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
+      if (vestError) setVestError("")
       if (claimSuccess) setClaimSuccess("")
       if (activateError) setActivateError("")
       if (investError) setInvestError("")
@@ -41,7 +59,7 @@ export default function Vesting() {
     }, 5000)
 
     return () => clearTimeout(timer)
-  }, [claimSuccess, activateError, investError, claimError])
+  }, [vestError, claimSuccess, activateError, investError, claimError])
 
   // Get active level number
   const getActiveLevel = () => {
@@ -242,59 +260,52 @@ export default function Vesting() {
   // Update the handleClaim function to only show confetti at 100% maturity
   // Find the handleClaim function and replace it with this updated version:
 
-  const handleClaim = async (scheduleId, progress) => {
-    // Prevent action if already processing something
+  const handleClaimSlot = async (slotIndex: number) => {
     if (isProcessing) return
-
-    const level = getActiveLevel()
-
-    if (progress < 20) {
-      setClaimError("Cannot claim until progress reaches 20%")
-      return
-    }
 
     try {
       setIsProcessing(true) // Set processing to true at the start
-      await claimSchedule(scheduleId)
+      const slot = vestingSlots[slotIndex]
+      await claimShares(slotIndex)
 
-      // Show success message
-      const yieldAmount = getYieldAmount(level, progress)
-      setClaimSuccess(`Successfully claimed ${yieldAmount} PWT from ${scheduleId}`)
-
-      // Only show confetti when claiming at 100% maturity
-      if (progress === 100) {
-        setShowConfetti(true)
-      }
+      setClaimSuccess(`Successfully claimed ${slot.amount} shares from Slot ${slotIndex + 1}!`)
     } catch (error) {
       console.error("Claim failed:", error)
-      setClaimError(`Claim failed: ${error.message || "Unknown error"}`)
+      setVestError(`Claim failed: ${error.message || "Unknown error"}`)
     } finally {
-      setIsProcessing(false) // Set processing to false when done
+      setIsProcessing(false)
     }
   }
 
-  // Format maturity date
-  const formatMaturityDate = (startTime) => {
-    if (!startTime) return "Not set | Not Set"
+  // Handle vest action
+  const handleVestSlot = async (slotIndex: number, amount: number) => {
+    if (isProcessing) return
 
-    // Add 5 days (for live production)
-    const maturityTime = new Date(startTime + 5 * 24 * 60 * 60 * 1000)
+    try {
+      setIsProcessing(true)
+      setVestError("")
 
-    // Format as DD/MM/YYYY | HH:MM:SS am/pm
-    const day = maturityTime.getDate().toString().padStart(2, "0")
-    const month = (maturityTime.getMonth() + 1).toString().padStart(2, "0")
-    const year = maturityTime.getFullYear()
+      // Check if user has enough shares in pre-hold
+      const availableShares = holdWalletPreHold
+      if (amount > availableShares) {
+        setVestError(`Insufficient shares. You have ${availableShares} shares available in your Hold Wallet.`)
+        return
+      }
 
-    const hours = maturityTime.getHours() % 12 || 12
-    const minutes = maturityTime.getMinutes().toString().padStart(2, "0")
-    const seconds = maturityTime.getSeconds().toString().padStart(2, "0")
-    const ampm = maturityTime.getHours() >= 12 ? "pm" : "am"
-
-    return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
+      await vestShares(slotIndex, amount)
+    } catch (error) {
+      console.error("Vest failed:", error)
+      setVestError(`Vesting failed: ${error.message || "Unknown error"}`)
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
+  const totalVesting = getTotalVestingInProgress()
+  const totalClaimable = getTotalClaimableShares()
+
   return (
-    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
+    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-auto">
       {/* Page Title - adjusted to match other pages */}
       <div className="px-6 mb-2">
         <h1 className="text-2xl font-bold">Vesting Schedules</h1>
@@ -306,13 +317,48 @@ export default function Vesting() {
       {activateError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{activateError}</div>}
       {investError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{investError}</div>}
       {claimError && <div className="mx-6 mb-2 p-2 bg-red-500 text-white text-sm rounded">{claimError}</div>}
+      {vestError && (
+        <div className="mx-6 mb-4 p-3 bg-red-600 text-white text-sm rounded-lg flex items-center">
+          <AlertCircle className="w-4 h-4 mr-2" />
+          {vestError}
+        </div>
+      )}
 
+      {/* Wallet Summary */}
+      <div className="px-6 mb-6">
+        <div className="bg-[#2a2d3a] rounded-lg p-4 border border-gray-700">
+          <h3 className="text-lg font-medium mb-3">Hold Wallet Summary</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <div className="text-gray-400">Available (Pre-Hold)</div>
+              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold}</div>
+              <div className="text-xs text-gray-500">shares</div>
+            </div>
+            <div>
+              <div className="text-gray-400">Currently Vesting</div>
+              <div className="text-xl font-bold text-yellow-400">{totalVesting}</div>
+              <div className="text-xs text-gray-500">shares</div>
+            </div>
+            <div>
+              <div className="text-gray-400">Ready to Claim</div>
+              <div className="text-xl font-bold text-green-400">{totalClaimable}</div>
+              <div className="text-xs text-gray-500">shares</div>
+            </div>
+            <div>
+              <div className="text-gray-400">Post-Hold</div>
+              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold}</div>
+              <div className="text-xs text-gray-500">shares</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
       <div className="px-6 mt-2">
         <div
           className="bg-[#1c1e26] rounded-lg overflow-hidden"
           style={{ transform: "scale(0.95)", transformOrigin: "top left", width: "105%" }}
         >
-          {/* Tabs */}
           <div className="flex mb-px">
             <button
               className={`flex-1 py-0 px-4 font-medium text-sm rounded-t-lg ${
@@ -342,7 +388,7 @@ export default function Vesting() {
 
           {/* Vesting Schedule Cards - with left alignment adjusted */}
           <div className="space-y-[6px] pl-0">
-            {activeSchedules.map((schedule) => (
+            {activeSchedules.map((schedule, index) => (
               <div
                 key={schedule.id}
                 className={`border-l-4 ${
@@ -490,7 +536,10 @@ export default function Vesting() {
                         <>
                           <div className="w-4 mr-1.5"></div>
                           <button
-                            onClick={() => handleClaim(schedule.id, schedule.progress)}
+                            onClick={() => {
+                              setSlotIndex(index)
+                              handleClaimSlot(index)
+                            }}
                             disabled={!schedule.invested || schedule.progress < 20 || isProcessing}
                             className={`w-20 py-0.5 rounded text-[10px] ${
                               !schedule.invested || schedule.progress < 20 || isProcessing
@@ -507,6 +556,46 @@ export default function Vesting() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Vesting Slots */}
+      <div className="px-6 pb-6">
+        <h3 className="text-lg font-medium mb-4">Your Vesting Slots (5 Available)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {vestingSlots.map((slot, index) => (
+            <VestingSlot
+              key={slot.id}
+              slot={slot}
+              slotIndex={index}
+              onVest={handleVestSlot}
+              onClaim={handleClaimSlot}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Info Section */}
+      <div className="px-6 pb-6">
+        <div className="bg-[#2a2d3a] rounded-lg p-4 border border-gray-700">
+          <h3 className="text-lg font-medium mb-3">How Vesting Works</h3>
+          <div className="space-y-2 text-sm text-gray-300">
+            <p>
+              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for exactly 5 days
+            </p>
+            <p>
+              • <strong>Progress:</strong> Watch your shares vest over the 5-day period
+            </p>
+            <p>
+              • <strong>Claim:</strong> After 5 days, claim your shares to your Post-Hold balance
+            </p>
+            <p>
+              • <strong>Slots:</strong> You can use up to 5 vesting slots simultaneously
+            </p>
+            <p>
+              • <strong>Exchange:</strong> Only Post-Hold shares can be sold on the exchange
+            </p>
           </div>
         </div>
       </div>
@@ -609,4 +698,24 @@ export default function Vesting() {
       {showConfetti && <Celebration onComplete={() => setShowConfetti(false)} />}
     </div>
   )
+}
+
+// Function to format maturity date
+const formatMaturityDate = (startTime) => {
+  if (!startTime) return "Not set | Not Set"
+
+  // Add 5 days (for live production)
+  const maturityTime = new Date(startTime + 5 * 24 * 60 * 60 * 1000)
+
+  // Format as DD/MM/YYYY | HH:MM:SS am/pm
+  const day = maturityTime.getDate().toString().padStart(2, "0")
+  const month = (maturityTime.getMonth() + 1).toString().padStart(2, "0")
+  const year = maturityTime.getFullYear()
+
+  const hours = maturityTime.getHours() % 12 || 12
+  const minutes = maturityTime.getMinutes().toString().padStart(2, "0")
+  const seconds = maturityTime.getSeconds().toString().padStart(2, "0")
+  const ampm = maturityTime.getHours() >= 12 ? "pm" : "am"
+
+  return `${day}/${month}/${year} | ${hours}:${minutes}:${seconds} ${ampm}`
 }

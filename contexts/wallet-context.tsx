@@ -1,28 +1,34 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase-singleton"
+import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 
-// Define the shape of our wallet state
+// Define the shape of our NEW wallet state (frontend mapping)
 type WalletState = {
-  pwtInvestBalance: number
-  pwtCashoutBalance: number
-  aftBalance: number
+  buyWalletBalance: number // Maps to activation_fee_balance
+  holdWalletBalance: number // Maps to pwt_invest_balance (will split later)
+  cashoutWalletBalance: number // Maps to pwt_cashout_balance
+  // Temporary pre/post split for UI (50/50 for now)
+  holdWalletPreHold: number // Calculated: holdWalletBalance * 0.5
+  holdWalletPostHold: number // Calculated: holdWalletBalance * 0.5
 }
 
 // Define the context type with state and update functions
 type WalletContextType = WalletState & {
-  updatePwtInvestBalance: (amount: number, operation: "add" | "subtract") => Promise<void>
-  updatePwtCashoutBalance: (amount: number, operation: "add" | "subtract") => Promise<void>
-  updateAftBalance: (amount: number, operation: "add" | "subtract") => Promise<void>
+  // Update functions (still using old backend fields for now)
+  updateBuyWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+  updateHoldWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+  updateCashoutWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+
   // Convenience methods for specific operations
-  transferFromPwtCashout: (amount: number) => Promise<void>
-  transferFromAft: (amount: number) => Promise<void>
-  claimToPwtCashout: (amount: number) => Promise<void>
-  receivePwtInvest: (amount: number) => Promise<void>
-  receiveAft: (amount: number) => Promise<void>
+  topUpBuyWallet: (amount: number) => Promise<void>
+  transferToHold: (amount: number) => Promise<void>
+  transferToCashout: (amount: number) => Promise<void>
+
+  // Calculated values
+  getTotalAccountValue: () => number
+
   refreshBalances: () => Promise<void>
   loading: boolean
 }
@@ -30,222 +36,111 @@ type WalletContextType = WalletState & {
 // Create the context with default values
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
 
-// Initial wallet balances
-const initialWalletState: WalletState = {
-  pwtInvestBalance: 0,
-  pwtCashoutBalance: 0,
-  aftBalance: 0,
+// Static mock data for testing
+const mockWalletData: WalletState = {
+  buyWalletBalance: 1200.0,
+  holdWalletBalance: 9.0, // Total hold wallet
+  cashoutWalletBalance: 0.0,
+  holdWalletPreHold: 5.25, // Available for vesting
+  holdWalletPostHold: 3.75, // Ready for exchange
 }
+
+// Currency formatter for Namibian Dollars
+const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
 
 // Provider component
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // State for wallet balances
-  const [walletState, setWalletState] = useState<WalletState>(initialWalletState)
-  const [loading, setLoading] = useState(true)
+  // State for wallet balances (using mock data)
+  const [walletState, setWalletState] = useState<WalletState>(mockWalletData)
+  const [loading, setLoading] = useState(false)
   const { user } = useAuth()
 
-  // Function to fetch balances
-  const fetchBalances = async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      // Use .maybeSingle() instead of .single() to handle the case where no row exists
-      const { data, error } = await supabase
-        .from("balances")
-        .select("pwt_invest_balance, pwt_cashout_balance, activation_fee_balance")
-        .eq("user_uuid", user.id)
-        .maybeSingle()
-
-      if (error) {
-        console.error("Error fetching balances:", error)
-        return
-      }
-
-      if (data) {
-        setWalletState({
-          pwtInvestBalance: Number(data.pwt_invest_balance) || 0,
-          pwtCashoutBalance: Number(data.pwt_cashout_balance) || 0,
-          aftBalance: Number(data.activation_fee_balance) || 0,
-        })
-      } else {
-        // If no data exists, initialize with zeros and create a record
-        setWalletState({
-          pwtInvestBalance: 0,
-          pwtCashoutBalance: 0,
-          aftBalance: 0,
-        })
-
-        // Create initial balance record if it doesn't exist
-        try {
-          await supabase.from("balances").insert({
-            user_uuid: user.id,
-            pwt_invest_balance: 0,
-            pwt_cashout_balance: 0,
-            activation_fee_balance: 0,
-            display_id: user.id.substring(0, 8).toUpperCase(), // Generate a simple display ID
-            updated_at: new Date().toISOString(),
-          })
-        } catch (insertError) {
-          console.error("Error creating initial balance:", insertError)
-        }
-      }
-    } catch (error) {
-      console.error("Error in fetchBalances:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Load balances from Supabase on initial render
-  useEffect(() => {
-    fetchBalances()
-  }, [user])
-
-  // Function to refresh balances
+  // Mock function to refresh balances (no actual backend call)
   const refreshBalances = async () => {
-    await fetchBalances()
+    setLoading(true)
+    // Simulate loading delay
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    console.log("Mock: Refreshed wallet balances")
+    setLoading(false)
   }
 
-  // Update functions for each wallet
-  const updatePwtInvestBalance = async (amount: number, operation: "add" | "subtract") => {
+  // Update functions (mock implementations)
+  const updateBuyWallet = async (amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
     const newBalance =
-      operation === "add" ? walletState.pwtInvestBalance + amount : walletState.pwtInvestBalance - amount
+      operation === "add" ? walletState.buyWalletBalance + amount : walletState.buyWalletBalance - amount
 
-    // Update local state first for immediate UI feedback
     setWalletState((prev) => ({
       ...prev,
-      pwtInvestBalance: newBalance,
+      buyWalletBalance: newBalance,
     }))
 
-    // Then update in Supabase
-    await supabase
-      .from("balances")
-      .update({
-        pwt_invest_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_uuid", user.id)
+    console.log(`Mock: ${operation} ${amount} to Buy Wallet. New balance: ${newBalance}`)
   }
 
-  const updatePwtCashoutBalance = async (amount: number, operation: "add" | "subtract") => {
-    if (!user) {
-      console.error("WalletContext: Cannot update balance - no user logged in")
-      throw new Error("No user logged in")
-    }
-
-    const oldBalance = walletState.pwtCashoutBalance
-    const newBalance = operation === "add" ? oldBalance + amount : oldBalance - amount
-
-    console.log(
-      `WalletContext: Updating PWT Cashout balance from ${oldBalance} to ${newBalance} (${operation === "add" ? "+" : "-"}${amount})`,
-    )
-
-    // Update local state first for immediate UI feedback
-    setWalletState((prev) => ({
-      ...prev,
-      pwtCashoutBalance: newBalance,
-    }))
-
-    // Then update in Supabase
-    try {
-      const { error } = await supabase
-        .from("balances")
-        .update({
-          pwt_cashout_balance: newBalance,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_uuid", user.id)
-
-      if (error) {
-        console.error(`WalletContext: Database error updating balance:`, error)
-        // Revert local state if database update fails
-        setWalletState((prev) => ({
-          ...prev,
-          pwtCashoutBalance: oldBalance,
-        }))
-        throw error
-      }
-
-      console.log(`WalletContext: Successfully updated PWT Cashout balance in database`)
-      return true
-    } catch (error) {
-      console.error(`WalletContext: Error updating PWT Cashout balance:`, error)
-      // Revert local state if there's an exception
-      setWalletState((prev) => ({
-        ...prev,
-        pwtCashoutBalance: oldBalance,
-      }))
-      throw error
-    }
-  }
-
-  const updateAftBalance = async (amount: number, operation: "add" | "subtract") => {
+  const updateHoldWallet = async (amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
-    const newBalance = operation === "add" ? walletState.aftBalance + amount : walletState.aftBalance - amount
+    const newBalance =
+      operation === "add" ? walletState.holdWalletBalance + amount : walletState.holdWalletBalance - amount
 
-    // Update local state first
+    // Calculate new pre/post split
+    const newPreHold = newBalance * 0.6 // 60% pre-hold
+    const newPostHold = newBalance * 0.4 // 40% post-hold
+
     setWalletState((prev) => ({
       ...prev,
-      aftBalance: newBalance,
+      holdWalletBalance: newBalance,
+      holdWalletPreHold: newPreHold,
+      holdWalletPostHold: newPostHold,
     }))
 
-    // Then update in Supabase
-    await supabase
-      .from("balances")
-      .update({
-        activation_fee_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_uuid", user.id)
+    console.log(`Mock: ${operation} ${amount} to Hold Wallet. New balance: ${newBalance}`)
+  }
+
+  const updateCashoutWallet = async (amount: number, operation: "add" | "subtract") => {
+    if (!user) return
+
+    const newBalance =
+      operation === "add" ? walletState.cashoutWalletBalance + amount : walletState.cashoutWalletBalance - amount
+
+    setWalletState((prev) => ({
+      ...prev,
+      cashoutWalletBalance: newBalance,
+    }))
+
+    console.log(`Mock: ${operation} ${amount} to Cashout Wallet. New balance: ${newBalance}`)
   }
 
   // Convenience methods for specific operations
-  const transferFromPwtCashout = async (amount: number) => {
-    await updatePwtCashoutBalance(amount, "subtract")
+  const topUpBuyWallet = async (amount: number) => {
+    await updateBuyWallet(amount, "add")
   }
 
-  const transferFromAft = async (amount: number) => {
-    await updateAftBalance(amount, "subtract")
+  const transferToHold = async (amount: number) => {
+    await updateHoldWallet(amount, "add")
   }
 
-  const claimToPwtCashout = async (amount: number) => {
-    console.log(`WalletContext: Adding ${amount} PWT to Cashout balance`)
-    try {
-      await updatePwtCashoutBalance(amount, "add")
-      console.log(`WalletContext: Successfully added ${amount} PWT to Cashout balance`)
-      return true
-    } catch (error) {
-      console.error(`WalletContext: Error adding to Cashout balance:`, error)
-      throw error
-    }
+  const transferToCashout = async (amount: number) => {
+    await updateCashoutWallet(amount, "add")
   }
 
-  const receivePwtInvest = async (amount: number) => {
-    await updatePwtInvestBalance(amount, "add")
-  }
-
-  const receiveAft = async (amount: number) => {
-    await updateAftBalance(amount, "add")
+  // Calculated values
+  const getTotalAccountValue = () => {
+    return walletState.buyWalletBalance + walletState.holdWalletBalance + walletState.cashoutWalletBalance
   }
 
   // Context value
   const value = {
     ...walletState,
-    updatePwtInvestBalance,
-    updatePwtCashoutBalance,
-    updateAftBalance,
-    transferFromPwtCashout,
-    transferFromAft,
-    claimToPwtCashout,
-    receivePwtInvest,
-    receiveAft,
+    updateBuyWallet,
+    updateHoldWallet,
+    updateCashoutWallet,
+    topUpBuyWallet,
+    transferToHold,
+    transferToCashout,
+    getTotalAccountValue,
     refreshBalances,
     loading,
   }
@@ -261,3 +156,6 @@ export function useWallet() {
   }
   return context
 }
+
+// Export currency formatter for use in components
+export { formatCurrency }
