@@ -93,7 +93,12 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
 
       {slot.status === "empty" && (
         <div className="text-center py-8">
-          <div className="text-slate-400 text-sm mb-4">Click VEST to begin locking shares</div>
+          <div className="text-slate-400 text-sm mb-4">
+            Click VEST to begin locking shares
+            <div className="text-xs text-slate-500 mt-1">
+              Hold periods: Retail (5d), Small Business (30d), Corporate (90d)
+            </div>
+          </div>
           <button
             onClick={handleVestClick}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-medium transition-colors"

@@ -466,7 +466,8 @@ export default function Vesting() {
           <h3 className="text-lg font-medium mb-3 text-slate-100">How Vesting Works</h3>
           <div className="space-y-2 text-sm text-slate-300">
             <p>
-              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for different periods
+              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for 5 days (Retail), 30 days (Small
+              Business), or 90 days (Corporate)
             </p>
             <p>
               • <strong>Hold Periods:</strong> Retail (5 days), Small Business (30 days), Corporate (90 days)
