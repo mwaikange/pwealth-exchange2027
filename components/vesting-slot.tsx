@@ -26,15 +26,19 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
   const [progress, setProgress] = useState(slot.progress || 0)
   const [timeRemaining, setTimeRemaining] = useState("")
 
-  // Update progress and time remaining
+  // Update progress and time remaining based on level's hold period
   useEffect(() => {
-    if (slot.status === "in_progress" && slot.startDate) {
+    if (slot.status === "in_progress" && slot.startDate && slot.level) {
       const interval = setInterval(() => {
         const now = Date.now()
         const elapsed = now - slot.startDate!
-        const totalTime = 5 * 24 * 60 * 60 * 1000 // 5 days in milliseconds
-        const newProgress = Math.min(100, (elapsed / totalTime) * 100)
 
+        // Get hold period for this level
+        const levelConfig = VESTING_LEVELS[slot.level as keyof typeof VESTING_LEVELS]
+        const holdDays = levelConfig ? levelConfig.holdDays : 5
+        const totalTime = holdDays * 24 * 60 * 60 * 1000 // Convert days to milliseconds
+
+        const newProgress = Math.min(100, (elapsed / totalTime) * 100)
         setProgress(newProgress)
 
         if (newProgress >= 100) {
@@ -57,7 +61,7 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
 
       return () => clearInterval(interval)
     }
-  }, [slot.status, slot.startDate])
+  }, [slot.status, slot.startDate, slot.level])
 
   const handleVestClick = () => {
     onVest(slotIndex)
@@ -69,7 +73,8 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
 
   const getLevelInfo = () => {
     if (slot.level && VESTING_LEVELS[slot.level as keyof typeof VESTING_LEVELS]) {
-      return VESTING_LEVELS[slot.level as keyof typeof VESTING_LEVELS].name
+      const levelConfig = VESTING_LEVELS[slot.level as keyof typeof VESTING_LEVELS]
+      return `${levelConfig.name} (${levelConfig.holdDays}d)`
     }
     return ""
   }
@@ -88,7 +93,7 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
 
       {slot.status === "empty" && (
         <div className="text-center py-8">
-          <div className="text-slate-400 text-sm mb-4">Click VEST to begin locking shares for 5 days</div>
+          <div className="text-slate-400 text-sm mb-4">Click VEST to begin locking shares</div>
           <button
             onClick={handleVestClick}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-medium transition-colors"

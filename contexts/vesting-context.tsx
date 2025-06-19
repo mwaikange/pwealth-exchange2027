@@ -14,11 +14,11 @@ export type VestingSlotData = {
   level?: number
 }
 
-// Define vesting levels with their limits
+// Define vesting levels with their limits and hold periods
 export const VESTING_LEVELS = {
-  1: { name: "Retail", min: 1, max: 50 },
-  2: { name: "Small Business", min: 51, max: 500 },
-  3: { name: "Corporate", min: 501, max: Number.POSITIVE_INFINITY },
+  1: { name: "Retail", min: 1, max: 50, holdDays: 5 },
+  2: { name: "Small Business", min: 51, max: 500, holdDays: 30 },
+  3: { name: "Corporate", min: 501, max: Number.POSITIVE_INFINITY, holdDays: 90 },
 }
 
 // Define the context type
@@ -31,6 +31,7 @@ type VestingContextType = {
   getSchedulesByLevel: (level: number) => VestingSlotData[]
   getScheduleById: (id: string) => VestingSlotData | undefined
   validateVestingAmount: (amount: number, level: number) => { valid: boolean; error?: string }
+  getHoldPeriodForLevel: (level: number) => number
   loading: boolean
 }
 
@@ -45,17 +46,24 @@ const mockVestingSlots: VestingSlotData[] = [
     startDate: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
     amount: 25,
     progress: 40,
-    level: 1,
+    level: 1, // Retail - 5 days
   },
   {
     id: "slot-2",
-    status: "claimable",
-    startDate: Date.now() - 5 * 24 * 60 * 60 * 1000, // 5 days ago
+    status: "in_progress",
+    startDate: Date.now() - 10 * 24 * 60 * 60 * 1000, // 10 days ago
     amount: 100,
-    progress: 100,
-    level: 2,
+    progress: 33, // 10/30 days for Small Business
+    level: 2, // Small Business - 30 days
   },
-  { id: "slot-3", status: "empty" },
+  {
+    id: "slot-3",
+    status: "in_progress",
+    startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
+    amount: 750,
+    progress: 33, // 30/90 days for Corporate
+    level: 3, // Corporate - 90 days
+  },
   { id: "slot-4", status: "empty" },
   { id: "slot-5", status: "empty" },
   { id: "slot-6", status: "empty" },
@@ -69,14 +77,21 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   const [vestingSlots, setVestingSlots] = useState<VestingSlotData[]>(mockVestingSlots)
   const [loading, setLoading] = useState(false)
 
+  // Get hold period for a specific level
+  const getHoldPeriodForLevel = (level: number): number => {
+    const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
+    return levelConfig ? levelConfig.holdDays : 5 // Default to 5 days
+  }
+
   // Update progress of active vesting slots
   useEffect(() => {
     const interval = setInterval(() => {
       setVestingSlots((prevSlots) => {
         return prevSlots.map((slot) => {
-          if (slot.status === "in_progress" && slot.startDate) {
+          if (slot.status === "in_progress" && slot.startDate && slot.level) {
             const elapsed = Date.now() - slot.startDate
-            const totalTime = 5 * 24 * 60 * 60 * 1000 // 5 days
+            const holdDays = getHoldPeriodForLevel(slot.level)
+            const totalTime = holdDays * 24 * 60 * 60 * 1000 // Convert days to milliseconds
             const newProgress = Math.min(100, (elapsed / totalTime) * 100)
 
             // If progress reaches 100%, mark as claimable
@@ -151,8 +166,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         return newSlots
       })
 
+      const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
       console.log(
-        `Mock: Vested ${amount} shares in slot ${slotIndex + 1} at ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} level`,
+        `Mock: Vested ${amount} shares in slot ${slotIndex + 1} at ${levelConfig.name} level (${levelConfig.holdDays} days)`,
       )
     } catch (error) {
       console.error("Error vesting shares:", error)
@@ -219,6 +235,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     getTotalVestingInProgress,
     getTotalClaimableShares,
     validateVestingAmount,
+    getHoldPeriodForLevel,
     // legacy
     getSchedulesByLevel,
     getScheduleById,

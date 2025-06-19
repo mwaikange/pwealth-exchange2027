@@ -7,7 +7,7 @@ import { useTransactions } from "@/contexts/transaction-context"
 import Celebration from "@/components/celebration"
 import { VestingSlot } from "@/components/vesting-slot"
 import { VestConfirmationModal } from "@/components/vest-confirmation-modal"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Clock } from "lucide-react"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("Retail")
@@ -47,6 +47,7 @@ export default function Vesting() {
     getTotalVestingInProgress,
     getTotalClaimableShares,
     validateVestingAmount,
+    getHoldPeriodForLevel,
     loading,
   } = useVesting()
 
@@ -307,12 +308,13 @@ export default function Vesting() {
 
       // Record transaction
       if (typeof addTransaction === "function") {
+        const holdDays = getHoldPeriodForLevel(level)
         await addTransaction({
           type: "VEST",
           account: "Hold Wallet (Pre-Hold)",
           amount: amount,
           amountUsd: amount * 100, // Assuming N$100 per share
-          description: `Vested ${amount} shares in Slot ${selectedSlotIndex + 1} (${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name})`,
+          description: `Vested ${amount} shares in Slot ${selectedSlotIndex + 1} (${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name}, ${holdDays} days)`,
         })
       }
     } catch (error) {
@@ -332,7 +334,7 @@ export default function Vesting() {
       {/* Page Title */}
       <div className="px-6 mb-2">
         <h1 className="text-2xl font-bold text-slate-100">Vesting Schedules</h1>
-        <p className="text-slate-400 text-sm">Lock shares for 5 days to move them to Post-Hold</p>
+        <p className="text-slate-400 text-sm">Lock shares with different hold periods based on investment level</p>
       </div>
 
       {/* Success and error messages */}
@@ -376,42 +378,68 @@ export default function Vesting() {
         </div>
       </div>
 
-      {/* Level Tabs */}
+      {/* Level Tabs with Hold Periods */}
       <div className="px-6 mb-6">
         <div className="flex mb-4">
           <button
-            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+            className={`flex-1 py-3 px-4 font-medium text-sm rounded-t-lg ${
               activeTab === "Retail" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
             }`}
             onClick={() => setActiveTab("Retail")}
           >
-            Retail (1-50 shares)
+            <div className="flex flex-col items-center">
+              <span>Retail</span>
+              <span className="text-xs opacity-75">1-50 shares</span>
+              <div className="flex items-center text-xs opacity-75 mt-1">
+                <Clock className="w-3 h-3 mr-1" />5 days
+              </div>
+            </div>
           </button>
           <button
-            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+            className={`flex-1 py-3 px-4 font-medium text-sm rounded-t-lg ${
               activeTab === "Small Business" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
             }`}
             onClick={() => setActiveTab("Small Business")}
           >
-            Small Business (51-500 shares)
+            <div className="flex flex-col items-center">
+              <span>Small Business</span>
+              <span className="text-xs opacity-75">51-500 shares</span>
+              <div className="flex items-center text-xs opacity-75 mt-1">
+                <Clock className="w-3 h-3 mr-1" />
+                30 days
+              </div>
+            </div>
           </button>
           <button
-            className={`flex-1 py-2 px-4 font-medium text-sm rounded-t-lg ${
+            className={`flex-1 py-3 px-4 font-medium text-sm rounded-t-lg ${
               activeTab === "Corporate" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400"
             }`}
             onClick={() => setActiveTab("Corporate")}
           >
-            Corporate (501+ shares)
+            <div className="flex flex-col items-center">
+              <span>Corporate</span>
+              <span className="text-xs opacity-75">501+ shares</span>
+              <div className="flex items-center text-xs opacity-75 mt-1">
+                <Clock className="w-3 h-3 mr-1" />
+                90 days
+              </div>
+            </div>
           </button>
         </div>
 
         {/* Level Info */}
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-6">
           <h3 className="text-lg font-medium mb-2 text-slate-100">{activeTab} Level</h3>
+          <div className="flex items-center text-slate-300 text-sm mb-2">
+            <Clock className="w-4 h-4 mr-2 text-blue-400" />
+            <span className="font-medium">Hold Period: {getHoldPeriodForLevel(getActiveLevel())} days</span>
+          </div>
           <p className="text-slate-300 text-sm">
-            {activeTab === "Retail" && "Perfect for individual investors. Vest 1-50 shares per slot."}
-            {activeTab === "Small Business" && "Ideal for small business investments. Vest 51-500 shares per slot."}
-            {activeTab === "Corporate" && "For large-scale corporate investments. Vest 501+ shares per slot."}
+            {activeTab === "Retail" && "Perfect for individual investors. Vest 1-50 shares per slot for 5 days."}
+            {activeTab === "Small Business" &&
+              "Ideal for small business investments. Vest 51-500 shares per slot for 30 days."}
+            {activeTab === "Corporate" &&
+              "For large-scale corporate investments. Vest 501+ shares per slot for 90 days."}
           </p>
         </div>
       </div>
@@ -438,17 +466,20 @@ export default function Vesting() {
           <h3 className="text-lg font-medium mb-3 text-slate-100">How Vesting Works</h3>
           <div className="space-y-2 text-sm text-slate-300">
             <p>
-              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for exactly 5 days
+              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for different periods
             </p>
             <p>
-              • <strong>Levels:</strong> Choose Retail (1-50), Small Business (51-500), or Corporate (501+) based on
-              amount
+              • <strong>Hold Periods:</strong> Retail (5 days), Small Business (30 days), Corporate (90 days)
             </p>
             <p>
-              • <strong>Progress:</strong> Watch your shares vest over the 5-day period
+              • <strong>Levels:</strong> Choose based on amount - Retail (1-50), Small Business (51-500), Corporate
+              (501+)
             </p>
             <p>
-              • <strong>Claim:</strong> After 5 days, claim your shares to your Post-Hold balance
+              • <strong>Progress:</strong> Watch your shares vest over the selected period
+            </p>
+            <p>
+              • <strong>Claim:</strong> After the hold period, claim your shares to your Post-Hold balance
             </p>
             <p>
               • <strong>Slots:</strong> You can use up to 6 vesting slots simultaneously

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { X, AlertTriangle, Loader2 } from "lucide-react"
+import { X, AlertTriangle, Loader2, Clock } from "lucide-react"
 import { VESTING_LEVELS } from "@/contexts/vesting-context"
 
 interface VestConfirmationModalProps {
@@ -120,10 +120,23 @@ export function VestConfirmationModal({
               className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 text-slate-100"
               disabled={isProcessing}
             >
-              <option value={1}>Level 1 - Retail (1-50 shares)</option>
-              <option value={2}>Level 2 - Small Business (51-500 shares)</option>
-              <option value={3}>Level 3 - Corporate (501+ shares)</option>
+              <option value={1}>Level 1 - Retail (1-50 shares, 5 days)</option>
+              <option value={2}>Level 2 - Small Business (51-500 shares, 30 days)</option>
+              <option value={3}>Level 3 - Corporate (501+ shares, 90 days)</option>
             </select>
+          </div>
+
+          {/* Hold Period Info */}
+          <div className="bg-blue-500/20 border border-blue-500 rounded-md p-3">
+            <div className="flex items-center text-blue-400 text-sm">
+              <Clock className="w-4 h-4 mr-2" />
+              <div>
+                <div className="font-medium">{levelConfig.name} Hold Period</div>
+                <div className="text-xs text-blue-300">
+                  Your shares will be locked for exactly {levelConfig.holdDays} days
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Amount Input */}
@@ -159,8 +172,8 @@ export function VestConfirmationModal({
                 <div className="font-medium mb-1">Important Notice:</div>
                 <ul className="space-y-1 text-xs">
                   <li>• Shares will be deducted from your Pre-Hold balance</li>
-                  <li>• Vested shares will be locked and unusable for 5 days maximum</li>
-                  <li>• After 5 days, you can claim shares to your Post-Hold balance</li>
+                  <li>• Vested shares will be locked for {levelConfig.holdDays} days</li>
+                  <li>• After {levelConfig.holdDays} days, you can claim shares to your Post-Hold balance</li>
                   <li>• This action cannot be reversed once confirmed</li>
                 </ul>
               </div>
@@ -187,7 +200,7 @@ export function VestConfirmationModal({
                 Processing...
               </>
             ) : (
-              "Confirm Vest"
+              `Vest for ${levelConfig.holdDays} days`
             )}
           </button>
         </div>
