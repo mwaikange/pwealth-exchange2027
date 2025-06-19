@@ -389,7 +389,6 @@ export default function Vesting() {
           >
             <div className="flex flex-col items-center">
               <span>Retail</span>
-              <span className="text-xs opacity-75">1-50 shares</span>
               <div className="flex items-center text-xs opacity-75 mt-1">
                 <Clock className="w-3 h-3 mr-1" />5 days
               </div>
@@ -403,7 +402,6 @@ export default function Vesting() {
           >
             <div className="flex flex-col items-center">
               <span>Small Business</span>
-              <span className="text-xs opacity-75">51-500 shares</span>
               <div className="flex items-center text-xs opacity-75 mt-1">
                 <Clock className="w-3 h-3 mr-1" />
                 30 days
@@ -418,7 +416,6 @@ export default function Vesting() {
           >
             <div className="flex flex-col items-center">
               <span>Corporate</span>
-              <span className="text-xs opacity-75">501+ shares</span>
               <div className="flex items-center text-xs opacity-75 mt-1">
                 <Clock className="w-3 h-3 mr-1" />
                 90 days
