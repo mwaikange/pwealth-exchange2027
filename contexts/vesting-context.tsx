@@ -23,9 +23,9 @@ export const VESTING_LEVELS = {
 
 // Define the context type
 type VestingContextType = {
-  vestingSlots: VestingSlotData[]
-  vestShares: (slotIndex: number, amount: number, level: number) => Promise<void>
-  claimShares: (slotIndex: number) => Promise<void>
+  getVestingSlotsForLevel: (level: number) => VestingSlotData[]
+  vestShares: (level: number, slotIndex: number, amount: number) => Promise<void>
+  claimShares: (level: number, slotIndex: number) => Promise<void>
   getTotalVestingInProgress: () => number
   getTotalClaimableShares: () => number
   getSchedulesByLevel: (level: number) => VestingSlotData[]
@@ -38,61 +38,87 @@ type VestingContextType = {
 // Create the context
 const VestingContext = createContext<VestingContextType | undefined>(undefined)
 
-// Static mock data for testing - now with 6 slots showing different levels
-const mockVestingSlots: VestingSlotData[] = [
-  {
-    id: "slot-1",
-    status: "in_progress",
-    startDate: Date.now() - 2 * 24 * 60 * 60 * 1000, // Started 2 days ago
-    amount: 25,
-    progress: 40,
-    level: 1, // Retail - 5 days
-  },
-  {
-    id: "slot-2",
-    status: "in_progress",
-    startDate: Date.now() - 10 * 24 * 60 * 60 * 1000, // Started 10 days ago
-    amount: 100,
-    progress: 33,
-    level: 2, // Small Business - 30 days
-  },
-  {
-    id: "slot-3",
-    status: "in_progress",
-    startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // Started 30 days ago
-    amount: 750,
-    progress: 33,
-    level: 3, // Corporate - 90 days
-  },
-  {
-    id: "slot-4",
-    status: "claimable",
-    startDate: Date.now() - 5 * 24 * 60 * 60 * 1000, // Completed 5 days ago
-    amount: 15,
-    progress: 100,
-    level: 1, // Retail - 5 days (completed)
-  },
-  {
-    id: "slot-5",
-    status: "claimable",
-    startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // Completed 30 days ago
-    amount: 200,
-    progress: 100,
-    level: 2, // Small Business - 30 days (completed)
-  },
-  {
-    id: "slot-6",
-    status: "empty",
-  },
-]
-
 // Provider component
 export function VestingProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
 
-  // State for vesting slots (using mock data)
-  const [vestingSlots, setVestingSlots] = useState<VestingSlotData[]>(mockVestingSlots)
+  // Separate slots for each level - 6 slots per level = 18 total
+  const [retailSlots, setRetailSlots] = useState<VestingSlotData[]>([])
+  const [smallBusinessSlots, setSmallBusinessSlots] = useState<VestingSlotData[]>([])
+  const [corporateSlots, setCorporateSlots] = useState<VestingSlotData[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Initialize slots for each level
+  useEffect(() => {
+    // Retail slots (Level 1) - 6 slots
+    const initRetailSlots: VestingSlotData[] = [
+      {
+        id: "retail-slot-1",
+        status: "in_progress",
+        startDate: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
+        amount: 25,
+        progress: 40,
+        level: 1,
+      },
+      {
+        id: "retail-slot-2",
+        status: "claimable",
+        startDate: Date.now() - 5 * 24 * 60 * 60 * 1000, // 5 days ago (completed)
+        amount: 15,
+        progress: 100,
+        level: 1,
+      },
+      { id: "retail-slot-3", status: "empty", level: 1 },
+      { id: "retail-slot-4", status: "empty", level: 1 },
+      { id: "retail-slot-5", status: "empty", level: 1 },
+      { id: "retail-slot-6", status: "empty", level: 1 },
+    ]
+
+    // Small Business slots (Level 2) - 6 slots
+    const initSmallBusinessSlots: VestingSlotData[] = [
+      {
+        id: "smallbiz-slot-1",
+        status: "in_progress",
+        startDate: Date.now() - 10 * 24 * 60 * 60 * 1000, // 10 days ago
+        amount: 100,
+        progress: 33,
+        level: 2,
+      },
+      {
+        id: "smallbiz-slot-2",
+        status: "claimable",
+        startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago (completed)
+        amount: 200,
+        progress: 100,
+        level: 2,
+      },
+      { id: "smallbiz-slot-3", status: "empty", level: 2 },
+      { id: "smallbiz-slot-4", status: "empty", level: 2 },
+      { id: "smallbiz-slot-5", status: "empty", level: 2 },
+      { id: "smallbiz-slot-6", status: "empty", level: 2 },
+    ]
+
+    // Corporate slots (Level 3) - 6 slots
+    const initCorporateSlots: VestingSlotData[] = [
+      {
+        id: "corporate-slot-1",
+        status: "in_progress",
+        startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
+        amount: 750,
+        progress: 33,
+        level: 3,
+      },
+      { id: "corporate-slot-2", status: "empty", level: 3 },
+      { id: "corporate-slot-3", status: "empty", level: 3 },
+      { id: "corporate-slot-4", status: "empty", level: 3 },
+      { id: "corporate-slot-5", status: "empty", level: 3 },
+      { id: "corporate-slot-6", status: "empty", level: 3 },
+    ]
+
+    setRetailSlots(initRetailSlots)
+    setSmallBusinessSlots(initSmallBusinessSlots)
+    setCorporateSlots(initCorporateSlots)
+  }, [])
 
   // Get hold period for a specific level
   const getHoldPeriodForLevel = (level: number): number => {
@@ -100,11 +126,39 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return levelConfig ? levelConfig.holdDays : 5 // Default to 5 days
   }
 
-  // Update progress of active vesting slots
+  // Get slots for a specific level
+  const getVestingSlotsForLevel = (level: number): VestingSlotData[] => {
+    switch (level) {
+      case 1:
+        return retailSlots
+      case 2:
+        return smallBusinessSlots
+      case 3:
+        return corporateSlots
+      default:
+        return []
+    }
+  }
+
+  // Get setter function for a specific level
+  const getSlotSetter = (level: number) => {
+    switch (level) {
+      case 1:
+        return setRetailSlots
+      case 2:
+        return setSmallBusinessSlots
+      case 3:
+        return setCorporateSlots
+      default:
+        return setRetailSlots
+    }
+  }
+
+  // Update progress of active vesting slots for all levels
   useEffect(() => {
     const interval = setInterval(() => {
-      setVestingSlots((prevSlots) => {
-        return prevSlots.map((slot) => {
+      const updateSlots = (slots: VestingSlotData[], level: number) => {
+        return slots.map((slot) => {
           if (slot.status === "in_progress" && slot.startDate && slot.level) {
             const elapsed = Date.now() - slot.startDate
             const holdDays = getHoldPeriodForLevel(slot.level)
@@ -127,7 +181,11 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           }
           return slot
         })
-      })
+      }
+
+      setRetailSlots((prev) => updateSlots(prev, 1))
+      setSmallBusinessSlots((prev) => updateSlots(prev, 2))
+      setCorporateSlots((prev) => updateSlots(prev, 3))
     }, 1000) // Update every second
 
     return () => clearInterval(interval)
@@ -152,14 +210,17 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Vest shares function (mock implementation)
-  const vestShares = async (slotIndex: number, amount: number, level: number) => {
+  const vestShares = async (level: number, slotIndex: number, amount: number) => {
     if (!user || slotIndex < 0 || slotIndex >= 6) return
 
     try {
       setLoading(true)
 
+      const slots = getVestingSlotsForLevel(level)
+      const setSlots = getSlotSetter(level)
+
       // Check if slot is empty
-      if (vestingSlots[slotIndex].status !== "empty") {
+      if (slots[slotIndex].status !== "empty") {
         throw new Error("Slot is not empty")
       }
 
@@ -170,10 +231,10 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Update the slot
-      setVestingSlots((prevSlots) => {
+      setSlots((prevSlots) => {
         const newSlots = [...prevSlots]
         newSlots[slotIndex] = {
-          id: `slot-${slotIndex + 1}`,
+          id: `${level === 1 ? "retail" : level === 2 ? "smallbiz" : "corporate"}-slot-${slotIndex + 1}`,
           status: "in_progress",
           startDate: Date.now(),
           amount: amount,
@@ -185,7 +246,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
       console.log(
-        `Mock: Vested ${amount} shares in slot ${slotIndex + 1} at ${levelConfig.name} level (${levelConfig.holdDays} days)`,
+        `Mock: Vested ${amount} shares in ${levelConfig.name} slot ${slotIndex + 1} (${levelConfig.holdDays} days)`,
       )
     } catch (error) {
       console.error("Error vesting shares:", error)
@@ -196,28 +257,34 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Claim shares function (mock implementation)
-  const claimShares = async (slotIndex: number) => {
+  const claimShares = async (level: number, slotIndex: number) => {
     if (!user || slotIndex < 0 || slotIndex >= 6) return
 
     try {
       setLoading(true)
 
-      const slot = vestingSlots[slotIndex]
+      const slots = getVestingSlotsForLevel(level)
+      const setSlots = getSlotSetter(level)
+      const slot = slots[slotIndex]
+
       if (slot.status !== "claimable" || !slot.amount) {
         throw new Error("Slot is not claimable")
       }
 
       // Reset the slot to empty
-      setVestingSlots((prevSlots) => {
+      setSlots((prevSlots) => {
         const newSlots = [...prevSlots]
         newSlots[slotIndex] = {
-          id: `slot-${slotIndex + 1}`,
+          id: `${level === 1 ? "retail" : level === 2 ? "smallbiz" : "corporate"}-slot-${slotIndex + 1}`,
           status: "empty",
+          level: level,
         }
         return newSlots
       })
 
-      console.log(`Mock: Claimed ${slot.amount} shares from slot ${slotIndex + 1}`)
+      console.log(
+        `Mock: Claimed ${slot.amount} shares from ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot ${slotIndex + 1}`,
+      )
     } catch (error) {
       console.error("Error claiming shares:", error)
       throw error
@@ -226,18 +293,18 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Get total shares currently vesting
+  // Get total shares currently vesting across all levels
   const getTotalVestingInProgress = () => {
-    return vestingSlots
+    const allSlots = [...retailSlots, ...smallBusinessSlots, ...corporateSlots]
+    return allSlots
       .filter((slot) => slot.status === "in_progress")
       .reduce((total, slot) => total + (slot.amount || 0), 0)
   }
 
-  // Get total claimable shares
+  // Get total claimable shares across all levels
   const getTotalClaimableShares = () => {
-    return vestingSlots
-      .filter((slot) => slot.status === "claimable")
-      .reduce((total, slot) => total + (slot.amount || 0), 0)
+    const allSlots = [...retailSlots, ...smallBusinessSlots, ...corporateSlots]
+    return allSlots.filter((slot) => slot.status === "claimable").reduce((total, slot) => total + (slot.amount || 0), 0)
   }
 
   // Legacy helpers kept for backward compatibility
@@ -246,7 +313,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // Context value
   const value = {
-    vestingSlots,
+    getVestingSlotsForLevel,
     vestShares,
     claimShares,
     getTotalVestingInProgress,

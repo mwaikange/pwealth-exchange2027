@@ -9,9 +9,10 @@ import { VESTING_LEVELS } from "@/contexts/vesting-context"
 interface VestConfirmationModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (amount: number, level: number) => Promise<void>
+  onConfirm: (amount: number) => Promise<void>
   availableShares: number
   slotIndex: number
+  fixedLevel: number // The level is now fixed based on which tab the user clicked from
 }
 
 export function VestConfirmationModal({
@@ -20,9 +21,9 @@ export function VestConfirmationModal({
   onConfirm,
   availableShares,
   slotIndex,
+  fixedLevel,
 }: VestConfirmationModalProps) {
   const [amount, setAmount] = useState("")
-  const [selectedLevel, setSelectedLevel] = useState(1)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState("")
 
@@ -31,11 +32,6 @@ export function VestConfirmationModal({
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/[^\d]/g, "")
     setAmount(value)
-    setError("")
-  }
-
-  const handleLevelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedLevel(Number(e.target.value))
     setError("")
   }
 
@@ -50,7 +46,7 @@ export function VestConfirmationModal({
       return `Insufficient shares. You have ${availableShares} shares available`
     }
 
-    const levelConfig = VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS]
+    const levelConfig = VESTING_LEVELS[fixedLevel as keyof typeof VESTING_LEVELS]
     if (numAmount < levelConfig.min) {
       return `Minimum ${levelConfig.min} shares required for ${levelConfig.name} level`
     }
@@ -71,9 +67,8 @@ export function VestConfirmationModal({
 
     try {
       setIsProcessing(true)
-      await onConfirm(Number(amount), selectedLevel)
+      await onConfirm(Number(amount))
       setAmount("")
-      setSelectedLevel(1)
       setError("")
       onClose()
     } catch (err) {
@@ -86,13 +81,12 @@ export function VestConfirmationModal({
   const handleClose = () => {
     if (!isProcessing) {
       setAmount("")
-      setSelectedLevel(1)
       setError("")
       onClose()
     }
   }
 
-  const levelConfig = VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS]
+  const levelConfig = VESTING_LEVELS[fixedLevel as keyof typeof VESTING_LEVELS]
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -111,28 +105,24 @@ export function VestConfirmationModal({
             <div className="text-2xl font-bold text-blue-400">{availableShares}</div>
           </div>
 
-          {/* Level Selection */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Vesting Level</label>
-            <select
-              value={selectedLevel}
-              onChange={handleLevelChange}
-              className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 text-slate-100"
-              disabled={isProcessing}
-            >
-              <option value={1}>Level 1 - Retail (1-50 shares, 5 days)</option>
-              <option value={2}>Level 2 - Small Business (51-500 shares, 30 days)</option>
-              <option value={3}>Level 3 - Corporate (501+ shares, 90 days)</option>
-            </select>
+          {/* Fixed Level Display (No Dropdown) */}
+          <div className="bg-blue-500/20 border border-blue-500 rounded-md p-3">
+            <div className="text-sm font-medium text-blue-300 mb-2">Vesting Level (Fixed)</div>
+            <div className="text-lg font-bold text-blue-100">
+              Level {fixedLevel} - {levelConfig.name}
+            </div>
+            <div className="text-xs text-blue-300 mt-1">
+              {levelConfig.min}-{levelConfig.max === Number.POSITIVE_INFINITY ? "∞" : levelConfig.max} shares
+            </div>
           </div>
 
           {/* Hold Period Info */}
-          <div className="bg-blue-500/20 border border-blue-500 rounded-md p-3">
-            <div className="flex items-center text-blue-400 text-sm">
+          <div className="bg-yellow-500/20 border border-yellow-500 rounded-md p-3">
+            <div className="flex items-center text-yellow-400 text-sm">
               <Clock className="w-4 h-4 mr-2" />
               <div>
                 <div className="font-medium">{levelConfig.name} Hold Period</div>
-                <div className="text-xs text-blue-300">
+                <div className="text-xs text-yellow-300">
                   Your shares will be locked for exactly {levelConfig.holdDays} days
                 </div>
               </div>
@@ -165,10 +155,10 @@ export function VestConfirmationModal({
           )}
 
           {/* Warning Notice */}
-          <div className="bg-yellow-500/20 border border-yellow-500 rounded-md p-3">
+          <div className="bg-orange-500/20 border border-orange-500 rounded-md p-3">
             <div className="flex items-start">
-              <AlertTriangle className="w-4 h-4 text-yellow-500 mr-2 mt-0.5" />
-              <div className="text-sm text-yellow-200">
+              <AlertTriangle className="w-4 h-4 text-orange-500 mr-2 mt-0.5" />
+              <div className="text-sm text-orange-200">
                 <div className="font-medium mb-1">Important Notice:</div>
                 <ul className="space-y-1 text-xs">
                   <li>• Shares will be deducted from your Pre-Hold balance</li>
