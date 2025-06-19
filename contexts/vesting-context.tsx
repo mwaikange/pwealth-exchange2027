@@ -20,6 +20,8 @@ type VestingContextType = {
   claimShares: (slotIndex: number) => Promise<void>
   getTotalVestingInProgress: () => number
   getTotalClaimableShares: () => number
+  getSchedulesByLevel: (level: number) => VestingSlotData[]
+  getScheduleById: (id: string) => VestingSlotData | undefined
   loading: boolean
 }
 
@@ -166,6 +168,14 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       .reduce((total, slot) => total + (slot.amount || 0), 0)
   }
 
+  // ────────────────────────────────────────────────────────────
+  // Legacy helpers kept for backward compatibility with pages
+  // that still expect the multi-level API. They return sensible
+  // defaults so the UI can render without crashing.
+  const getSchedulesByLevel = (_level: number) => [] // no levels any more
+  const getScheduleById = (_id: string) => undefined // id lookup not used
+  // ────────────────────────────────────────────────────────────
+
   // Context value
   const value = {
     vestingSlots,
@@ -173,6 +183,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     claimShares,
     getTotalVestingInProgress,
     getTotalClaimableShares,
+    // legacy
+    getSchedulesByLevel,
+    getScheduleById,
     loading,
   }
 
