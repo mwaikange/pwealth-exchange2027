@@ -1,242 +1,241 @@
+export type TransactionType =
+  | "WALLET_TOPUP"
+  | "BUY_ORDER_PLACED"
+  | "SELL_ORDER_PLACED"
+  | "ORDER_MATCHED"
+  | "ORDER_EXPIRED"
+  | "ORDER_CANCELLED"
+  | "VESTING"
+  | "CLAIM"
+  | "CASHOUT_REQUESTED"
+  | "REFERRAL_BONUS"
+  | "REFERRAL_CLAIM"
+
 export interface Transaction {
-  id: string
-  type: string
+  id: number
+  type: TransactionType
   description: string
   amount?: number // NAD amount
   shares?: number // Share amount
-  price?: number // Price per share
   status: "completed" | "pending" | "started" | "expired" | "cancelled"
   date: string
   reference: string
-  from_wallet?: string
-  to_wallet?: string
+  from?: string
+  to?: string
   buyer?: string
   seller?: string
+  price?: number
 }
 
 export const mockTransactions: Transaction[] = [
   {
-    id: "tx-001",
+    id: 1,
     type: "WALLET_TOPUP",
-    description: "NAD added to Buy Wallet",
-    amount: 1000,
+    description: "NAD added to Buy Wallet via mobile payment",
+    amount: 1500,
     status: "completed",
     date: "2025-01-20 14:30",
-    reference: "TXN-WLT-001",
-    to_wallet: "Buy Wallet",
+    reference: "TXN-WLT-789012",
+    to: "buy_wallet",
   },
   {
-    id: "tx-002",
+    id: 2,
     type: "BUY_ORDER_PLACED",
-    description: "Buy order placed for shares",
-    amount: 500,
-    shares: 5,
-    price: 100,
-    status: "completed",
-    date: "2025-01-20 10:15",
-    reference: "TXN-BUY-002",
-    from_wallet: "Buy Wallet",
-  },
-  {
-    id: "tx-003",
-    type: "ORDER_MATCHED",
-    description: "Buy/Sell order matched",
-    shares: 5,
-    price: 100,
-    amount: 500,
-    status: "completed",
-    date: "2025-01-20 10:16",
-    reference: "TXN-MATCH-003",
-    buyer: "You",
-    seller: "User456",
-  },
-  {
-    id: "tx-004",
-    type: "VESTING",
-    description: "Shares vested (Retail Level)",
-    shares: 25,
-    status: "started",
-    date: "2025-01-19 09:00",
-    reference: "TXN-VEST-004",
-    from_wallet: "Pre-Hold",
-    to_wallet: "Vesting Slot 1",
-  },
-  {
-    id: "tx-005",
-    type: "SELL_ORDER_PLACED",
-    description: "Sell order listed on exchange",
-    shares: 10,
-    price: 105,
-    amount: 1050,
-    status: "pending",
-    date: "2025-01-19 16:45",
-    reference: "TXN-SELL-005",
-    from_wallet: "Post-Hold",
-  },
-  {
-    id: "tx-006",
-    type: "CLAIM",
-    description: "Vested shares claimed (Retail Level)",
+    description: "Buy order placed for 15 shares",
+    amount: 1500,
     shares: 15,
     status: "completed",
-    date: "2025-01-18 11:20",
-    reference: "TXN-CLAIM-006",
-    from_wallet: "Vesting Slot 4",
-    to_wallet: "Post-Hold",
+    date: "2025-01-20 14:45",
+    reference: "ORD-BUY-345678",
+    from: "buy_wallet",
   },
   {
-    id: "tx-007",
+    id: 3,
+    type: "ORDER_MATCHED",
+    description: "Buy/Sell order matched - 10 shares traded",
+    amount: 1000,
+    shares: 10,
+    status: "completed",
+    date: "2025-01-20 15:00",
+    reference: "MTH-789123",
+    buyer: "current-user",
+    seller: "user-456",
+    price: 100,
+  },
+  {
+    id: 4,
+    type: "VESTING",
+    description: "12 shares vested in Retail slot for 5 days",
+    shares: 12,
+    status: "started",
+    date: "2025-01-19 09:15",
+    reference: "VST-RTL-456789",
+    from: "hold_wallet_pre_hold",
+  },
+  {
+    id: 5,
+    type: "CLAIM",
+    description: "8 shares claimed from completed vesting",
+    shares: 8,
+    status: "completed",
+    date: "2025-01-18 10:30",
+    reference: "CLM-RTL-234567",
+    to: "hold_wallet_post_hold",
+  },
+  {
+    id: 6,
+    type: "SELL_ORDER_PLACED",
+    description: "Sell order placed for 5 shares",
+    shares: 5,
+    status: "pending",
+    date: "2025-01-20 16:20",
+    reference: "ORD-SEL-567890",
+    from: "hold_wallet_post_hold",
+  },
+  {
+    id: 7,
     type: "REFERRAL_BONUS",
-    description: "Referral bonus shares credited",
+    description: "Referral bonus: 2 shares credited",
     shares: 2,
     status: "completed",
-    date: "2025-01-18 08:30",
-    reference: "TXN-REF-007",
-    to_wallet: "Pre-Hold",
+    date: "2025-01-17 11:45",
+    reference: "REF-BON-123456",
+    to: "hold_wallet_pre_hold",
   },
   {
-    id: "tx-008",
-    type: "VESTING",
-    description: "Shares vested (Small Business Level)",
-    shares: 100,
-    status: "started",
-    date: "2025-01-17 14:15",
-    reference: "TXN-VEST-008",
-    from_wallet: "Pre-Hold",
-    to_wallet: "Vesting Slot 2",
-  },
-  {
-    id: "tx-009",
+    id: 8,
     type: "CASHOUT_REQUESTED",
-    description: "NAD withdrawal to mobile money",
-    amount: 800,
+    description: "Cashout request to mobile money",
+    amount: 500,
     status: "pending",
-    date: "2025-01-17 12:00",
-    reference: "TXN-CASH-009",
-    from_wallet: "Cashout Wallet",
+    date: "2025-01-20 17:00",
+    reference: "CSH-OUT-890123",
+    from: "cashout_wallet",
   },
   {
-    id: "tx-010",
-    type: "ORDER_CANCELLED",
-    description: "Buy order cancelled",
-    shares: 3,
-    price: 98,
-    amount: 294,
-    status: "cancelled",
-    date: "2025-01-16 15:30",
-    reference: "TXN-CANC-010",
-    to_wallet: "Buy Wallet",
-  },
-  {
-    id: "tx-011",
+    id: 9,
     type: "VESTING",
-    description: "Shares vested (Corporate Level)",
-    shares: 750,
+    description: "150 shares vested in Small Business slot for 30 days",
+    shares: 150,
     status: "started",
-    date: "2025-01-16 10:45",
-    reference: "TXN-VEST-011",
-    from_wallet: "Pre-Hold",
-    to_wallet: "Vesting Slot 3",
+    date: "2025-01-15 08:00",
+    reference: "VST-SMB-345678",
+    from: "hold_wallet_pre_hold",
   },
   {
-    id: "tx-012",
-    type: "REFERRAL_CLAIM",
-    description: "Referral claim reward",
-    shares: 5,
-    status: "completed",
-    date: "2025-01-15 13:20",
-    reference: "TXN-RCLAIM-012",
-    to_wallet: "Cashout Wallet",
-  },
-  {
-    id: "tx-013",
+    id: 10,
     type: "ORDER_EXPIRED",
-    description: "Sell order expired",
-    shares: 8,
-    price: 102,
-    amount: 816,
+    description: "Buy order expired - 3 shares, funds returned",
+    amount: 300,
+    shares: 3,
     status: "expired",
-    date: "2025-01-15 09:00",
-    reference: "TXN-EXP-013",
-    to_wallet: "Post-Hold",
+    date: "2025-01-14 23:59",
+    reference: "ORD-EXP-678901",
+    to: "buy_wallet",
   },
   {
-    id: "tx-014",
-    type: "CLAIM",
-    description: "Vested shares claimed (Small Business Level)",
-    shares: 200,
+    id: 11,
+    type: "REFERRAL_CLAIM",
+    description: "Referral reward claimed: 4 shares",
+    shares: 4,
     status: "completed",
-    date: "2025-01-14 16:30",
-    reference: "TXN-CLAIM-014",
-    from_wallet: "Vesting Slot 5",
-    to_wallet: "Post-Hold",
+    date: "2025-01-16 13:20",
+    reference: "REF-CLM-456789",
+    to: "hold_wallet_pre_hold",
+  },
+  {
+    id: 12,
+    type: "ORDER_CANCELLED",
+    description: "Sell order cancelled by user - 7 shares returned",
+    shares: 7,
+    status: "cancelled",
+    date: "2025-01-19 20:15",
+    reference: "ORD-CAN-789012",
+    to: "hold_wallet_post_hold",
+  },
+  {
+    id: 13,
+    type: "VESTING",
+    description: "600 shares vested in Corporate slot for 90 days",
+    shares: 600,
+    status: "started",
+    date: "2025-01-10 07:30",
+    reference: "VST-CRP-567890",
+    from: "hold_wallet_pre_hold",
+  },
+  {
+    id: 14,
+    type: "ORDER_MATCHED",
+    description: "Sell order matched - 25 shares sold",
+    amount: 2500,
+    shares: 25,
+    status: "completed",
+    date: "2025-01-18 14:45",
+    reference: "MTH-SEL-234567",
+    buyer: "user-789",
+    seller: "current-user",
+    price: 100,
   },
 ]
 
-export const getTransactionTypeConfig = (type: string) => {
+export function getTransactionTypeConfig(type: TransactionType) {
   const configs = {
     WALLET_TOPUP: {
-      color: "bg-green-500/20 text-green-400 border-green-500/30",
       icon: "💰",
+      color: "bg-green-500/20 text-green-400 border-green-500/30",
       category: "Wallet",
     },
     BUY_ORDER_PLACED: {
-      color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       icon: "🛒",
+      color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
       category: "Trading",
     },
     SELL_ORDER_PLACED: {
-      color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
       icon: "📤",
+      color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
       category: "Trading",
     },
     ORDER_MATCHED: {
-      color: "bg-purple-500/20 text-purple-400 border-purple-500/30",
       icon: "🤝",
+      color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
       category: "Trading",
     },
     ORDER_EXPIRED: {
-      color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
       icon: "⏰",
+      color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
       category: "Trading",
     },
     ORDER_CANCELLED: {
-      color: "bg-red-500/20 text-red-400 border-red-500/30",
       icon: "❌",
+      color: "bg-red-500/20 text-red-400 border-red-500/30",
       category: "Trading",
     },
     VESTING: {
-      color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
       icon: "🔒",
+      color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
       category: "Vesting",
     },
     CLAIM: {
-      color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
       icon: "✅",
+      color: "bg-teal-500/20 text-teal-400 border-teal-500/30",
       category: "Vesting",
     },
     CASHOUT_REQUESTED: {
-      color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       icon: "🏦",
+      color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
       category: "Wallet",
     },
     REFERRAL_BONUS: {
-      color: "bg-pink-500/20 text-pink-400 border-pink-500/30",
       icon: "🎁",
+      color: "bg-pink-500/20 text-pink-400 border-pink-500/30",
       category: "Referral",
     },
     REFERRAL_CLAIM: {
-      color: "bg-pink-500/20 text-pink-400 border-pink-500/30",
       icon: "🏆",
+      color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
       category: "Referral",
     },
   }
 
-  return (
-    configs[type as keyof typeof configs] || {
-      color: "bg-gray-500/20 text-gray-400 border-gray-500/30",
-      icon: "📄",
-      category: "Other",
-    }
-  )
+  return configs[type] || configs.WALLET_TOPUP
 }
