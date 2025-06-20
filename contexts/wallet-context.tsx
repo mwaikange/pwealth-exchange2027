@@ -4,6 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { formatNAD, calculateShareValue, formatShares } from "@/lib/price-calculations"
+import { formatCurrency } from "@/lib/utils"
 
 // Define the shape of our wallet state (share-based, NAD currency)
 type WalletState = {
@@ -51,24 +52,6 @@ const mockWalletData: WalletState = {
   cashoutWalletBalance: 0.0, // NAD
   holdWalletPreHold: 10.5, // Shares available for vesting (was "Invest")
   holdWalletPostHold: 7.5, // Shares ready for exchange (after vesting)
-}
-
-// Currency formatter for Namibian Dollars
-export const formatCurrency = (value: number | string, currency = "NAD") => {
-  const number = typeof value === "string" ? Number.parseFloat(value) : value
-
-  if (currency === "NAD") {
-    return `N$${number.toLocaleString("en-NA", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`
-  }
-
-  return new Intl.NumberFormat("en-NA", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(number)
 }
 
 // Provider component
