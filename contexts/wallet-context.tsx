@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { formatNAD, calculateShareValue, formatShares } from "@/lib/price-calculations"
-import { formatCurrency } from "../lib/utils"
+import { formatCurrency } from "@/lib/utils"
 
 // Define the shape of our wallet state (share-based, NAD currency)
 type WalletState = {
@@ -195,4 +195,4 @@ export { formatNAD, formatShares, calculateShareValue }
 
 // ---------------------------------------------------------------------------
 // TEMP compatibility export -- until all components import from @/lib/utils
-export { formatCurrency } from "../lib/utils"
+export { formatCurrency } from "@/lib/utils"
