@@ -2,16 +2,20 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
-// Define the simplified vesting schedule state
+// Define the vesting schedule state from Supabase
 export type VestingSlotData = {
   id: string
-  status: "empty" | "in_progress" | "claimable"
-  startDate?: number
-  amount?: number
+  schedule_id: number
+  level: string
+  status: "Unclaimed" | "Active" | "Completed" | "Claimed"
+  shares_amount?: number
+  start_date?: string
+  completion_date?: string
   progress?: number
-  level?: number
+  user_uuid: string
 }
 
 // Define vesting levels with their limits and hold periods
@@ -32,7 +36,9 @@ type VestingContextType = {
   getScheduleById: (id: string) => VestingSlotData | undefined
   validateVestingAmount: (amount: number, level: number) => { valid: boolean; error?: string }
   getHoldPeriodForLevel: (level: number) => number
+  refreshVestingData: () => Promise<void>
   loading: boolean
+  error: string | null
 }
 
 // Create the context
@@ -40,84 +46,116 @@ const VestingContext = createContext<VestingContextType | undefined>(undefined)
 
 // Provider component
 export function VestingProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
+  const { user, session } = useAuth()
+  const [vestingSchedules, setVestingSchedules] = useState<VestingSlotData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Separate slots for each level - 6 slots per level = 18 total
-  const [retailSlots, setRetailSlots] = useState<VestingSlotData[]>([])
-  const [smallBusinessSlots, setSmallBusinessSlots] = useState<VestingSlotData[]>([])
-  const [corporateSlots, setCorporateSlots] = useState<VestingSlotData[]>([])
-  const [loading, setLoading] = useState(false)
+  // Fetch vesting data from Supabase
+  const refreshVestingData = async () => {
+    if (!user || !session) {
+      setLoading(false)
+      return
+    }
 
-  // Initialize slots for each level
+    try {
+      setLoading(true)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .order("schedule_id", { ascending: true })
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch vesting data: ${fetchError.message}`)
+      }
+
+      // Process the data and calculate progress for active schedules
+      const processedData = (data || []).map((schedule) => {
+        let progress = 0
+        if (schedule.status === "Active" && schedule.start_date) {
+          const startDate = new Date(schedule.start_date)
+          const now = new Date()
+          const elapsed = now.getTime() - startDate.getTime()
+          const level = Number.parseInt(schedule.level)
+          const holdDays = getHoldPeriodForLevel(level)
+          const totalTime = holdDays * 24 * 60 * 60 * 1000
+          progress = Math.min(100, (elapsed / totalTime) * 100)
+
+          // If progress reaches 100%, mark as completed
+          if (progress >= 100) {
+            schedule.status = "Completed"
+          }
+        } else if (schedule.status === "Completed" || schedule.status === "Claimed") {
+          progress = 100
+        }
+
+        return {
+          ...schedule,
+          progress,
+        }
+      })
+
+      setVestingSchedules(processedData)
+      console.log("Vesting data refreshed:", processedData.length, "schedules")
+    } catch (err: any) {
+      console.error("Error fetching vesting data:", err)
+      setError(err.message || "Failed to load vesting data")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load vesting data when user changes
   useEffect(() => {
-    // Retail slots (Level 1) - 6 slots
-    const initRetailSlots: VestingSlotData[] = [
-      {
-        id: "retail-slot-1",
-        status: "in_progress",
-        startDate: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
-        amount: 25,
-        progress: 40,
-        level: 1,
-      },
-      {
-        id: "retail-slot-2",
-        status: "claimable",
-        startDate: Date.now() - 5 * 24 * 60 * 60 * 1000, // 5 days ago (completed)
-        amount: 15,
-        progress: 100,
-        level: 1,
-      },
-      { id: "retail-slot-3", status: "empty", level: 1 },
-      { id: "retail-slot-4", status: "empty", level: 1 },
-      { id: "retail-slot-5", status: "empty", level: 1 },
-      { id: "retail-slot-6", status: "empty", level: 1 },
-    ]
+    refreshVestingData()
+  }, [user, session])
 
-    // Small Business slots (Level 2) - 6 slots
-    const initSmallBusinessSlots: VestingSlotData[] = [
-      {
-        id: "smallbiz-slot-1",
-        status: "in_progress",
-        startDate: Date.now() - 10 * 24 * 60 * 60 * 1000, // 10 days ago
-        amount: 100,
-        progress: 33,
-        level: 2,
-      },
-      {
-        id: "smallbiz-slot-2",
-        status: "claimable",
-        startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago (completed)
-        amount: 200,
-        progress: 100,
-        level: 2,
-      },
-      { id: "smallbiz-slot-3", status: "empty", level: 2 },
-      { id: "smallbiz-slot-4", status: "empty", level: 2 },
-      { id: "smallbiz-slot-5", status: "empty", level: 2 },
-      { id: "smallbiz-slot-6", status: "empty", level: 2 },
-    ]
+  // Update progress of active vesting slots
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVestingSchedules((prev) =>
+        prev.map((schedule) => {
+          if (schedule.status === "Active" && schedule.start_date) {
+            const startDate = new Date(schedule.start_date)
+            const now = new Date()
+            const elapsed = now.getTime() - startDate.getTime()
+            const level = Number.parseInt(schedule.level)
+            const holdDays = getHoldPeriodForLevel(level)
+            const totalTime = holdDays * 24 * 60 * 60 * 1000
+            const newProgress = Math.min(100, (elapsed / totalTime) * 100)
 
-    // Corporate slots (Level 3) - 6 slots
-    const initCorporateSlots: VestingSlotData[] = [
-      {
-        id: "corporate-slot-1",
-        status: "in_progress",
-        startDate: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
-        amount: 750,
-        progress: 33,
-        level: 3,
-      },
-      { id: "corporate-slot-2", status: "empty", level: 3 },
-      { id: "corporate-slot-3", status: "empty", level: 3 },
-      { id: "corporate-slot-4", status: "empty", level: 3 },
-      { id: "corporate-slot-5", status: "empty", level: 3 },
-      { id: "corporate-slot-6", status: "empty", level: 3 },
-    ]
+            // If progress reaches 100%, mark as completed
+            if (newProgress >= 100 && schedule.status !== "Completed") {
+              // Update in Supabase
+              supabase
+                .from("vesting_schedules")
+                .update({ status: "Completed" })
+                .eq("id", schedule.id)
+                .then(() => {
+                  console.log("Vesting schedule completed:", schedule.id)
+                })
 
-    setRetailSlots(initRetailSlots)
-    setSmallBusinessSlots(initSmallBusinessSlots)
-    setCorporateSlots(initCorporateSlots)
+              return {
+                ...schedule,
+                status: "Completed" as const,
+                progress: 100,
+              }
+            }
+
+            return {
+              ...schedule,
+              progress: newProgress,
+            }
+          }
+          return schedule
+        }),
+      )
+    }, 1000) // Update every second
+
+    return () => clearInterval(interval)
   }, [])
 
   // Get hold period for a specific level
@@ -126,70 +164,10 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return levelConfig ? levelConfig.holdDays : 5 // Default to 5 days
   }
 
-  // Get slots for a specific level
+  // Get slots for a specific level (6 slots per level)
   const getVestingSlotsForLevel = (level: number): VestingSlotData[] => {
-    switch (level) {
-      case 1:
-        return retailSlots
-      case 2:
-        return smallBusinessSlots
-      case 3:
-        return corporateSlots
-      default:
-        return []
-    }
+    return vestingSchedules.filter((schedule) => Number.parseInt(schedule.level) === level).slice(0, 6) // Limit to 6 slots per level
   }
-
-  // Get setter function for a specific level
-  const getSlotSetter = (level: number) => {
-    switch (level) {
-      case 1:
-        return setRetailSlots
-      case 2:
-        return setSmallBusinessSlots
-      case 3:
-        return setCorporateSlots
-      default:
-        return setRetailSlots
-    }
-  }
-
-  // Update progress of active vesting slots for all levels
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const updateSlots = (slots: VestingSlotData[], level: number) => {
-        return slots.map((slot) => {
-          if (slot.status === "in_progress" && slot.startDate && slot.level) {
-            const elapsed = Date.now() - slot.startDate
-            const holdDays = getHoldPeriodForLevel(slot.level)
-            const totalTime = holdDays * 24 * 60 * 60 * 1000 // Convert days to milliseconds
-            const newProgress = Math.min(100, (elapsed / totalTime) * 100)
-
-            // If progress reaches 100%, mark as claimable
-            if (newProgress >= 100) {
-              return {
-                ...slot,
-                status: "claimable" as const,
-                progress: 100,
-              }
-            }
-
-            return {
-              ...slot,
-              progress: newProgress,
-            }
-          }
-          return slot
-        })
-      }
-
-      setRetailSlots((prev) => updateSlots(prev, 1))
-      setSmallBusinessSlots((prev) => updateSlots(prev, 2))
-      setCorporateSlots((prev) => updateSlots(prev, 3))
-    }, 1000) // Update every second
-
-    return () => clearInterval(interval)
-  }, [])
 
   // Validate vesting amount based on level
   const validateVestingAmount = (amount: number, level: number) => {
@@ -209,20 +187,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return { valid: true }
   }
 
-  // Vest shares function (mock implementation)
+  // Vest shares function (real Supabase implementation)
   const vestShares = async (level: number, slotIndex: number, amount: number) => {
-    if (!user || slotIndex < 0 || slotIndex >= 6) return
+    if (!user) return
 
     try {
       setLoading(true)
-
-      const slots = getVestingSlotsForLevel(level)
-      const setSlots = getSlotSetter(level)
-
-      // Check if slot is empty
-      if (slots[slotIndex].status !== "empty") {
-        throw new Error("Slot is not empty")
-      }
 
       // Validate amount for level
       const validation = validateVestingAmount(amount, level)
@@ -230,86 +200,118 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         throw new Error(validation.error)
       }
 
-      // Update the slot
-      setSlots((prevSlots) => {
-        const newSlots = [...prevSlots]
-        newSlots[slotIndex] = {
-          id: `${level === 1 ? "retail" : level === 2 ? "smallbiz" : "corporate"}-slot-${slotIndex + 1}`,
-          status: "in_progress",
-          startDate: Date.now(),
-          amount: amount,
-          progress: 0,
-          level: level,
-        }
-        return newSlots
+      // Get the specific schedule to update
+      const levelSchedules = getVestingSlotsForLevel(level)
+      if (slotIndex >= levelSchedules.length) {
+        throw new Error("Invalid slot index")
+      }
+
+      const schedule = levelSchedules[slotIndex]
+      if (schedule.status !== "Unclaimed") {
+        throw new Error("Slot is not available for vesting")
+      }
+
+      // Update the vesting schedule in Supabase
+      const { error: updateError } = await supabase
+        .from("vesting_schedules")
+        .update({
+          status: "Active",
+          shares_amount: amount,
+          start_date: new Date().toISOString(),
+        })
+        .eq("id", schedule.id)
+
+      if (updateError) throw updateError
+
+      // Transfer shares from hold_pre to locked state (handled by vesting system)
+      const { error: transferError } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: "hold_pre",
+        p_to_wallet: "vesting_locked",
+        p_shares: amount,
+        p_description: `Vested ${amount} shares in ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot`,
       })
 
-      const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
-      console.log(
-        `Mock: Vested ${amount} shares in ${levelConfig.name} slot ${slotIndex + 1} (${levelConfig.holdDays} days)`,
-      )
-    } catch (error) {
+      if (transferError) throw transferError
+
+      await refreshVestingData()
+      console.log(`Vested ${amount} shares in level ${level} slot ${slotIndex + 1}`)
+    } catch (error: any) {
       console.error("Error vesting shares:", error)
+      setError(error.message)
       throw error
     } finally {
       setLoading(false)
     }
   }
 
-  // Claim shares function (mock implementation)
+  // Claim shares function (real Supabase implementation)
   const claimShares = async (level: number, slotIndex: number) => {
-    if (!user || slotIndex < 0 || slotIndex >= 6) return
+    if (!user) return
 
     try {
       setLoading(true)
 
-      const slots = getVestingSlotsForLevel(level)
-      const setSlots = getSlotSetter(level)
-      const slot = slots[slotIndex]
-
-      if (slot.status !== "claimable" || !slot.amount) {
-        throw new Error("Slot is not claimable")
+      const levelSchedules = getVestingSlotsForLevel(level)
+      if (slotIndex >= levelSchedules.length) {
+        throw new Error("Invalid slot index")
       }
 
-      // Reset the slot to empty
-      setSlots((prevSlots) => {
-        const newSlots = [...prevSlots]
-        newSlots[slotIndex] = {
-          id: `${level === 1 ? "retail" : level === 2 ? "smallbiz" : "corporate"}-slot-${slotIndex + 1}`,
-          status: "empty",
-          level: level,
-        }
-        return newSlots
+      const schedule = levelSchedules[slotIndex]
+      if (schedule.status !== "Completed" || !schedule.shares_amount) {
+        throw new Error("Slot is not ready for claiming")
+      }
+
+      // Update the vesting schedule status
+      const { error: updateError } = await supabase
+        .from("vesting_schedules")
+        .update({
+          status: "Claimed",
+          completion_date: new Date().toISOString(),
+        })
+        .eq("id", schedule.id)
+
+      if (updateError) throw updateError
+
+      // Transfer shares to hold_post wallet
+      const { error: transferError } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: "vesting_locked",
+        p_to_wallet: "hold_post",
+        p_shares: schedule.shares_amount,
+        p_description: `Claimed ${schedule.shares_amount} shares from ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot`,
       })
 
-      console.log(
-        `Mock: Claimed ${slot.amount} shares from ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot ${slotIndex + 1}`,
-      )
-    } catch (error) {
+      if (transferError) throw transferError
+
+      await refreshVestingData()
+      console.log(`Claimed ${schedule.shares_amount} shares from level ${level} slot ${slotIndex + 1}`)
+    } catch (error: any) {
       console.error("Error claiming shares:", error)
+      setError(error.message)
       throw error
     } finally {
       setLoading(false)
     }
   }
 
-  // Get total shares currently vesting across all levels
+  // Get total shares currently vesting
   const getTotalVestingInProgress = () => {
-    const allSlots = [...retailSlots, ...smallBusinessSlots, ...corporateSlots]
-    return allSlots
-      .filter((slot) => slot.status === "in_progress")
-      .reduce((total, slot) => total + (slot.amount || 0), 0)
+    return vestingSchedules
+      .filter((schedule) => schedule.status === "Active")
+      .reduce((total, schedule) => total + (schedule.shares_amount || 0), 0)
   }
 
-  // Get total claimable shares across all levels
+  // Get total claimable shares
   const getTotalClaimableShares = () => {
-    const allSlots = [...retailSlots, ...smallBusinessSlots, ...corporateSlots]
-    return allSlots.filter((slot) => slot.status === "claimable").reduce((total, slot) => total + (slot.amount || 0), 0)
+    return vestingSchedules
+      .filter((schedule) => schedule.status === "Completed")
+      .reduce((total, schedule) => total + (schedule.shares_amount || 0), 0)
   }
 
-  // Legacy helpers kept for backward compatibility
-  const getSchedulesByLevel = (_level: number) => []
-  const getScheduleById = (_id: string) => undefined
+  // Legacy helpers for backward compatibility
+  const getSchedulesByLevel = (level: number) => getVestingSlotsForLevel(level)
+  const getScheduleById = (id: string) => vestingSchedules.find((s) => s.id === id)
 
   // Context value
   const value = {
@@ -320,10 +322,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     getTotalClaimableShares,
     validateVestingAmount,
     getHoldPeriodForLevel,
+    refreshVestingData,
     // legacy
     getSchedulesByLevel,
     getScheduleById,
     loading,
+    error,
   }
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>

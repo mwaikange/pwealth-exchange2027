@@ -1,134 +1,254 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState } from "react"
+import { createContext, useContext, useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
-// Define the shape of our NEW wallet state (frontend mapping)
+// Define the shape of our wallet state (real data from Supabase)
 type WalletState = {
-  buyWalletBalance: number // Maps to activation_fee_balance
-  holdWalletBalance: number // Maps to pwt_invest_balance (will split later)
-  cashoutWalletBalance: number // Maps to pwt_cashout_balance
-  // Temporary pre/post split for UI (50/50 for now)
-  holdWalletPreHold: number // Calculated: holdWalletBalance * 0.5
-  holdWalletPostHold: number // Calculated: holdWalletBalance * 0.5
+  buyWalletBalance: number // NAD in buy_wallet
+  holdWalletPreHold: number // Shares in hold_pre
+  holdWalletPostHold: number // Shares in hold_post
+  cashoutWalletBalance: number // NAD in cashout_wallet
+  aftBalance: number // Activation fee balance (if still used)
 }
 
 // Define the context type with state and update functions
 type WalletContextType = WalletState & {
-  // Update functions (still using old backend fields for now)
+  // Update functions
   updateBuyWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
-  updateHoldWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+  updateHoldWallet: (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => Promise<void>
   updateCashoutWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
 
-  // Convenience methods for specific operations
+  // Convenience methods
   topUpBuyWallet: (amount: number) => Promise<void>
-  transferToHold: (amount: number) => Promise<void>
+  transferToHold: (amount: number, fromType: "pre" | "post", toType: "pre" | "post") => Promise<void>
   transferToCashout: (amount: number) => Promise<void>
 
   // Calculated values
   getTotalAccountValue: () => number
+  getCurrentSharePrice: () => Promise<number>
 
   refreshBalances: () => Promise<void>
   loading: boolean
+  error: string | null
 }
 
 // Create the context with default values
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
-
-// Static mock data for testing
-const mockWalletData: WalletState = {
-  buyWalletBalance: 1200.0,
-  holdWalletBalance: 9.0, // Total hold wallet
-  cashoutWalletBalance: 0.0,
-  holdWalletPreHold: 5.25, // Available for vesting
-  holdWalletPostHold: 3.75, // Ready for exchange
-}
 
 // Currency formatter for Namibian Dollars
 const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
 
 // Provider component
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // State for wallet balances (using mock data)
-  const [walletState, setWalletState] = useState<WalletState>(mockWalletData)
-  const [loading, setLoading] = useState(false)
-  const { user } = useAuth()
+  // State for wallet balances (real data from Supabase)
+  const [walletState, setWalletState] = useState<WalletState>({
+    buyWalletBalance: 0,
+    holdWalletPreHold: 0,
+    holdWalletPostHold: 0,
+    cashoutWalletBalance: 0,
+    aftBalance: 0,
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { user, session } = useAuth()
 
-  // Mock function to refresh balances (no actual backend call)
+  // Fetch wallet balances from Supabase
   const refreshBalances = async () => {
-    setLoading(true)
-    // Simulate loading delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    console.log("Mock: Refreshed wallet balances")
-    setLoading(false)
+    if (!user || !session) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Fetch user wallet balances
+      const { data: walletData, error: walletError } = await supabase
+        .from("user_shares")
+        .select("wallet_type, shares")
+        .eq("user_uuid", user.id)
+
+      if (walletError) {
+        throw new Error(`Failed to fetch wallet data: ${walletError.message}`)
+      }
+
+      // Process wallet data
+      const wallets = walletData || []
+      const newState: WalletState = {
+        buyWalletBalance: 0,
+        holdWalletPreHold: 0,
+        holdWalletPostHold: 0,
+        cashoutWalletBalance: 0,
+        aftBalance: 0,
+      }
+
+      wallets.forEach((wallet) => {
+        switch (wallet.wallet_type) {
+          case "buy_wallet":
+            newState.buyWalletBalance = Number(wallet.shares) || 0
+            break
+          case "hold_pre":
+            newState.holdWalletPreHold = Number(wallet.shares) || 0
+            break
+          case "hold_post":
+            newState.holdWalletPostHold = Number(wallet.shares) || 0
+            break
+          case "cashout_wallet":
+            newState.cashoutWalletBalance = Number(wallet.shares) || 0
+            break
+        }
+      })
+
+      // Also check for legacy activation fee balance if needed
+      const { data: legacyData } = await supabase
+        .from("user_wallets")
+        .select("activation_fee_balance")
+        .eq("user_uuid", user.id)
+        .single()
+
+      if (legacyData?.activation_fee_balance) {
+        newState.aftBalance = Number(legacyData.activation_fee_balance) || 0
+      }
+
+      setWalletState(newState)
+      console.log("Wallet balances refreshed:", newState)
+    } catch (err: any) {
+      console.error("Error fetching wallet balances:", err)
+      setError(err.message || "Failed to load wallet data")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Update functions (mock implementations)
+  // Load balances when user changes
+  useEffect(() => {
+    refreshBalances()
+  }, [user, session])
+
+  // Get current share price from Supabase
+  const getCurrentSharePrice = async (): Promise<number> => {
+    try {
+      const { data, error } = await supabase.rpc("get_current_share_price")
+      if (error) throw error
+      return Number(data) || 108.2 // Fallback to current price
+    } catch (err) {
+      console.error("Error fetching share price:", err)
+      return 108.2 // Fallback price
+    }
+  }
+
+  // Update buy wallet
   const updateBuyWallet = async (amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
-    const newBalance =
-      operation === "add" ? walletState.buyWalletBalance + amount : walletState.buyWalletBalance - amount
+    try {
+      const newAmount = operation === "add" ? amount : -amount
 
-    setWalletState((prev) => ({
-      ...prev,
-      buyWalletBalance: newBalance,
-    }))
+      const { error } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: operation === "subtract" ? "buy_wallet" : "external",
+        p_to_wallet: operation === "add" ? "buy_wallet" : "external",
+        p_shares: Math.abs(amount),
+        p_description: `Buy wallet ${operation}: ${formatCurrency(Math.abs(amount))}`,
+      })
 
-    console.log(`Mock: ${operation} ${amount} to Buy Wallet. New balance: ${newBalance}`)
+      if (error) throw error
+      await refreshBalances()
+    } catch (err: any) {
+      console.error("Error updating buy wallet:", err)
+      setError(err.message)
+    }
   }
 
-  const updateHoldWallet = async (amount: number, operation: "add" | "subtract") => {
+  // Update hold wallet (pre or post)
+  const updateHoldWallet = async (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => {
     if (!user) return
 
-    const newBalance =
-      operation === "add" ? walletState.holdWalletBalance + amount : walletState.holdWalletBalance - amount
+    try {
+      const walletName = walletType === "pre" ? "hold_pre" : "hold_post"
+      const newAmount = operation === "add" ? amount : -amount
 
-    // Calculate new pre/post split
-    const newPreHold = newBalance * 0.6 // 60% pre-hold
-    const newPostHold = newBalance * 0.4 // 40% post-hold
+      const { error } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: operation === "subtract" ? walletName : "external",
+        p_to_wallet: operation === "add" ? walletName : "external",
+        p_shares: Math.abs(amount),
+        p_description: `Hold ${walletType} ${operation}: ${Math.abs(amount)} shares`,
+      })
 
-    setWalletState((prev) => ({
-      ...prev,
-      holdWalletBalance: newBalance,
-      holdWalletPreHold: newPreHold,
-      holdWalletPostHold: newPostHold,
-    }))
-
-    console.log(`Mock: ${operation} ${amount} to Hold Wallet. New balance: ${newBalance}`)
+      if (error) throw error
+      await refreshBalances()
+    } catch (err: any) {
+      console.error("Error updating hold wallet:", err)
+      setError(err.message)
+    }
   }
 
+  // Update cashout wallet
   const updateCashoutWallet = async (amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
-    const newBalance =
-      operation === "add" ? walletState.cashoutWalletBalance + amount : walletState.cashoutWalletBalance - amount
+    try {
+      const newAmount = operation === "add" ? amount : -amount
 
-    setWalletState((prev) => ({
-      ...prev,
-      cashoutWalletBalance: newBalance,
-    }))
+      const { error } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: operation === "subtract" ? "cashout_wallet" : "external",
+        p_to_wallet: operation === "add" ? "cashout_wallet" : "external",
+        p_shares: Math.abs(amount),
+        p_description: `Cashout wallet ${operation}: ${formatCurrency(Math.abs(amount))}`,
+      })
 
-    console.log(`Mock: ${operation} ${amount} to Cashout Wallet. New balance: ${newBalance}`)
+      if (error) throw error
+      await refreshBalances()
+    } catch (err: any) {
+      console.error("Error updating cashout wallet:", err)
+      setError(err.message)
+    }
   }
 
-  // Convenience methods for specific operations
+  // Convenience methods
   const topUpBuyWallet = async (amount: number) => {
     await updateBuyWallet(amount, "add")
   }
 
-  const transferToHold = async (amount: number) => {
-    await updateHoldWallet(amount, "add")
+  const transferToHold = async (amount: number, fromType: "pre" | "post", toType: "pre" | "post") => {
+    if (!user) return
+
+    try {
+      const fromWallet = fromType === "pre" ? "hold_pre" : "hold_post"
+      const toWallet = toType === "pre" ? "hold_pre" : "hold_post"
+
+      const { error } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: fromWallet,
+        p_to_wallet: toWallet,
+        p_shares: amount,
+        p_description: `Transfer: ${amount} shares from ${fromType} to ${toType}`,
+      })
+
+      if (error) throw error
+      await refreshBalances()
+    } catch (err: any) {
+      console.error("Error transferring between hold wallets:", err)
+      setError(err.message)
+    }
   }
 
   const transferToCashout = async (amount: number) => {
     await updateCashoutWallet(amount, "add")
   }
 
-  // Calculated values
+  // Calculate total account value
   const getTotalAccountValue = () => {
-    return walletState.buyWalletBalance + walletState.holdWalletBalance + walletState.cashoutWalletBalance
+    const sharePrice = 108.2 // Will be dynamic
+    const totalShares = walletState.holdWalletPreHold + walletState.holdWalletPostHold
+    const totalNAD = walletState.buyWalletBalance + walletState.cashoutWalletBalance
+    return totalShares * sharePrice + totalNAD
   }
 
   // Context value
@@ -141,8 +261,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     transferToHold,
     transferToCashout,
     getTotalAccountValue,
+    getCurrentSharePrice,
     refreshBalances,
     loading,
+    error,
   }
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
