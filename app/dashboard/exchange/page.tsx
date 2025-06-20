@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useWallet, formatCurrency } from "@/contexts/wallet-context"
 import { useExchange } from "@/contexts/exchange-context"
-import { AlertCircle, TrendingUp, TrendingDown, Wallet } from "lucide-react"
+import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function ExchangePage() {
@@ -17,7 +17,13 @@ export default function ExchangePage() {
   const [cashoutAmount, setCashoutAmount] = useState("")
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  const { buyWalletBalance, holdWalletPostHold, cashoutWalletBalance } = useWallet()
+  const {
+    buyWalletBalance,
+    holdWalletPostHold,
+    cashoutWalletBalance,
+    loading: walletLoading,
+    error: walletError,
+  } = useWallet()
 
   const {
     sellOrders,
@@ -27,8 +33,11 @@ export default function ExchangePage() {
     placeBuyOrder,
     placeSellOrder,
     currentSharePrice,
-    loading,
+    loading: exchangeLoading,
+    error: exchangeError,
   } = useExchange()
+
+  const loading = walletLoading || exchangeLoading
 
   const handleBuyOrder = async () => {
     const amount = Number.parseFloat(buyAmount)
@@ -72,7 +81,7 @@ export default function ExchangePage() {
       return
     }
 
-    // Mock cashout logic
+    // Mock cashout logic - would integrate with real cashout system
     setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
     setCashoutAmount("")
   }
@@ -98,6 +107,28 @@ export default function ExchangePage() {
       <Badge variant={variants[status as keyof typeof variants]} className={colors[status as keyof typeof colors]}>
         {status.replace("_", " ").toUpperCase()}
       </Badge>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-white" />
+          <span className="ml-2 text-white">Loading exchange data...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (walletError || exchangeError) {
+    return (
+      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Error loading data: {walletError || exchangeError}</AlertDescription>
+        </Alert>
+      </div>
     )
   }
 
@@ -230,29 +261,35 @@ export default function ExchangePage() {
         {/* Market Buy Orders */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">Market Buy Orders</CardTitle>
+            <CardTitle className="text-lg font-semibold text-slate-200">
+              Market Buy Orders ({buyOrders.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {buyOrders.slice(0, 10).map((order) => (
-                <div
-                  key={order.id}
-                  className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium text-slate-100">{formatCurrency(order.totalAmount)}</span>
-                    <span className="text-xs text-slate-400">
-                      ({Math.floor(order.totalAmount / order.pricePerShare)} shares)
-                    </span>
+              {buyOrders.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No active buy orders</p>
+              ) : (
+                buyOrders.slice(0, 10).map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                      <span className="text-xs text-slate-400">
+                        ({Math.floor(order.total_amount / order.price_per_share)} shares)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {getStatusBadge(order.status)}
+                      <span className="text-xs text-slate-400">
+                        {Math.round((order.filled_amount / order.total_amount) * 100)}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {getStatusBadge(order.status)}
-                    <span className="text-xs text-slate-400">
-                      {Math.round((order.filledAmount / order.totalAmount) * 100)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -260,27 +297,33 @@ export default function ExchangePage() {
         {/* Market Sell Orders */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">Market Sell Orders</CardTitle>
+            <CardTitle className="text-lg font-semibold text-slate-200">
+              Market Sell Orders ({sellOrders.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {sellOrders.slice(0, 10).map((order) => (
-                <div
-                  key={order.id}
-                  className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium text-slate-100">{order.shares} shares</span>
-                    <span className="text-xs text-slate-400">@ {formatCurrency(order.pricePerShare)}</span>
+              {sellOrders.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No active sell orders</p>
+              ) : (
+                sellOrders.slice(0, 10).map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-slate-100">{order.shares} shares</span>
+                      <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {getStatusBadge(order.status)}
+                      <span className="text-xs text-slate-400">
+                        {order.filled_shares}/{order.shares}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {getStatusBadge(order.status)}
-                    <span className="text-xs text-slate-400">
-                      {order.filledShares}/{order.shares}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -291,27 +334,29 @@ export default function ExchangePage() {
         {/* Your Buy Orders */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">Your Buy Orders</CardTitle>
+            <CardTitle className="text-lg font-semibold text-slate-200">
+              Your Buy Orders ({userBuyOrders.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {userBuyOrders.length === 0 ? (
-                <p className="text-slate-400 text-sm">No buy orders yet</p>
+                <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
               ) : (
                 userBuyOrders.map((order) => (
                   <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <span className="font-medium text-slate-100">{formatCurrency(order.totalAmount)}</span>
+                        <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
                         <span className="text-sm text-slate-400 ml-2">
-                          ({Math.floor(order.totalAmount / order.pricePerShare)} shares)
+                          ({Math.floor(order.total_amount / order.price_per_share)} shares)
                         </span>
                       </div>
                       {getStatusBadge(order.status)}
                     </div>
-                    <Progress value={(order.filledAmount / order.totalAmount) * 100} className="h-2" />
+                    <Progress value={(order.filled_amount / order.total_amount) * 100} className="h-2" />
                     <div className="text-xs text-slate-400 mt-1">
-                      Filled: {formatCurrency(order.filledAmount)} / {formatCurrency(order.totalAmount)}
+                      Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
                     </div>
                   </div>
                 ))
@@ -323,25 +368,27 @@ export default function ExchangePage() {
         {/* Your Sell Orders */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">Your Sell Orders</CardTitle>
+            <CardTitle className="text-lg font-semibold text-slate-200">
+              Your Sell Orders ({userSellOrders.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {userSellOrders.length === 0 ? (
-                <p className="text-slate-400 text-sm">No sell orders yet</p>
+                <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
                 userSellOrders.map((order) => (
                   <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <span className="font-medium text-slate-100">{order.shares} shares</span>
-                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.pricePerShare)}</span>
+                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
                       </div>
                       {getStatusBadge(order.status)}
                     </div>
-                    <Progress value={(order.filledShares / order.shares) * 100} className="h-2" />
+                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2" />
                     <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.filledShares} / {order.shares} shares
+                      Filled: {order.filled_shares} / {order.shares} shares
                     </div>
                   </div>
                 ))

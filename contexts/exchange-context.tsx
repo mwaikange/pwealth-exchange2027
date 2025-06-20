@@ -1,11 +1,30 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useCallback } from "react"
-import type { SellOrder, BuyOrder } from "@/utils/match-orders"
-import { matchBuyOrder, calculateSharePrice } from "@/utils/match-orders"
-import { mockSellOrders, mockBuyOrders } from "@/data/mock-exchange-data"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
+
+export interface SellOrder {
+  id: string
+  user_uuid: string
+  shares: number
+  price_per_share: number
+  status: "active" | "filled" | "expired" | "queued"
+  created_at: string
+  filled_shares: number
+}
+
+export interface BuyOrder {
+  id: string
+  user_uuid: string
+  total_amount: number
+  price_per_share: number
+  status: "active" | "filled" | "expired" | "queued"
+  created_at: string
+  filled_amount: number
+}
 
 interface ExchangeContextType {
   // Orders
@@ -23,26 +42,89 @@ interface ExchangeContextType {
 
   // Loading states
   loading: boolean
+  error: string | null
+  refreshOrders: () => Promise<void>
 }
 
 const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined)
 
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
-  const [sellOrders, setSellOrders] = useState<SellOrder[]>(mockSellOrders)
-  const [buyOrders, setBuyOrders] = useState<BuyOrder[]>(mockBuyOrders)
-  const [loading, setLoading] = useState(false)
+  const [sellOrders, setSellOrders] = useState<SellOrder[]>([])
+  const [buyOrders, setBuyOrders] = useState<BuyOrder[]>([])
+  const [currentSharePrice, setCurrentSharePrice] = useState(108.2)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const { buyWalletBalance, holdWalletPreHold, holdWalletPostHold, updateBuyWallet, updateHoldWallet } = useWallet()
-
-  const currentSharePrice = calculateSharePrice()
-  const currentUserId = "current-user" // Mock current user ID
+  const { user, session } = useAuth()
+  const { buyWalletBalance, holdWalletPostHold, updateBuyWallet, updateHoldWallet } = useWallet()
 
   // Filter orders for current user
-  const userSellOrders = sellOrders.filter((order) => order.userId === currentUserId)
-  const userBuyOrders = buyOrders.filter((order) => order.userId === currentUserId)
+  const userSellOrders = sellOrders.filter((order) => order.user_uuid === user?.id)
+  const userBuyOrders = buyOrders.filter((order) => order.user_uuid === user?.id)
+
+  // Fetch current share price from Supabase
+  const fetchSharePrice = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_current_share_price")
+      if (error) throw error
+      setCurrentSharePrice(Number(data) || 108.2)
+    } catch (err) {
+      console.error("Error fetching share price:", err)
+      setCurrentSharePrice(108.2) // Fallback
+    }
+  }
+
+  // Fetch all orders from Supabase
+  const refreshOrders = async () => {
+    if (!user || !session) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Fetch sell orders
+      const { data: sellData, error: sellError } = await supabase
+        .from("sell_orders")
+        .select("*")
+        .in("status", ["active", "queued"])
+        .order("created_at", { ascending: true })
+
+      if (sellError) throw sellError
+
+      // Fetch buy orders
+      const { data: buyData, error: buyError } = await supabase
+        .from("buy_orders")
+        .select("*")
+        .in("status", ["active", "queued"])
+        .order("created_at", { ascending: true })
+
+      if (buyError) throw buyError
+
+      setSellOrders(sellData || [])
+      setBuyOrders(buyData || [])
+
+      console.log("Orders refreshed:", { sellOrders: sellData?.length || 0, buyOrders: buyData?.length || 0 })
+    } catch (err: any) {
+      console.error("Error fetching orders:", err)
+      setError(err.message || "Failed to load orders")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load data when user changes
+  useEffect(() => {
+    fetchSharePrice()
+    refreshOrders()
+  }, [user, session])
 
   const placeBuyOrder = useCallback(
     async (amount: number): Promise<{ success: boolean; message: string }> => {
+      if (!user) return { success: false, message: "User not authenticated" }
+
       setLoading(true)
 
       try {
@@ -63,73 +145,37 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: `Minimum purchase is N$${currentSharePrice} (1 share)` }
         }
 
-        // Create buy order
-        const newBuyOrder: BuyOrder = {
-          id: `buy-${Date.now()}`,
-          userId: currentUserId,
-          totalAmount: actualAmount,
-          pricePerShare: currentSharePrice,
-          status: "active",
-          createdAt: new Date(),
-          filledAmount: 0,
-        }
-
-        // Deduct from buy wallet
-        await updateBuyWallet(actualAmount, "subtract")
-
-        // Match against sell orders
-        const { matches, updatedSellOrders } = matchBuyOrder(newBuyOrder, sellOrders)
-
-        // Update sell orders
-        setSellOrders(updatedSellOrders)
-
-        // Calculate filled amount and shares
-        let totalFilledAmount = 0
-        let totalShares = 0
-
-        matches.forEach((match) => {
-          totalFilledAmount += match.totalAmount
-          totalShares += match.shares
+        // Place buy order in Supabase
+        const { data, error } = await supabase.rpc("place_buy_order", {
+          p_user_uuid: user.id,
+          p_total_amount: actualAmount,
+          p_price_per_share: currentSharePrice,
         })
 
-        // Update buy order status
-        const updatedBuyOrder: BuyOrder = {
-          ...newBuyOrder,
-          filledAmount: totalFilledAmount,
-          status: totalFilledAmount >= actualAmount ? "filled" : "active",
-        }
+        if (error) throw error
 
-        // Add shares to pre-hold wallet
-        if (totalShares > 0) {
-          // In the mock, we'll simulate adding to pre-hold
-          console.log(`Mock: Adding ${totalShares} shares to pre-hold wallet`)
-        }
-
-        // Add to buy orders
-        setBuyOrders((prev) => [...prev, updatedBuyOrder])
-
-        // Return unused funds to buy wallet if any
-        const unusedAmount = actualAmount - totalFilledAmount
-        if (unusedAmount > 0) {
-          await updateBuyWallet(unusedAmount, "add")
-        }
+        // Refresh orders and wallet
+        await refreshOrders()
+        await updateBuyWallet(actualAmount, "subtract")
 
         return {
           success: true,
-          message: `Buy order placed! Purchased ${totalShares} shares for N$${totalFilledAmount.toFixed(2)}`,
+          message: `Buy order placed for ${sharesPossible} shares at N$${currentSharePrice} each`,
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error placing buy order:", error)
-        return { success: false, message: "Failed to place buy order" }
+        return { success: false, message: error.message || "Failed to place buy order" }
       } finally {
         setLoading(false)
       }
     },
-    [buyWalletBalance, currentSharePrice, updateBuyWallet, sellOrders],
+    [user, buyWalletBalance, currentSharePrice, updateBuyWallet],
   )
 
   const placeSellOrder = useCallback(
     async (shares: number): Promise<{ success: boolean; message: string }> => {
+      if (!user) return { success: false, message: "User not authenticated" }
+
       setLoading(true)
 
       try {
@@ -142,35 +188,31 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: "Insufficient shares in Post-Hold wallet" }
         }
 
-        // Create sell order
-        const newSellOrder: SellOrder = {
-          id: `sell-${Date.now()}`,
-          userId: currentUserId,
-          shares: shares,
-          pricePerShare: currentSharePrice,
-          status: "queued", // Start as queued, will become active based on queue position
-          createdAt: new Date(),
-          filledShares: 0,
-        }
+        // Place sell order in Supabase
+        const { data, error } = await supabase.rpc("place_sell_order", {
+          p_user_uuid: user.id,
+          p_shares: shares,
+          p_price_per_share: currentSharePrice,
+        })
 
-        // Deduct shares from post-hold wallet (mock)
-        console.log(`Mock: Deducting ${shares} shares from post-hold wallet`)
+        if (error) throw error
 
-        // Add to sell orders
-        setSellOrders((prev) => [...prev, newSellOrder])
+        // Refresh orders and wallet
+        await refreshOrders()
+        await updateHoldWallet(shares, "subtract", "post")
 
         return {
           success: true,
-          message: `Sell order placed! Listed ${shares} shares at N$${currentSharePrice} each`,
+          message: `Sell order placed for ${shares} shares at N$${currentSharePrice} each`,
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error placing sell order:", error)
-        return { success: false, message: "Failed to place sell order" }
+        return { success: false, message: error.message || "Failed to place sell order" }
       } finally {
         setLoading(false)
       }
     },
-    [holdWalletPostHold, currentSharePrice],
+    [user, holdWalletPostHold, currentSharePrice, updateHoldWallet],
   )
 
   const value: ExchangeContextType = {
@@ -182,6 +224,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     placeSellOrder,
     currentSharePrice,
     loading,
+    error,
+    refreshOrders,
   }
 
   return <ExchangeContext.Provider value={value}>{children}</ExchangeContext.Provider>

@@ -7,7 +7,7 @@ import { useTransactions } from "@/contexts/transaction-context"
 import Celebration from "@/components/celebration"
 import { VestingSlot } from "@/components/vesting-slot"
 import { VestConfirmationModal } from "@/components/vest-confirmation-modal"
-import { AlertCircle, Clock } from "lucide-react"
+import { AlertCircle, Clock, Loader2 } from "lucide-react"
 
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("Retail")
@@ -29,8 +29,7 @@ export default function Vesting() {
   const [showConfetti, setShowConfetti] = useState(false)
 
   // Get wallet functions
-  const { pwtInvestBalance, aftBalance, updateAftBalance, holdWalletBalance, holdWalletPreHold, holdWalletPostHold } =
-    useWallet()
+  const { holdWalletPreHold, holdWalletPostHold, loading: walletLoading, error: walletError } = useWallet()
 
   // Get transaction functions directly from the transaction context
   const { addTransaction } = useTransactions()
@@ -44,7 +43,8 @@ export default function Vesting() {
     getTotalClaimableShares,
     validateVestingAmount,
     getHoldPeriodForLevel,
-    loading,
+    loading: vestingLoading,
+    error: vestingError,
   } = useVesting()
 
   // Clear messages after 5 seconds
@@ -88,12 +88,12 @@ export default function Vesting() {
       await claimShares(currentLevel, slotIndex)
 
       setClaimSuccess(
-        `Successfully claimed ${slot.amount} shares from ${VESTING_LEVELS[currentLevel as keyof typeof VESTING_LEVELS].name} Slot ${slotIndex + 1}!`,
+        `Successfully claimed ${slot.shares_amount} shares from ${VESTING_LEVELS[currentLevel as keyof typeof VESTING_LEVELS].name} Slot ${slotIndex + 1}!`,
       )
 
       // Show confetti for completed claims
       setShowConfetti(true)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Claim failed:", error)
       setVestError(`Claim failed: ${error.message || "Unknown error"}`)
     } finally {
@@ -122,14 +122,16 @@ export default function Vesting() {
       if (typeof addTransaction === "function") {
         const holdDays = getHoldPeriodForLevel(selectedLevel)
         await addTransaction({
-          type: "VEST",
-          account: "Hold Wallet (Pre-Hold)",
-          amount: amount,
-          amountUsd: amount * 100, // Assuming N$100 per share
+          transaction_type: "vesting",
+          shares: amount,
+          total_amount: amount * 108.2, // Current share price
+          from_wallet: "hold_pre",
+          to_wallet: "vesting_locked",
+          status: "completed",
           description: `Vested ${amount} shares in ${VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS].name} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
         })
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Vest failed:", error)
       setVestError(`Vesting failed: ${error.message || "Unknown error"}`)
       throw error // Re-throw so modal can handle it
@@ -140,6 +142,30 @@ export default function Vesting() {
 
   const totalVesting = getTotalVestingInProgress()
   const totalClaimable = getTotalClaimableShares()
+
+  if (walletLoading || vestingLoading) {
+    return (
+      <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-white" />
+          <span className="ml-2 text-white">Loading vesting data...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (walletError || vestingError) {
+    return (
+      <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+        <div className="px-6 py-4">
+          <div className="bg-red-600 text-white p-4 rounded-lg">
+            <h3 className="font-bold">Error Loading Data</h3>
+            <p>{walletError || vestingError}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
@@ -168,7 +194,7 @@ export default function Vesting() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-slate-400">Available (Pre-Hold)</div>
-              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold}</div>
+              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold.toFixed(0)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
@@ -183,7 +209,7 @@ export default function Vesting() {
             </div>
             <div>
               <div className="text-slate-400">Post-Hold</div>
-              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold}</div>
+              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold.toFixed(0)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
           </div>
@@ -253,20 +279,37 @@ export default function Vesting() {
         </div>
       </div>
 
-      {/* Vesting Slots - 6 slots for current level */}
+      {/* Vesting Slots - Real data from Supabase */}
       <div className="px-6 pb-6">
-        <h3 className="text-lg font-medium mb-4 text-slate-100">Your {activeTab} Vesting Slots (6 Available)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {currentLevelSlots.map((slot, index) => (
-            <VestingSlot
-              key={slot.id}
-              slot={slot}
-              slotIndex={index}
-              onVest={handleVestSlot}
-              onClaim={handleClaimSlot}
-            />
-          ))}
-        </div>
+        <h3 className="text-lg font-medium mb-4 text-slate-100">
+          Your {activeTab} Vesting Slots ({currentLevelSlots.length} Available)
+        </h3>
+        {currentLevelSlots.length === 0 ? (
+          <div className="text-center text-slate-400 py-8">
+            <p>No vesting slots available for this level</p>
+            <p className="text-sm">Contact support to set up vesting schedules</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {currentLevelSlots.map((slot, index) => (
+              <VestingSlot
+                key={slot.id}
+                slot={{
+                  id: slot.id,
+                  status:
+                    slot.status === "Active" ? "in_progress" : slot.status === "Completed" ? "claimable" : "empty",
+                  startDate: slot.start_date ? new Date(slot.start_date).getTime() : undefined,
+                  amount: slot.shares_amount,
+                  progress: slot.progress,
+                  level: Number.parseInt(slot.level),
+                }}
+                slotIndex={index}
+                onVest={handleVestSlot}
+                onClaim={handleClaimSlot}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Info Section */}
