@@ -4,7 +4,25 @@ import type React from "react"
 import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { formatNAD, calculateShareValue, formatShares } from "@/lib/price-calculations"
-import { formatCurrency } from "@/lib/utils"
+
+// ---------------------------------------------------------------------------
+// Local helper -- formats numbers in Namibian Dollars (NAD)
+const formatCurrency = (value: number | string, currency = "NAD") => {
+  const num = typeof value === "string" ? Number.parseFloat(value) : Number(value || 0)
+
+  if (currency === "NAD") {
+    return `N$${num.toLocaleString("en-NA", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`
+  }
+
+  return new Intl.NumberFormat("en-NA", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(num)
+}
 
 // Define the shape of our wallet state (share-based, NAD currency)
 type WalletState = {
@@ -192,7 +210,3 @@ export function useWallet() {
 
 // Export formatting functions for use in components
 export { formatNAD, formatShares, calculateShareValue }
-
-// ---------------------------------------------------------------------------
-// TEMP compatibility export -- until all components import from @/lib/utils
-export { formatCurrency } from "@/lib/utils"
