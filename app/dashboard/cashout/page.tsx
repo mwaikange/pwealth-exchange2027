@@ -218,15 +218,9 @@ export default function Cashout() {
       return
     }
 
-    // Validate minimum N$100 cashout from cashout wallet
-    if (tokenAmount < 1) {
-      setTransferError("Minimum cashout amount is N$100")
-      return
-    }
-
     // Validate sufficient balance in PWT Cashout wallet
     if (tokenAmount > pwtCashoutBalance) {
-      setTransferError("Insufficient Cashout Wallet (NAD) balance for this transfer")
+      setTransferError("Insufficient PWT Cashout balance for this transfer")
       return
     }
 
@@ -245,10 +239,10 @@ export default function Cashout() {
       const { data, error } = await supabase.rpc("transfer_tokens", {
         sender_uuid: user?.id,
         recipient_email: emailTransfer,
-        token_type: "shares",
+        token_type: "PWT",
         amount: pendingTransferAmount,
         transaction_type: "OUT-TRANSFER",
-        description: "OUT-shares Transfer",
+        description: "OUT-PWT Transfer",
       })
 
       if (error) {
@@ -263,7 +257,7 @@ export default function Cashout() {
       }
 
       // Show success message
-      setTransferSuccess(`Successfully transferred ${pendingTransferAmount} shares to ${emailTransfer}`)
+      setTransferSuccess(`Successfully transferred ${pendingTransferAmount} PWT to ${emailTransfer}`)
 
       // Clear form after successful transfer
       setPwtTokens("")
@@ -301,13 +295,13 @@ export default function Cashout() {
     // Validate USD amount is positive
     const usdAmount = Number(usdValueGift)
     if (isNaN(usdAmount) || usdAmount <= 0) {
-      setGiftError("Please enter a positive NAD amount")
+      setGiftError("Please enter a positive USD amount")
       return
     }
 
     // Validate sufficient balance in AFT wallet (1 AFT = 1 USD)
     if (usdAmount > aftBalance) {
-      setGiftError("Insufficient Buy Wallet (NAD) balance for this gift")
+      setGiftError("Insufficient AFT balance for this gift")
       return
     }
 
@@ -375,7 +369,7 @@ export default function Cashout() {
         <div className="grid grid-cols-2 gap-6">
           {/* Left Card - Transfer PWT/FIAT */}
           <div className="bg-[#2a2d3a] rounded-lg p-4">
-            <h2 className="text-xl font-bold text-yellow-300 mb-1">TRANSFER - ( shares / NAD)</h2>
+            <h2 className="text-xl font-bold text-yellow-300 mb-1">TRANSFER - ( PWT / FIAT)</h2>
             <p className="text-green-500 text-xs mb-2">These transactions are irreversible please read T&C's</p>
 
             <p className="text-xs mb-2">
@@ -411,13 +405,13 @@ export default function Cashout() {
                       setPwtTokens(value)
                       // Auto-calculate USD value based on token amount
                       const tokens = Number.parseFloat(value) || 0
-                      setUsdValueTransfer(Math.floor(tokens * 100).toString())
+                      setUsdValueTransfer(Math.floor(tokens * 10).toString())
                       // Clear messages when user starts typing
                       if (transferError) setTransferError("")
                       if (transferSuccess) setTransferSuccess("")
                     }
                   }}
-                  placeholder="#shares Tokens"
+                  placeholder="#Pwt Tokens"
                   className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
                   disabled={isTransferring}
                 />
@@ -425,7 +419,7 @@ export default function Cashout() {
                   type="text"
                   value={usdValueTransfer}
                   readOnly
-                  placeholder="NAD Value"
+                  placeholder="USD Value"
                   className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0 bg-gray-100"
                 />
               </div>
@@ -437,7 +431,7 @@ export default function Cashout() {
               {transferSuccess && <p className="text-green-500 text-xs">{transferSuccess}</p>}
 
               <div className="flex justify-between items-center">
-                <div className="text-xs text-gray-400">Available: {pwtCashoutBalance} Cashout Wallet (NAD)</div>
+                <div className="text-xs text-gray-400">Available: {pwtCashoutBalance} PWT-Cashout</div>
                 <button
                   onClick={handleTransfer}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"
@@ -446,7 +440,6 @@ export default function Cashout() {
                   {isTransferring ? "PROCESSING..." : "TRANSFER"}
                 </button>
               </div>
-              <div className="text-xs text-gray-400">1 Share = N$100</div>
             </div>
           </div>
 
@@ -489,7 +482,7 @@ export default function Cashout() {
                     if (giftSuccess) setGiftSuccess("")
                   }
                 }}
-                placeholder="NAD Value (1 AFT = 1 NAD)"
+                placeholder="USD Value (1 AFT = 1 USD)"
                 className="w-full p-2 rounded bg-[#f5f5f5] text-black text-sm border-0"
                 disabled={isGifting}
               />
@@ -501,7 +494,7 @@ export default function Cashout() {
               {giftSuccess && <p className="text-green-500 text-xs">{giftSuccess}</p>}
 
               <div className="flex justify-between items-center mt-[34px]">
-                <div className="text-xs text-gray-400">Available: {aftBalance} Buy Wallet (NAD)</div>
+                <div className="text-xs text-gray-400">Available: {aftBalance} AFT</div>
                 <button
                   onClick={handleGift}
                   className="bg-[#34a853] hover:bg-green-600 text-white font-medium py-1 px-6 rounded text-sm"

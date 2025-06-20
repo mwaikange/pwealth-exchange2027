@@ -1,246 +1,355 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import {
-  Box,
-  Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  TextField,
-  Typography,
-  Grid,
-  Paper,
-  CircularProgress,
-} from "@mui/material"
-import { styled } from "@mui/material/styles"
+import { useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { useWallet, formatCurrency } from "@/contexts/wallet-context"
+import { useExchange } from "@/contexts/exchange-context"
+import { AlertCircle, TrendingUp, TrendingDown, Wallet } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-const Item = styled(Paper)(({ theme }) => ({
-  backgroundColor: theme.palette.mode === "dark" ? "#1A2027" : "#fff",
-  ...theme.typography.body2,
-  padding: theme.spacing(1),
-  textAlign: "center",
-  color: theme.palette.text.secondary,
-}))
+export default function ExchangePage() {
+  const [buyAmount, setBuyAmount] = useState("")
+  const [sellShares, setSellShares] = useState("")
+  const [cashoutAmount, setCashoutAmount] = useState("")
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-const ExchangePage = () => {
-  const [buyWalletBalance, setBuyWalletBalance] = useState(0)
-  const [holdWalletPreHoldBalance, setHoldWalletPreHoldBalance] = useState(0)
-  const [holdWalletPostHoldBalance, setHoldWalletPostHoldBalance] = useState(0)
-  const [sharesToBuy, setSharesToBuy] = useState("")
-  const [sharesToSell, setSharesToSell] = useState("")
-  const [selectedShare, setSelectedShare] = useState("")
-  const [availableShares, setAvailableShares] = useState(["Share A", "Share B", "Share C"]) // Example shares
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [successMessage, setSuccessMessage] = useState("")
+  const { buyWalletBalance, holdWalletPostHold, cashoutWalletBalance } = useWallet()
 
-  useEffect(() => {
-    // Mock API call to fetch wallet balances
-    const fetchWalletBalances = async () => {
-      setLoading(true)
-      try {
-        // Simulate API response
-        const response = {
-          buyWalletBalance: 1000, // NAD
-          holdWalletPreHoldBalance: 500, // shares available for vesting
-          holdWalletPostHoldBalance: 200, // shares ready for trading
-        }
+  const {
+    sellOrders,
+    buyOrders,
+    userSellOrders,
+    userBuyOrders,
+    placeBuyOrder,
+    placeSellOrder,
+    currentSharePrice,
+    loading,
+  } = useExchange()
 
-        setBuyWalletBalance(response.buyWalletBalance)
-        setHoldWalletPreHoldBalance(response.holdWalletPreHoldBalance)
-        setHoldWalletPostHoldBalance(response.holdWalletPostHoldBalance)
-        setError("")
-      } catch (e: any) {
-        setError("Failed to fetch wallet balances.")
-        console.error(e)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchWalletBalances()
-  }, [])
-
-  const handleBuyShares = async () => {
-    if (!selectedShare) {
-      setError("Please select a share to buy.")
+  const handleBuyOrder = async () => {
+    const amount = Number.parseFloat(buyAmount)
+    if (isNaN(amount)) {
+      setMessage({ type: "error", text: "Please enter a valid amount" })
       return
     }
 
-    if (!sharesToBuy || isNaN(Number(sharesToBuy)) || Number(sharesToBuy) <= 0) {
-      setError("Please enter a valid number of shares to buy.")
-      return
-    }
+    const result = await placeBuyOrder(amount)
+    setMessage({ type: result.success ? "success" : "error", text: result.message })
 
-    const sharesToBuyNumber = Number(sharesToBuy)
-
-    if (buyWalletBalance < sharesToBuyNumber * 50) {
-      setError("Insufficient NAD balance in Buy Wallet.")
-      return
-    }
-
-    setLoading(true)
-    setError("")
-    setSuccessMessage("")
-
-    try {
-      // Simulate API call to buy shares
-      // Replace with actual API endpoint
-      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulate API delay
-
-      // Update wallet balances (optimistically)
-      setBuyWalletBalance(buyWalletBalance - sharesToBuyNumber * 50)
-      setHoldWalletPreHoldBalance(holdWalletPreHoldBalance + sharesToBuyNumber)
-
-      setSuccessMessage(`${sharesToBuyNumber} shares of ${selectedShare} bought successfully.`)
-      setSharesToBuy("")
-    } catch (e: any) {
-      setError("Failed to buy shares.")
-      console.error(e)
-    } finally {
-      setLoading(false)
+    if (result.success) {
+      setBuyAmount("")
     }
   }
 
-  const handleSellShares = async () => {
-    if (!selectedShare) {
-      setError("Please select a share to sell.")
+  const handleSellOrder = async () => {
+    const shares = Number.parseFloat(sellShares)
+    if (isNaN(shares)) {
+      setMessage({ type: "error", text: "Please enter a valid number of shares" })
       return
     }
 
-    if (!sharesToSell || isNaN(Number(sharesToSell)) || Number(sharesToSell) <= 0) {
-      setError("Please enter a valid number of shares to sell.")
+    const result = await placeSellOrder(shares)
+    setMessage({ type: result.success ? "success" : "error", text: result.message })
+
+    if (result.success) {
+      setSellShares("")
+    }
+  }
+
+  const handleCashout = async () => {
+    const amount = Number.parseFloat(cashoutAmount)
+    if (isNaN(amount)) {
+      setMessage({ type: "error", text: "Please enter a valid cashout amount" })
       return
     }
 
-    const sharesToSellNumber = Number(sharesToSell)
-
-    if (holdWalletPostHoldBalance < sharesToSellNumber) {
-      setError("Insufficient shares in Hold Wallet Post-Hold.")
+    if (amount > cashoutWalletBalance) {
+      setMessage({ type: "error", text: "Insufficient cashout balance" })
       return
     }
 
-    setLoading(true)
-    setError("")
-    setSuccessMessage("")
+    // Mock cashout logic
+    setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
+    setCashoutAmount("")
+  }
 
-    try {
-      // Simulate API call to sell shares
-      // Replace with actual API endpoint
-      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulate API delay
+  const getStatusBadge = (status: string) => {
+    const variants = {
+      active: "default",
+      queued: "secondary",
+      filled: "default",
+      partially_filled: "outline",
+      expired: "destructive",
+    } as const
 
-      // Update wallet balances (optimistically)
-      setBuyWalletBalance(buyWalletBalance + sharesToSellNumber * 50)
-      setHoldWalletPostHoldBalance(holdWalletPostHoldBalance - sharesToSellNumber)
+    const colors = {
+      active: "bg-green-500",
+      queued: "bg-yellow-500",
+      filled: "bg-blue-500",
+      partially_filled: "bg-orange-500",
+      expired: "bg-red-500",
+    } as const
 
-      setSuccessMessage(`${sharesToSellNumber} shares of ${selectedShare} sold successfully.`)
-      setSharesToSell("")
-    } catch (e: any) {
-      setError("Failed to sell shares.")
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
+    return (
+      <Badge variant={variants[status as keyof typeof variants]} className={colors[status as keyof typeof colors]}>
+        {status.replace("_", " ").toUpperCase()}
+      </Badge>
+    )
   }
 
   return (
-    <Box sx={{ flexGrow: 1, padding: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Shares Exchange
-      </Typography>
+    <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+      {/* Alert Banner */}
+      <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
+        <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+        <AlertDescription className="text-green-800 dark:text-green-100">
+          Share Exchange is now live! Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
+        </AlertDescription>
+      </Alert>
 
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h6">Buy Wallet (NAD)</Typography>
-            <Typography variant="body1">Balance: N${buyWalletBalance.toFixed(2)}</Typography>
-          </Item>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h6">Hold Wallet Pre-Hold (shares available for vesting)</Typography>
-            <Typography variant="body1">Balance: {holdWalletPreHoldBalance}</Typography>
-          </Item>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h6">Hold Wallet Post-Hold (shares ready for trading)</Typography>
-            <Typography variant="body1">Balance: {holdWalletPostHoldBalance}</Typography>
-          </Item>
-        </Grid>
-      </Grid>
-
-      <Box mt={3}>
-        <FormControl fullWidth>
-          <InputLabel id="select-share-label">Select Share</InputLabel>
-          <Select
-            labelId="select-share-label"
-            id="select-share"
-            value={selectedShare}
-            label="Select Share"
-            onChange={(e) => setSelectedShare(e.target.value)}
-          >
-            {availableShares.map((share) => (
-              <MenuItem key={share} value={share}>
-                {share}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
-
-      <Grid container spacing={2} mt={2}>
-        <Grid item xs={12} md={6}>
-          <Item>
-            <Typography variant="h6">Buy Shares</Typography>
-            <TextField
-              fullWidth
-              label="Shares to Buy"
-              value={sharesToBuy}
-              onChange={(e) => setSharesToBuy(e.target.value)}
-              margin="normal"
-              type="number"
-              inputProps={{ min: 0 }}
-            />
-            <Button variant="contained" color="primary" onClick={handleBuyShares} disabled={loading}>
-              {loading ? <CircularProgress size={24} /> : "Buy Shares"}
-            </Button>
-          </Item>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Item>
-            <Typography variant="h6">Sell Shares</Typography>
-            <TextField
-              fullWidth
-              label="Shares to Sell"
-              value={sharesToSell}
-              onChange={(e) => setSharesToSell(e.target.value)}
-              margin="normal"
-              type="number"
-              inputProps={{ min: 0 }}
-            />
-            <Button variant="contained" color="secondary" onClick={handleSellShares} disabled={loading}>
-              {loading ? <CircularProgress size={24} /> : "Sell Shares"}
-            </Button>
-          </Item>
-        </Grid>
-      </Grid>
-
-      {error && (
-        <Typography color="error" mt={2}>
-          {error}
-        </Typography>
+      {message && (
+        <Alert variant={message.type === "error" ? "destructive" : "default"}>
+          <AlertDescription>{message.text}</AlertDescription>
+        </Alert>
       )}
 
-      {successMessage && (
-        <Typography color="success" mt={2}>
-          {successMessage}
-        </Typography>
-      )}
-    </Box>
+      <div className="grid grid-cols-4 gap-6">
+        {/* Share Price Section */}
+        <div className="col-span-1">
+          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-300">Current Share Price</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-400">{formatCurrency(currentSharePrice)}</div>
+              <p className="text-xs text-slate-400 mt-1">per share</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Wallet Cards */}
+        <div className="col-span-3 grid grid-cols-3 gap-4">
+          {/* Buy Wallet */}
+          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+                <TrendingUp className="h-4 w-4 mr-2 text-blue-400" />
+                Buy Wallet
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-lg font-semibold text-slate-100">{formatCurrency(buyWalletBalance)}</div>
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  placeholder="Amount (N$)"
+                  value={buyAmount}
+                  onChange={(e) => setBuyAmount(e.target.value)}
+                  disabled={loading}
+                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
+                />
+                <Button
+                  onClick={handleBuyOrder}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={loading || !buyAmount}
+                >
+                  {loading ? "Processing..." : "Buy Shares"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Hold Wallet (Post-Hold) */}
+          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+                <TrendingDown className="h-4 w-4 mr-2 text-green-400" />
+                Hold Wallet (Post-Hold)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-lg font-semibold text-slate-100">{holdWalletPostHold.toFixed(2)} shares</div>
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  placeholder="Shares to sell"
+                  value={sellShares}
+                  onChange={(e) => setSellShares(e.target.value)}
+                  disabled={loading}
+                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
+                />
+                <Button
+                  onClick={handleSellOrder}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  disabled={loading || !sellShares}
+                >
+                  {loading ? "Processing..." : "Sell Shares"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cashout Wallet */}
+          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+                <Wallet className="h-4 w-4 mr-2 text-orange-400" />
+                Cashout Wallet
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-lg font-semibold text-slate-100">{formatCurrency(cashoutWalletBalance)}</div>
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  placeholder="Amount to cashout (N$)"
+                  value={cashoutAmount}
+                  onChange={(e) => setCashoutAmount(e.target.value)}
+                  disabled={loading}
+                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
+                />
+                <Button
+                  onClick={handleCashout}
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                  disabled={loading || !cashoutAmount}
+                >
+                  {loading ? "Processing..." : "Cashout"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Order Books */}
+      <div className="grid grid-cols-2 gap-6">
+        {/* Market Buy Orders */}
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-slate-200">Market Buy Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {buyOrders.slice(0, 10).map((order) => (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium text-slate-100">{formatCurrency(order.totalAmount)}</span>
+                    <span className="text-xs text-slate-400">
+                      ({Math.floor(order.totalAmount / order.pricePerShare)} shares)
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(order.status)}
+                    <span className="text-xs text-slate-400">
+                      {Math.round((order.filledAmount / order.totalAmount) * 100)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Market Sell Orders */}
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-slate-200">Market Sell Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {sellOrders.slice(0, 10).map((order) => (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium text-slate-100">{order.shares} shares</span>
+                    <span className="text-xs text-slate-400">@ {formatCurrency(order.pricePerShare)}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(order.status)}
+                    <span className="text-xs text-slate-400">
+                      {order.filledShares}/{order.shares}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* User Orders */}
+      <div className="grid grid-cols-2 gap-6">
+        {/* Your Buy Orders */}
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-slate-200">Your Buy Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {userBuyOrders.length === 0 ? (
+                <p className="text-slate-400 text-sm">No buy orders yet</p>
+              ) : (
+                userBuyOrders.map((order) => (
+                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="font-medium text-slate-100">{formatCurrency(order.totalAmount)}</span>
+                        <span className="text-sm text-slate-400 ml-2">
+                          ({Math.floor(order.totalAmount / order.pricePerShare)} shares)
+                        </span>
+                      </div>
+                      {getStatusBadge(order.status)}
+                    </div>
+                    <Progress value={(order.filledAmount / order.totalAmount) * 100} className="h-2" />
+                    <div className="text-xs text-slate-400 mt-1">
+                      Filled: {formatCurrency(order.filledAmount)} / {formatCurrency(order.totalAmount)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Your Sell Orders */}
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-slate-200">Your Sell Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {userSellOrders.length === 0 ? (
+                <p className="text-slate-400 text-sm">No sell orders yet</p>
+              ) : (
+                userSellOrders.map((order) => (
+                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="font-medium text-slate-100">{order.shares} shares</span>
+                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.pricePerShare)}</span>
+                      </div>
+                      {getStatusBadge(order.status)}
+                    </div>
+                    <Progress value={(order.filledShares / order.shares) * 100} className="h-2" />
+                    <div className="text-xs text-slate-400 mt-1">
+                      Filled: {order.filledShares} / {order.shares} shares
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
-
-export default ExchangePage

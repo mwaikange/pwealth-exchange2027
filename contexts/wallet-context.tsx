@@ -3,40 +3,31 @@
 import type React from "react"
 import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
-import { formatNAD, calculateShareValue, formatShares } from "@/lib/price-calculations"
-import { formatCurrency } from "@/lib/utils"
 
-// Define the shape of our wallet state (share-based, NAD currency)
+// Define the shape of our NEW wallet state (frontend mapping)
 type WalletState = {
-  buyWalletBalance: number // NAD balance for buying shares
-  holdWalletBalance: number // Total shares in hold wallet
-  cashoutWalletBalance: number // NAD balance ready for cashout
-  // Pre/Post split for shares (not NAD)
-  holdWalletPreHold: number // Shares available for vesting (was "Invest")
-  holdWalletPostHold: number // Shares ready for exchange (after vesting)
+  buyWalletBalance: number // Maps to activation_fee_balance
+  holdWalletBalance: number // Maps to pwt_invest_balance (will split later)
+  cashoutWalletBalance: number // Maps to pwt_cashout_balance
+  // Temporary pre/post split for UI (50/50 for now)
+  holdWalletPreHold: number // Calculated: holdWalletBalance * 0.5
+  holdWalletPostHold: number // Calculated: holdWalletBalance * 0.5
 }
 
 // Define the context type with state and update functions
 type WalletContextType = WalletState & {
-  // Update functions
+  // Update functions (still using old backend fields for now)
   updateBuyWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
-  updateHoldWallet: (shares: number, operation: "add" | "subtract") => Promise<void>
+  updateHoldWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
   updateCashoutWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
 
   // Convenience methods for specific operations
   topUpBuyWallet: (amount: number) => Promise<void>
-  transferToHold: (shares: number) => Promise<void>
+  transferToHold: (amount: number) => Promise<void>
   transferToCashout: (amount: number) => Promise<void>
 
-  // Value calculations
-  getTotalSharesValue: () => number
+  // Calculated values
   getTotalAccountValue: () => number
-  getSharePrice: () => number
-
-  // Validation functions
-  canCashout: (amount: number) => boolean
-  getMinCashoutAmount: () => number
-  getMinTradeAmount: () => number
 
   refreshBalances: () => Promise<void>
   loading: boolean
@@ -45,33 +36,24 @@ type WalletContextType = WalletState & {
 // Create the context with default values
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
 
-// Static mock data for testing (converted from legacy tokens to shares)
+// Static mock data for testing
 const mockWalletData: WalletState = {
-  buyWalletBalance: 1200.0, // NAD
-  holdWalletBalance: 18.0, // Total shares (converted from 9 tokens * 2)
-  cashoutWalletBalance: 0.0, // NAD
-  holdWalletPreHold: 10.5, // Shares available for vesting (was "Invest")
-  holdWalletPostHold: 7.5, // Shares ready for exchange (after vesting)
+  buyWalletBalance: 1200.0,
+  holdWalletBalance: 9.0, // Total hold wallet
+  cashoutWalletBalance: 0.0,
+  holdWalletPreHold: 5.25, // Available for vesting
+  holdWalletPostHold: 3.75, // Ready for exchange
 }
+
+// Currency formatter for Namibian Dollars
+const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
 
 // Provider component
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // State for wallet balances (using mock data with shares)
+  // State for wallet balances (using mock data)
   const [walletState, setWalletState] = useState<WalletState>(mockWalletData)
   const [loading, setLoading] = useState(false)
   const { user } = useAuth()
-
-  // Current share price (static for now)
-  const getSharePrice = () => 100 // N$100 per share
-
-  // Minimum amounts
-  const getMinTradeAmount = () => 50 // N$50 minimum trade
-  const getMinCashoutAmount = () => 100 // N$100 minimum cashout
-
-  // Validation functions
-  const canCashout = (amount: number) => {
-    return amount >= getMinCashoutAmount() && amount <= walletState.cashoutWalletBalance
-  }
 
   // Mock function to refresh balances (no actual backend call)
   const refreshBalances = async () => {
@@ -91,32 +73,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     setWalletState((prev) => ({
       ...prev,
-      buyWalletBalance: Math.max(0, newBalance), // Prevent negative balance
+      buyWalletBalance: newBalance,
     }))
 
-    console.log(
-      `Mock: ${operation} ${formatCurrency(amount)} to Buy Wallet. New balance: ${formatCurrency(newBalance)}`,
-    )
+    console.log(`Mock: ${operation} ${amount} to Buy Wallet. New balance: ${newBalance}`)
   }
 
-  const updateHoldWallet = async (shares: number, operation: "add" | "subtract") => {
+  const updateHoldWallet = async (amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
     const newBalance =
-      operation === "add" ? walletState.holdWalletBalance + shares : walletState.holdWalletBalance - shares
+      operation === "add" ? walletState.holdWalletBalance + amount : walletState.holdWalletBalance - amount
 
-    // Calculate new pre/post split (60% pre-hold, 40% post-hold)
-    const newPreHold = Math.max(0, newBalance * 0.6)
-    const newPostHold = Math.max(0, newBalance * 0.4)
+    // Calculate new pre/post split
+    const newPreHold = newBalance * 0.6 // 60% pre-hold
+    const newPostHold = newBalance * 0.4 // 40% post-hold
 
     setWalletState((prev) => ({
       ...prev,
-      holdWalletBalance: Math.max(0, newBalance),
+      holdWalletBalance: newBalance,
       holdWalletPreHold: newPreHold,
       holdWalletPostHold: newPostHold,
     }))
 
-    console.log(`Mock: ${operation} ${shares} shares to Hold Wallet. New balance: ${newBalance} shares`)
+    console.log(`Mock: ${operation} ${amount} to Hold Wallet. New balance: ${newBalance}`)
   }
 
   const updateCashoutWallet = async (amount: number, operation: "add" | "subtract") => {
@@ -127,12 +107,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     setWalletState((prev) => ({
       ...prev,
-      cashoutWalletBalance: Math.max(0, newBalance),
+      cashoutWalletBalance: newBalance,
     }))
 
-    console.log(
-      `Mock: ${operation} ${formatCurrency(amount)} to Cashout Wallet. New balance: ${formatCurrency(newBalance)}`,
-    )
+    console.log(`Mock: ${operation} ${amount} to Cashout Wallet. New balance: ${newBalance}`)
   }
 
   // Convenience methods for specific operations
@@ -140,23 +118,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await updateBuyWallet(amount, "add")
   }
 
-  const transferToHold = async (shares: number) => {
-    await updateHoldWallet(shares, "add")
+  const transferToHold = async (amount: number) => {
+    await updateHoldWallet(amount, "add")
   }
 
   const transferToCashout = async (amount: number) => {
     await updateCashoutWallet(amount, "add")
   }
 
-  // Value calculations
-  const getTotalSharesValue = () => {
-    const sharePrice = getSharePrice()
-    return calculateShareValue(walletState.holdWalletBalance, sharePrice)
-  }
-
+  // Calculated values
   const getTotalAccountValue = () => {
-    const sharesValue = getTotalSharesValue()
-    return walletState.buyWalletBalance + sharesValue + walletState.cashoutWalletBalance
+    return walletState.buyWalletBalance + walletState.holdWalletBalance + walletState.cashoutWalletBalance
   }
 
   // Context value
@@ -168,12 +140,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     topUpBuyWallet,
     transferToHold,
     transferToCashout,
-    getTotalSharesValue,
     getTotalAccountValue,
-    getSharePrice,
-    canCashout,
-    getMinCashoutAmount,
-    getMinTradeAmount,
     refreshBalances,
     loading,
   }
@@ -190,5 +157,5 @@ export function useWallet() {
   return context
 }
 
-// Export formatting functions for use in components
-export { formatNAD, formatShares, calculateShareValue }
+// Export currency formatter for use in components
+export { formatCurrency }

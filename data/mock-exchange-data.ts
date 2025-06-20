@@ -4,16 +4,16 @@ export const mockSellOrders: SellOrder[] = [
   {
     id: "sell-001",
     userId: "user-001",
-    shares: 20, // Updated to realistic share amounts
+    shares: 10,
     pricePerShare: 100,
     status: "active",
     createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-    filledShares: 2,
+    filledShares: 1,
   },
   {
     id: "sell-002",
     userId: "user-002",
-    shares: 10,
+    shares: 5,
     pricePerShare: 100,
     status: "active",
     createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
@@ -22,7 +22,7 @@ export const mockSellOrders: SellOrder[] = [
   {
     id: "sell-003",
     userId: "user-003",
-    shares: 30,
+    shares: 15,
     pricePerShare: 100,
     status: "queued",
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
@@ -31,11 +31,11 @@ export const mockSellOrders: SellOrder[] = [
   {
     id: "sell-004",
     userId: "user-004",
-    shares: 16,
+    shares: 8,
     pricePerShare: 100,
     status: "filled",
     createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
-    filledShares: 16,
+    filledShares: 8,
   },
 ]
 
@@ -43,19 +43,19 @@ export const mockBuyOrders: BuyOrder[] = [
   {
     id: "buy-001",
     userId: "current-user",
-    totalAmount: 2000, // N$2000 for 20 shares
+    totalAmount: 1000,
     pricePerShare: 100,
     status: "active",
     createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
-    filledAmount: 1800, // 18 shares filled
+    filledAmount: 900,
   },
   {
     id: "buy-002",
     userId: "current-user",
-    totalAmount: 1000, // N$1000 for 10 shares
+    totalAmount: 500,
     pricePerShare: 100,
     status: "filled",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-    filledAmount: 1000, // Fully filled
+    filledAmount: 500,
   },
 ]
