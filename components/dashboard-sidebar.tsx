@@ -21,7 +21,7 @@ export function DashboardSidebar() {
     {
       name: "Overview",
       description: "Dashboard Overview",
-      href: "/dashboard",
+      href: "/dashboard/overview",
       icon: LayoutDashboard,
     },
     {

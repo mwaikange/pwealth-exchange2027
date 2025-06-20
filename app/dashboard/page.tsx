@@ -1,7 +1,14 @@
 "use client"
 
-import { DashboardContent } from "@/components/dashboard-content"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 
 export default function Dashboard() {
-  return <DashboardContent />
+  const router = useRouter()
+
+  useEffect(() => {
+    router.replace("/dashboard/overview")
+  }, [router])
+
+  return null
 }
