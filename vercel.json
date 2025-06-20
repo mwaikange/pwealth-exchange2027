@@ -1,4 +1,17 @@
 {
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "pnpm run vercel-build"
+  "buildCommand": "pnpm run vercel-build",
+  "redirects": [
+    {
+      "source": "/login",
+      "has": [
+        {
+          "type": "cookie",
+          "key": "supabase-auth-token"
+        }
+      ],
+      "destination": "/dashboard",
+      "permanent": false
+    }
+  ]
 }
