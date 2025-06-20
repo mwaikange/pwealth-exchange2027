@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, ArrowUpRight, ArrowDownLeft, Coins } from "lucide-react"
 
 // Metric Cards Mock Data
 const metricCards = [
@@ -22,28 +22,40 @@ const vestingSlots = [
 // Recent Transactions
 const recentTransactions = [
   {
+    id: "1",
     description: "CASHOUT - Mobile Money",
     account: "Cashout Wallet",
-    date: "2025-06-19",
+    date: "19 Jun",
     reference: "CMM-001",
-    shares: "10 Shares",
-    nad: "N$1,000",
+    peerEmail: "-",
+    amount: "10",
+    amountUsd: "N$1,000",
+    type: "CASHOUT",
+    isPositive: false,
   },
   {
+    id: "2",
     description: "SHARES MATCHED - Buy Order",
     account: "Buy Wallet",
-    date: "2025-06-19",
+    date: "19 Jun",
     reference: "BUY-002",
-    shares: "5 Shares",
-    nad: "N$500",
+    peerEmail: "system@peer-wealth.com",
+    amount: "5",
+    amountUsd: "N$500",
+    type: "BUY",
+    isPositive: true,
   },
   {
+    id: "3",
     description: "CLAIM - Vesting Slot",
     account: "Hold Wallet",
-    date: "2025-06-18",
+    date: "18 Jun",
     reference: "VST-003",
-    shares: "3 Shares",
-    nad: "N$300",
+    peerEmail: "system@peer-wealth.com",
+    amount: "3",
+    amountUsd: "N$300",
+    type: "CLAIM",
+    isPositive: true,
   },
 ]
 
@@ -137,26 +149,38 @@ export function OverviewComponent() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left py-2 font-medium text-gray-300">Description</th>
-                <th className="text-left py-2 font-medium text-gray-300">Account</th>
-                <th className="text-left py-2 font-medium text-gray-300">Date</th>
-                <th className="text-left py-2 font-medium text-gray-300">Reference</th>
-                <th className="text-left py-2 font-medium text-gray-300">Amount (Shares)</th>
-                <th className="text-left py-2 font-medium text-gray-300">Amount (NAD)</th>
+              <tr className="border-b border-gray-700 bg-[#1c1e26]">
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Description</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Account</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Date</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Reference</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Peer-Email</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Amount (Shares)</th>
+                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Amount (NAD)</th>
               </tr>
             </thead>
             <tbody>
-              {recentTransactions.map((transaction, index) => (
-                <tr key={index} className="border-b border-gray-800">
-                  <td className="py-3 text-white">{transaction.description}</td>
-                  <td className="py-3 text-gray-300">{transaction.account}</td>
-                  <td className="py-3 text-gray-300">{transaction.date}</td>
-                  <td className="py-3 text-gray-300">{transaction.reference}</td>
-                  <td className="py-3 text-white">{transaction.shares}</td>
-                  <td className="py-3 text-white">{transaction.nad}</td>
+              {recentTransactions.map((transaction) => (
+                <tr key={transaction.id} className="border-b border-gray-700">
+                  <td className="py-[6px] px-4 text-[10px]">
+                    <div className="flex items-center gap-2">
+                      {transaction.type === "CASHOUT" && <ArrowDownLeft className="h-3 w-3 text-red-500" />}
+                      {transaction.type === "BUY" && <ArrowUpRight className="h-3 w-3 text-green-500" />}
+                      {transaction.type === "CLAIM" && <Coins className="h-3 w-3 text-blue-500" />}
+                      <span className={transaction.isPositive ? "text-green-500" : "text-red-500"}>
+                        {transaction.isPositive ? "+ " : "- "}
+                      </span>
+                      <span className="text-white">{transaction.description}</span>
+                    </div>
+                  </td>
+                  <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.account}</td>
+                  <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.date}</td>
+                  <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.reference}</td>
+                  <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.peerEmail}</td>
+                  <td className="py-[6px] px-4 text-[10px] text-white">{transaction.amount} Shares</td>
+                  <td className="py-[6px] px-4 text-[10px] text-white">{transaction.amountUsd}</td>
                 </tr>
               ))}
             </tbody>
