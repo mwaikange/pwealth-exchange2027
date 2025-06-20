@@ -1,7 +1,11 @@
 {
   "dependencies": {
     "@auth/core": "latest",
+    "@emotion/react": "latest",
+    "@emotion/styled": "latest",
     "@hookform/resolvers": "latest",
+    "@mui/material": "latest",
+    "@mui/material-pigment-css": "latest",
     "@radix-ui/react-menubar": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
     "@supabase/ssr": "latest",
@@ -13,6 +17,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "latest",
+    "ethers": "latest",
     "howler": "latest",
     "lucide-react": "^0.454.0",
     "next": "15.2.4",

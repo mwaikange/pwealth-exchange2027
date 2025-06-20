@@ -5,14 +5,14 @@ import { createContext, useContext, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { formatNAD, calculateShareValue, formatShares } from "@/lib/price-calculations"
 
-// Define the shape of our wallet state (share-based)
+// Define the shape of our wallet state (share-based, NAD currency)
 type WalletState = {
   buyWalletBalance: number // NAD balance for buying shares
   holdWalletBalance: number // Total shares in hold wallet
   cashoutWalletBalance: number // NAD balance ready for cashout
   // Pre/Post split for shares (not NAD)
-  holdWalletPreHold: number // Shares available for vesting
-  holdWalletPostHold: number // Shares ready for exchange
+  holdWalletPreHold: number // Shares available for vesting (was "Invest")
+  holdWalletPostHold: number // Shares ready for exchange (after vesting)
 }
 
 // Define the context type with state and update functions
@@ -32,6 +32,11 @@ type WalletContextType = WalletState & {
   getTotalAccountValue: () => number
   getSharePrice: () => number
 
+  // Validation functions
+  canCashout: (amount: number) => boolean
+  getMinCashoutAmount: () => number
+  getMinTradeAmount: () => number
+
   refreshBalances: () => Promise<void>
   loading: boolean
 }
@@ -44,8 +49,26 @@ const mockWalletData: WalletState = {
   buyWalletBalance: 1200.0, // NAD
   holdWalletBalance: 18.0, // Total shares (converted from 9 tokens * 2)
   cashoutWalletBalance: 0.0, // NAD
-  holdWalletPreHold: 10.5, // Shares available for vesting (converted from 5.25 tokens * 2)
-  holdWalletPostHold: 7.5, // Shares ready for exchange (converted from 3.75 tokens * 2)
+  holdWalletPreHold: 10.5, // Shares available for vesting (was "Invest")
+  holdWalletPostHold: 7.5, // Shares ready for exchange (after vesting)
+}
+
+// Currency formatter for Namibian Dollars
+export const formatCurrency = (value: number | string, currency = "NAD") => {
+  const number = typeof value === "string" ? Number.parseFloat(value) : value
+
+  if (currency === "NAD") {
+    return `N$${number.toLocaleString("en-NA", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`
+  }
+
+  return new Intl.NumberFormat("en-NA", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(number)
 }
 
 // Provider component
@@ -57,6 +80,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Current share price (static for now)
   const getSharePrice = () => 100 // N$100 per share
+
+  // Minimum amounts
+  const getMinTradeAmount = () => 50 // N$50 minimum trade
+  const getMinCashoutAmount = () => 100 // N$100 minimum cashout
+
+  // Validation functions
+  const canCashout = (amount: number) => {
+    return amount >= getMinCashoutAmount() && amount <= walletState.cashoutWalletBalance
+  }
 
   // Mock function to refresh balances (no actual backend call)
   const refreshBalances = async () => {
@@ -79,7 +111,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       buyWalletBalance: Math.max(0, newBalance), // Prevent negative balance
     }))
 
-    console.log(`Mock: ${operation} ${formatNAD(amount)} to Buy Wallet. New balance: ${formatNAD(newBalance)}`)
+    console.log(
+      `Mock: ${operation} ${formatCurrency(amount)} to Buy Wallet. New balance: ${formatCurrency(newBalance)}`,
+    )
   }
 
   const updateHoldWallet = async (shares: number, operation: "add" | "subtract") => {
@@ -113,7 +147,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       cashoutWalletBalance: Math.max(0, newBalance),
     }))
 
-    console.log(`Mock: ${operation} ${formatNAD(amount)} to Cashout Wallet. New balance: ${formatNAD(newBalance)}`)
+    console.log(
+      `Mock: ${operation} ${formatCurrency(amount)} to Cashout Wallet. New balance: ${formatCurrency(newBalance)}`,
+    )
   }
 
   // Convenience methods for specific operations
@@ -152,6 +188,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     getTotalSharesValue,
     getTotalAccountValue,
     getSharePrice,
+    canCashout,
+    getMinCashoutAmount,
+    getMinTradeAmount,
     refreshBalances,
     loading,
   }
