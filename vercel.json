@@ -1,17 +1,6 @@
 {
+  // Always use npm (not pnpm/yarn)
   "installCommand": "npm install",
-  "buildCommand": "npm run vercel-build",
-  "redirects": [
-    {
-      "source": "/login",
-      "has": [
-        {
-          "type": "cookie",
-          "key": "supabase-auth-token"
-        }
-      ],
-      "destination": "/dashboard",
-      "permanent": false
-    }
-  ]
+  // Re-use the existing script you already have
+  "buildCommand": "npm run vercel-build"
 }
