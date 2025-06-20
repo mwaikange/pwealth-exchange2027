@@ -8,8 +8,8 @@ const metricCards = [
   { title: "Total Cashouts to Date", value: "N$ 4,250", color: "green" },
   { title: "Total Shares Matched", value: "1,847", color: "blue" },
   { title: "Referral Bonus", value: "23", color: "yellow" },
-  { title: "Total Unvested Shares", value: "1,125", color: "purple" },
-  { title: "Share Price", value: "N$100 per share", color: "gray" },
+  { title: "Total Locked Shares", value: "1,125", color: "purple" },
+  { title: "Share Price", value: "N$100", color: "gray" },
 ]
 
 // Most Active Vesting Slots
@@ -27,7 +27,6 @@ const recentTransactions = [
     account: "Cashout Wallet",
     date: "19 Jun",
     reference: "CMM-001",
-    peerEmail: "-",
     amount: "10",
     amountUsd: "N$1,000",
     type: "CASHOUT",
@@ -39,7 +38,6 @@ const recentTransactions = [
     account: "Buy Wallet",
     date: "19 Jun",
     reference: "BUY-002",
-    peerEmail: "system@peer-wealth.com",
     amount: "5",
     amountUsd: "N$500",
     type: "BUY",
@@ -51,7 +49,6 @@ const recentTransactions = [
     account: "Hold Wallet",
     date: "18 Jun",
     reference: "VST-003",
-    peerEmail: "system@peer-wealth.com",
     amount: "3",
     amountUsd: "N$300",
     type: "CLAIM",
@@ -156,7 +153,6 @@ export function OverviewComponent() {
                 <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Account</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Date</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Reference</th>
-                <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Peer-Email</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Amount (Shares)</th>
                 <th className="text-left py-2 px-4 text-[11px] font-medium text-gray-300">Amount (NAD)</th>
               </tr>
@@ -178,7 +174,6 @@ export function OverviewComponent() {
                   <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.account}</td>
                   <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.date}</td>
                   <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.reference}</td>
-                  <td className="py-[6px] px-4 text-[10px] text-gray-300">{transaction.peerEmail}</td>
                   <td className="py-[6px] px-4 text-[10px] text-white">{transaction.amount} Shares</td>
                   <td className="py-[6px] px-4 text-[10px] text-white">{transaction.amountUsd}</td>
                 </tr>
