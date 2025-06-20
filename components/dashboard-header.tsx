@@ -14,7 +14,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 
 export function DashboardHeader() {
-  const { buyWalletBalance, holdWalletBalance, cashoutWalletBalance, loading } = useWallet()
+  const { buyWalletBalance, holdWalletPreHold, holdWalletPostHold, cashoutWalletBalance, loading } = useWallet()
   const { transactions } = useTransactions()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAFTModal, setShowAFTModal] = useState(false)
@@ -73,6 +73,8 @@ export function DashboardHeader() {
       return updated
     })
   }
+
+  const holdWalletBalance = holdWalletPreHold + holdWalletPostHold
 
   return (
     <div className="w-full">
