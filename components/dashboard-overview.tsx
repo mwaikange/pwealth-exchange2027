@@ -16,6 +16,50 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
+// Metric Cards Mock Data
+const metricCards = [
+  { title: "Total Cashouts to Date", value: "4,250", unit: "NAD", color: "bg-green-600" },
+  { title: "Total Shares Matched", value: "1,847", unit: "shares", color: "bg-blue-600" },
+  { title: "Referral Bonus", value: "23", unit: "shares", color: "bg-yellow-600" },
+  { title: "Total Unvested Shares", value: "1,125", unit: "shares", color: "bg-purple-600" },
+  { title: "Share Price", value: "N$100", unit: "per share", color: "bg-gray-600" },
+]
+
+// Most Active Vesting Slots
+const vestingSlots = [
+  { slot: "Slot #3", shares: 45, percent: 95, color: "bg-green-500" },
+  { slot: "Slot #7", shares: 120, percent: 87, color: "bg-blue-500" },
+  { slot: "Slot #12", shares: 280, percent: 78, color: "bg-purple-500" },
+]
+
+// Recent Transactions
+const recentTransactions = [
+  {
+    description: "CASHOUT - Mobile Money",
+    account: "Cashout Wallet",
+    date: "19 Jun, 4:30pm",
+    reference: "TRX-90125",
+    shares: "10 Shares",
+    nad: "N$1,000",
+  },
+  {
+    description: "SHARES MATCHED - Buy Order",
+    account: "Buy Wallet",
+    date: "19 Jun, 2:15pm",
+    reference: "TRX-90124",
+    shares: "5 Shares",
+    nad: "N$500",
+  },
+  {
+    description: "CLAIM - Vesting Slot",
+    account: "Hold Wallet",
+    date: "18 Jun, 6:45pm",
+    reference: "TRX-90123",
+    shares: "3 Shares",
+    nad: "N$300",
+  },
+]
+
 export function DashboardOverview() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -52,24 +96,24 @@ export function DashboardOverview() {
 
           <div className="flex items-center space-x-2">
             <div className="bg-[#4a4d5a] rounded-md p-3 flex flex-col items-center">
-              <div className="text-xs text-gray-400">PWT Invest</div>
-              <div className="text-3xl font-bold">30</div>
+              <div className="text-xs text-gray-400">Buy Wallet</div>
+              <div className="text-3xl font-bold">2,500</div>
             </div>
             <div className="bg-[#4a4d5a] rounded-md p-3 flex flex-col items-center">
-              <div className="text-xs text-gray-400">PWT Cashout</div>
-              <div className="text-3xl font-bold">30</div>
+              <div className="text-xs text-gray-400">Cashout Wallet</div>
+              <div className="text-3xl font-bold">1,200</div>
             </div>
             <div className="bg-[#4a4d5a] rounded-md p-3 flex flex-col items-center">
-              <div className="text-xs text-gray-400">Activation Token (AFT)</div>
+              <div className="text-xs text-gray-400">Hold Shares</div>
               <div className="text-3xl font-bold">
-                30 <span className="text-xs">USD</span>
+                450 <span className="text-xs">shares</span>
               </div>
             </div>
           </div>
 
           <button className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md">
             <div className="font-bold">Top Up</div>
-            <div className="text-xs">Activation Token (AFT)</div>
+            <div className="text-xs">Buy Wallet (NAD)</div>
           </button>
         </div>
       </header>
@@ -78,7 +122,7 @@ export function DashboardOverview() {
       <div className="bg-green-600 py-2 px-4 text-white whitespace-nowrap overflow-hidden">
         <div className="animate-marquee">
           Join Our Telegram Group Today | Add Our Whatsapp Channel - Check Your Settings Page | Registration Alert -
-          Namibia- Welcome! | Cashout Alert - Namibia - 50 USD - Well Done!
+          Namibia- Welcome! | Cashout Alert - Namibia - N$1,000 - Well Done!
         </div>
       </div>
 
@@ -114,7 +158,7 @@ export function DashboardOverview() {
                 </div>
                 <div>
                   <div className="font-medium">Cashout</div>
-                  <div className="text-xs">Transfer, Sell & Swap Tokens</div>
+                  <div className="text-xs">Transfer, Sell & Swap Shares</div>
                 </div>
               </Link>
               <Link
@@ -185,35 +229,16 @@ export function DashboardOverview() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-5 gap-4 mb-8">
-              <div className="bg-green-600 p-4 rounded-lg">
-                <div className="text-sm">Total Cashouts to date</div>
-                <div className="text-5xl font-bold">4,250</div>
-                <div className="text-sm">NAD</div>
-              </div>
-
-              <div className="bg-blue-600 p-4 rounded-lg">
-                <div className="text-sm">Total Shares Matched</div>
-                <div className="text-5xl font-bold">1,847</div>
-                <div className="text-sm">shares</div>
-              </div>
-
-              <div className="bg-yellow-600 p-4 rounded-lg">
-                <div className="text-sm">Referral Bonus</div>
-                <div className="text-5xl font-bold">23</div>
-                <div className="text-sm">shares</div>
-              </div>
-
-              <div className="bg-purple-600 p-4 rounded-lg">
-                <div className="text-sm">Total Unvested Shares</div>
-                <div className="text-5xl font-bold">1,125</div>
-                <div className="text-sm">shares</div>
-              </div>
-
-              <div className="bg-gray-600 p-4 rounded-lg flex flex-col items-center justify-center">
-                <div className="text-lg">Share Price</div>
-                <div className="text-4xl font-bold">N$100</div>
-                <div className="text-sm">per share</div>
-              </div>
+              {metricCards.map((card, index) => (
+                <div
+                  key={index}
+                  className={`${card.color} p-4 rounded-lg ${index === 4 ? "flex flex-col items-center justify-center" : ""}`}
+                >
+                  <div className="text-sm">{card.title}</div>
+                  <div className="text-5xl font-bold">{card.value}</div>
+                  <div className="text-sm">{card.unit}</div>
+                </div>
+              ))}
             </div>
 
             {/* Most Active Vesting Slots */}
@@ -226,38 +251,20 @@ export function DashboardOverview() {
               </div>
 
               <div className="space-y-6">
-                <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot #3</div>
-                  <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-bold mr-4">
-                    45
+                {vestingSlots.map((slot, index) => (
+                  <div key={index} className="flex items-center">
+                    <div className="mr-4 w-20">{slot.slot}</div>
+                    <div
+                      className={`w-10 h-10 rounded-full ${slot.color} text-white flex items-center justify-center font-bold mr-4`}
+                    >
+                      {slot.shares}
+                    </div>
+                    <div className="flex-1 bg-gray-700 rounded-full h-4">
+                      <div className={`${slot.color} h-4 rounded-full`} style={{ width: `${slot.percent}%` }}></div>
+                    </div>
+                    <div className="ml-4 font-bold">{slot.percent}%</div>
                   </div>
-                  <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-green-500 h-4 rounded-full" style={{ width: "95%" }}></div>
-                  </div>
-                  <div className="ml-4 font-bold">95%</div>
-                </div>
-
-                <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot #7</div>
-                  <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold mr-4">
-                    120
-                  </div>
-                  <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-blue-500 h-4 rounded-full" style={{ width: "87%" }}></div>
-                  </div>
-                  <div className="ml-4 font-bold">87%</div>
-                </div>
-
-                <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot #12</div>
-                  <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold mr-4">
-                    280
-                  </div>
-                  <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-purple-500 h-4 rounded-full" style={{ width: "78%" }}></div>
-                  </div>
-                  <div className="ml-4 font-bold">78%</div>
-                </div>
+                ))}
               </div>
             </div>
 
@@ -278,35 +285,24 @@ export function DashboardOverview() {
                       <th className="text-left py-3 px-4">Account</th>
                       <th className="text-left py-3 px-4">Date</th>
                       <th className="text-left py-3 px-4">Reference</th>
-                      <th className="text-left py-3 px-4">Amount (PWT)</th>
+                      <th className="text-left py-3 px-4">Amount (Shares)</th>
                       <th className="text-left py-3 px-4">Amount (NAD)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-gray-700">
-                      <td className="py-3 px-4">CASHOUT - Mobile Money</td>
-                      <td className="py-3 px-4">Cashout Wallet</td>
-                      <td className="py-3 px-4">21 Jan, 3:15pm</td>
-                      <td className="py-3 px-4">TRX-90123</td>
-                      <td className="py-3 px-4">15 shares</td>
-                      <td className="py-3 px-4">1,500 NAD</td>
-                    </tr>
-                    <tr className="border-b border-gray-700">
-                      <td className="py-3 px-4">SHARES MATCHED - Buy Order</td>
-                      <td className="py-3 px-4">Exchange</td>
-                      <td className="py-3 px-4">21 Jan, 11:45am</td>
-                      <td className="py-3 px-4">TRX-90122</td>
-                      <td className="py-3 px-4">8 shares</td>
-                      <td className="py-3 px-4">800 NAD</td>
-                    </tr>
-                    <tr>
-                      <td className="py-3 px-4">CLAIM - Vesting Slot #3</td>
-                      <td className="py-3 px-4">Post-Hold Wallet</td>
-                      <td className="py-3 px-4">20 Jan, 6:20pm</td>
-                      <td className="py-3 px-4">TRX-90121</td>
-                      <td className="py-3 px-4">45 shares</td>
-                      <td className="py-3 px-4">4,500 NAD</td>
-                    </tr>
+                    {recentTransactions.map((transaction, index) => (
+                      <tr
+                        key={index}
+                        className={index < recentTransactions.length - 1 ? "border-b border-gray-700" : ""}
+                      >
+                        <td className="py-3 px-4">{transaction.description}</td>
+                        <td className="py-3 px-4">{transaction.account}</td>
+                        <td className="py-3 px-4">{transaction.date}</td>
+                        <td className="py-3 px-4">{transaction.reference}</td>
+                        <td className="py-3 px-4">{transaction.shares}</td>
+                        <td className="py-3 px-4">{transaction.nad}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
