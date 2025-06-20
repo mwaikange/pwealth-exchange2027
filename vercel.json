@@ -1,6 +1,6 @@
 {
-  "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "pnpm run vercel-build",
+  "installCommand": "npm install",
+  "buildCommand": "npm run vercel-build",
   "redirects": [
     {
       "source": "/login",
