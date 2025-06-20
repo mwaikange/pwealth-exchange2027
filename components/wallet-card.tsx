@@ -1,36 +1,26 @@
 import type React from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatCurrency } from "@/contexts/wallet-context"
+import { useWallet } from "@/context/wallet-context"
+import { formatCurrency } from "@/lib/utils"
 
 interface WalletCardProps {
-  title: string
-  value: number
-  description: string
-  type?: "currency" | "shares"
-  icon?: React.ReactNode
-  className?: string
+  walletId: string
 }
 
-export function WalletCard({ title, value, description, type = "currency", icon, className = "" }: WalletCardProps) {
-  const formatValue = (val: number) => {
-    if (type === "shares") {
-      return `${val.toFixed(4)} shares`
-    }
-    return formatCurrency(val)
+const WalletCard: React.FC<WalletCardProps> = ({ walletId }) => {
+  const { wallets } = useWallet()
+  const wallet = wallets ? wallets[walletId] : undefined
+
+  if (!wallet) {
+    return <div>Wallet not found.</div>
   }
 
   return (
-    <Card className={`bg-[#2a2d3a] border-gray-700 ${className}`}>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-gray-300 flex items-center">
-          {icon && <span className="mr-2">{icon}</span>}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold text-white mb-1">{formatValue(value)}</div>
-        <p className="text-xs text-gray-400">{description}</p>
-      </CardContent>
-    </Card>
+    <div className="border p-4 rounded-md shadow-md">
+      <h2 className="text-lg font-semibold">{wallet.name}</h2>
+      <p className="text-gray-600">Balance: {formatCurrency(wallet.balance)}</p>
+      <p className="text-sm text-gray-500">Currency: {wallet.currency}</p>
+    </div>
   )
 }
+
+export default WalletCard

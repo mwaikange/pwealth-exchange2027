@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@auth/core": "latest",
+    "@clerk/nextjs": "latest",
     "@emotion/react": "latest",
     "@emotion/styled": "latest",
     "@hookform/resolvers": "latest",
@@ -29,6 +30,7 @@
     "react-dom": "^19",
     "react-hook-form": "latest",
     "react-markdown": "latest",
+    "react-toastify": "latest",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "latest",
