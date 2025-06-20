@@ -187,33 +187,32 @@ export function DashboardOverview() {
             <div className="grid grid-cols-5 gap-4 mb-8">
               <div className="bg-green-600 p-4 rounded-lg">
                 <div className="text-sm">Total Cashouts to date</div>
-                <div className="text-5xl font-bold">2450</div>
+                <div className="text-5xl font-bold">4,250</div>
                 <div className="text-sm">NAD</div>
               </div>
 
               <div className="bg-blue-600 p-4 rounded-lg">
                 <div className="text-sm">Total Shares Matched</div>
-                <div className="text-5xl font-bold">245</div>
+                <div className="text-5xl font-bold">1,847</div>
                 <div className="text-sm">shares</div>
               </div>
 
               <div className="bg-yellow-600 p-4 rounded-lg">
                 <div className="text-sm">Referral Bonus</div>
-                <div className="text-5xl font-bold">12</div>
+                <div className="text-5xl font-bold">23</div>
                 <div className="text-sm">shares</div>
               </div>
 
               <div className="bg-purple-600 p-4 rounded-lg">
                 <div className="text-sm">Total Unvested Shares</div>
-                <div className="text-5xl font-bold">875</div>
+                <div className="text-5xl font-bold">1,125</div>
                 <div className="text-sm">shares</div>
               </div>
 
               <div className="bg-gray-600 p-4 rounded-lg flex flex-col items-center justify-center">
-                <div className="text-lg">Current Price</div>
-                <div className="text-3xl font-bold">1 PWT</div>
-                <div className="text-xl">=</div>
-                <div className="text-3xl font-bold">100 NAD</div>
+                <div className="text-lg">Share Price</div>
+                <div className="text-4xl font-bold">N$100</div>
+                <div className="text-sm">per share</div>
               </div>
             </div>
 
@@ -228,36 +227,36 @@ export function DashboardOverview() {
 
               <div className="space-y-6">
                 <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot A</div>
+                  <div className="mr-4 w-20">Slot #3</div>
                   <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-bold mr-4">
-                    25
+                    45
                   </div>
                   <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-green-500 h-4 rounded-full" style={{ width: "90%" }}></div>
+                    <div className="bg-green-500 h-4 rounded-full" style={{ width: "95%" }}></div>
                   </div>
-                  <div className="ml-4 font-bold">90%</div>
+                  <div className="ml-4 font-bold">95%</div>
                 </div>
 
                 <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot B</div>
+                  <div className="mr-4 w-20">Slot #7</div>
                   <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold mr-4">
-                    100
+                    120
                   </div>
                   <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-blue-500 h-4 rounded-full" style={{ width: "75%" }}></div>
+                    <div className="bg-blue-500 h-4 rounded-full" style={{ width: "87%" }}></div>
                   </div>
-                  <div className="ml-4 font-bold">75%</div>
+                  <div className="ml-4 font-bold">87%</div>
                 </div>
 
                 <div className="flex items-center">
-                  <div className="mr-4 w-20">Slot C</div>
+                  <div className="mr-4 w-20">Slot #12</div>
                   <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold mr-4">
-                    750
+                    280
                   </div>
                   <div className="flex-1 bg-gray-700 rounded-full h-4">
-                    <div className="bg-purple-500 h-4 rounded-full" style={{ width: "65%" }}></div>
+                    <div className="bg-purple-500 h-4 rounded-full" style={{ width: "78%" }}></div>
                   </div>
-                  <div className="ml-4 font-bold">65%</div>
+                  <div className="ml-4 font-bold">78%</div>
                 </div>
               </div>
             </div>
@@ -285,28 +284,28 @@ export function DashboardOverview() {
                   </thead>
                   <tbody>
                     <tr className="border-b border-gray-700">
-                      <td className="py-3 px-4">VESTING - Slot A</td>
-                      <td className="py-3 px-4">Hold Wallet</td>
-                      <td className="py-3 px-4">20 Jan, 2:30pm</td>
-                      <td className="py-3 px-4">TRX-87690</td>
-                      <td className="py-3 px-4">5 PWT</td>
-                      <td className="py-3 px-4">500 NAD</td>
-                    </tr>
-                    <tr className="border-b border-gray-700">
-                      <td className="py-3 px-4">CLAIM - Slot B</td>
-                      <td className="py-3 px-4">Hold Wallet</td>
-                      <td className="py-3 px-4">20 Jan, 11:15am</td>
-                      <td className="py-3 px-4">TRX-87689</td>
-                      <td className="py-3 px-4">3 PWT</td>
-                      <td className="py-3 px-4">300 NAD</td>
-                    </tr>
-                    <tr>
                       <td className="py-3 px-4">CASHOUT - Mobile Money</td>
                       <td className="py-3 px-4">Cashout Wallet</td>
-                      <td className="py-3 px-4">19 Jan, 4:45pm</td>
-                      <td className="py-3 px-4">TRX-87688</td>
-                      <td className="py-3 px-4">10 PWT</td>
-                      <td className="py-3 px-4">1000 NAD</td>
+                      <td className="py-3 px-4">21 Jan, 3:15pm</td>
+                      <td className="py-3 px-4">TRX-90123</td>
+                      <td className="py-3 px-4">15 shares</td>
+                      <td className="py-3 px-4">1,500 NAD</td>
+                    </tr>
+                    <tr className="border-b border-gray-700">
+                      <td className="py-3 px-4">SHARES MATCHED - Buy Order</td>
+                      <td className="py-3 px-4">Exchange</td>
+                      <td className="py-3 px-4">21 Jan, 11:45am</td>
+                      <td className="py-3 px-4">TRX-90122</td>
+                      <td className="py-3 px-4">8 shares</td>
+                      <td className="py-3 px-4">800 NAD</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4">CLAIM - Vesting Slot #3</td>
+                      <td className="py-3 px-4">Post-Hold Wallet</td>
+                      <td className="py-3 px-4">20 Jan, 6:20pm</td>
+                      <td className="py-3 px-4">TRX-90121</td>
+                      <td className="py-3 px-4">45 shares</td>
+                      <td className="py-3 px-4">4,500 NAD</td>
                     </tr>
                   </tbody>
                 </table>
