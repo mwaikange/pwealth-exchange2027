@@ -192,3 +192,7 @@ export function useWallet() {
 
 // Export formatting functions for use in components
 export { formatNAD, formatShares, calculateShareValue }
+
+// ---------------------------------------------------------------------------
+// TEMP compatibility export -- until all components import from @/lib/utils
+export { formatCurrency } from "@/lib/utils"
