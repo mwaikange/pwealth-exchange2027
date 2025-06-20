@@ -138,3 +138,6 @@ const ExampleComponent = () => {
     </div>
   )
 }
+
+// --- Legacy alias (kept for backward-compatibility) -----------------
+export const useTransactions = useTransaction // ✅ now available
