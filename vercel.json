@@ -1,6 +1,4 @@
 {
-  // Always use npm (not pnpm/yarn)
-  "installCommand": "npm install",
-  // Re-use the existing script you already have
+  "installCommand": "npm install --no-audit --no-fund",
   "buildCommand": "npm run vercel-build"
 }
