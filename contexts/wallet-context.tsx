@@ -158,31 +158,46 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       const changeAmount = operation === "add" ? amount : -amount
 
-      // First, try to update existing row
-      const { data: updateData, error: updateError } = await supabase
+      // First, get current balance
+      const { data: currentData, error: fetchError } = await supabase
         .from("user_shares")
-        .update({
-          shares: supabase.raw(`shares + ${changeAmount}`),
-          updated_at: new Date().toISOString(),
-        })
+        .select("shares")
         .eq("user_uuid", user.id)
         .eq("wallet_type", walletType)
-        .select()
+        .single()
 
-      // If no rows were updated, create a new row
-      if (updateData && updateData.length === 0) {
+      if (fetchError && fetchError.code !== "PGRST116") {
+        // PGRST116 is "not found" error, which is okay
+        throw fetchError
+      }
+
+      const currentBalance = currentData?.shares || 0
+      const newBalance = Math.max(0, currentBalance + changeAmount) // Don't allow negative balances
+
+      if (currentData) {
+        // Update existing row
+        const { error: updateError } = await supabase
+          .from("user_shares")
+          .update({
+            shares: newBalance,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_uuid", user.id)
+          .eq("wallet_type", walletType)
+
+        if (updateError) throw updateError
+      } else {
+        // Insert new row
         const { error: insertError } = await supabase.from("user_shares").insert({
           user_uuid: user.id,
           wallet_type: walletType,
-          shares: Math.max(0, changeAmount), // Don't allow negative balances
+          shares: newBalance,
           source: "wallet_update",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
 
         if (insertError) throw insertError
-      } else if (updateError) {
-        throw updateError
       }
 
       await refreshBalances()
