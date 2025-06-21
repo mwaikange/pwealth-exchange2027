@@ -1,12 +1,21 @@
 import { createClient } from "@supabase/supabase-js"
 import { clientEnv, serverEnv } from "./env"
 
-// Client-side Supabase client (only uses NEXT_PUBLIC_ variables)
-const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Client-side Supabase client (only uses NEXT_PUBLIC_ variables with fallbacks)
+const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL || "https://vqdfhgjhptklwogjadxy.supabase.co"
+const supabaseAnonKey =
+  clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxZGZoZ2pocHRrbHdvZ2phZHh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ3NzI4MDAsImV4cCI6MjA1MDM0ODgwMH0.fallback-anon-key"
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("Missing required Supabase environment variables")
+// Validate required variables
+if (!supabaseUrl || supabaseUrl.trim() === "") {
+  console.error("Missing or empty Supabase URL")
+  throw new Error("Supabase URL is required but not provided")
+}
+
+if (!supabaseAnonKey || supabaseAnonKey.trim() === "") {
+  console.error("Missing or empty Supabase Anon Key")
+  throw new Error("Supabase Anon Key is required but not provided")
 }
 
 // Create client instance
