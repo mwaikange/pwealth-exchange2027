@@ -6,11 +6,11 @@ const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!supabaseUrl) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable")
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable")
 }
 
 if (!supabaseAnonKey) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable")
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable")
 }
 
 // Create singleton instance for client-side usage
@@ -18,7 +18,7 @@ let supabaseInstance: ReturnType<typeof createClient> | null = null
 
 export const getSupabaseClient = () => {
   if (typeof window === "undefined") {
-    // Server-side: create new instance each time
+    // Server-side: always create new instance
     return createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: false,
@@ -44,4 +44,3 @@ export const getSupabaseClient = () => {
 
 // Export the singleton
 export const supabase = getSupabaseClient()
-export default supabase

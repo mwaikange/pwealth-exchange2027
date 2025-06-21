@@ -32,5 +32,5 @@ if (typeof window !== "undefined") {
   }
 }
 
-// Legacy export for backward compatibility (client-safe only)
+// Export for backwards compatibility (but only client vars)
 export const env = clientEnv
