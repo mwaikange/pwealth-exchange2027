@@ -1,14 +1,11 @@
-// Client-side environment variables (NEXT_PUBLIC_ prefix required)
+// Client-side environment variables (accessible in browser)
 export const clientEnv = {
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-  NEXT_PUBLIC_SITE_URL:
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL ||
-    (typeof window !== "undefined" ? window.location.origin : ""),
+  NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "",
 }
 
-// Server-side only environment variables (no NEXT_PUBLIC_ prefix)
+// Server-side environment variables (never sent to client)
 export const serverEnv = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET || "",
@@ -21,16 +18,14 @@ export const serverEnv = {
   POSTGRES_HOST: process.env.POSTGRES_HOST || "",
 }
 
-// Validate client environment variables
-if (typeof window !== "undefined") {
-  // Only validate on client side
-  if (!clientEnv.NEXT_PUBLIC_SUPABASE_URL) {
-    console.error("Missing NEXT_PUBLIC_SUPABASE_URL")
-  }
-  if (!clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    console.error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY")
+// Legacy export for backward compatibility (client-safe only)
+export const env = clientEnv
+
+// Validate required client environment variables
+const requiredClientEnvVars = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]
+
+for (const envVar of requiredClientEnvVars) {
+  if (!clientEnv[envVar as keyof typeof clientEnv]) {
+    console.warn(`Missing required client environment variable: ${envVar}`)
   }
 }
-
-// Export for backwards compatibility (but only client vars)
-export const env = clientEnv
