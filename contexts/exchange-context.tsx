@@ -85,28 +85,53 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      // Fetch sell orders
+      // Fetch sell orders from the new sell_orders table
       const { data: sellData, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
-        .in("status", ["active", "queued"])
+        .eq("status", "active")
         .order("created_at", { ascending: true })
 
       if (sellError) throw sellError
 
-      // Fetch buy orders
+      // Fetch buy orders from the new buy_orders table
       const { data: buyData, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
-        .in("status", ["active", "queued"])
+        .eq("status", "pending")
         .order("created_at", { ascending: true })
 
       if (buyError) throw buyError
 
-      setSellOrders(sellData || [])
-      setBuyOrders(buyData || [])
+      // Transform buy_orders data to match the expected interface
+      const transformedBuyOrders = (buyData || []).map((order) => ({
+        id: order.id,
+        user_uuid: order.user_uuid,
+        total_amount: order.total_amount,
+        price_per_share: order.price_per_share,
+        status: order.status,
+        created_at: order.created_at,
+        filled_amount: order.amount_filled || 0,
+      }))
 
-      console.log("Orders refreshed:", { sellOrders: sellData?.length || 0, buyOrders: buyData?.length || 0 })
+      // Transform sell_orders data to match the expected interface
+      const transformedSellOrders = (sellData || []).map((order) => ({
+        id: order.id,
+        user_uuid: order.user_uuid,
+        shares: order.shares,
+        price_per_share: order.price_per_share,
+        status: order.status,
+        created_at: order.created_at,
+        filled_shares: order.shares - order.shares_remaining,
+      }))
+
+      setSellOrders(transformedSellOrders)
+      setBuyOrders(transformedBuyOrders)
+
+      console.log("Orders refreshed:", {
+        sellOrders: transformedSellOrders.length,
+        buyOrders: transformedBuyOrders.length,
+      })
     } catch (err: any) {
       console.error("Error fetching orders:", err)
       setError(err.message || "Failed to load orders")
