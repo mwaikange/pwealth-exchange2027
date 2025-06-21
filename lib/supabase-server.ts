@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
-import { env } from "./env"
+import { clientEnv, serverEnv } from "./env"
 import type { Database } from "@/types/supabase"
 
 export const createServerSupabaseClient = () => {
   const cookieStore = cookies()
-  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = serverEnv.SUPABASE_SERVICE_ROLE_KEY
 
   return createClient<Database>(supabaseUrl, supabaseServiceKey, {
     auth: {

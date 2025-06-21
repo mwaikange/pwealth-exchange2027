@@ -1,32 +1,47 @@
 import { createClient } from "@supabase/supabase-js"
-import { env } from "./env"
+import { clientEnv } from "./env"
 
-// Ensure environment variables are available
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Ensure we only use NEXT_PUBLIC_ environment variables on client
+const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// Define a type for our singleton
-type SupabaseClientSingleton = ReturnType<typeof createClient> | null
-
-// Create a singleton store that works in both browser and server environments
-const globalForSupabase = globalThis as unknown as {
-  supabase: SupabaseClientSingleton
+if (!supabaseUrl) {
+  console.error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable")
 }
 
-// Check if we already have an instance
-if (!globalForSupabase.supabase) {
-  // Create a new client if one doesn't exist
-  globalForSupabase.supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      storageKey: "supabase-auth-token",
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  })
-
-  console.log("Supabase singleton initialized")
+if (!supabaseAnonKey) {
+  console.error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable")
 }
 
-// Export the singleton instance
-export const supabase = globalForSupabase.supabase!
+// Create singleton instance for client-side usage
+let supabaseInstance: ReturnType<typeof createClient> | null = null
+
+export const getSupabaseClient = () => {
+  if (typeof window === "undefined") {
+    // Server-side: create new instance each time
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+      },
+    })
+  }
+
+  // Client-side: use singleton
+  if (!supabaseInstance) {
+    console.log("Supabase singleton initialized")
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        storageKey: "supabase-auth-token",
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+  }
+
+  return supabaseInstance
+}
+
+// Export the singleton
+export const supabase = getSupabaseClient()
+export default supabase
