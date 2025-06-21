@@ -1,22 +1,32 @@
 import { createClient } from "@supabase/supabase-js"
-import { clientEnv, serverEnv } from "./env"
 
-// Client-side Supabase client (only uses NEXT_PUBLIC_ variables with fallbacks)
-const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL || "https://vqdfhgjhptklwogjadxy.supabase.co"
-const supabaseAnonKey =
-  clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxZGZoZ2pocHRrbHdvZ2phZHh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ3NzI4MDAsImV4cCI6MjA1MDM0ODgwMH0.fallback-anon-key"
+// Use the actual environment variables from the workspace
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_UR ||
+  process.env.SUPABASE_URL ||
+  "https://vqdfhgjhptklwogjadxy.supabase.co"
+
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
+
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KE || ""
 
 // Validate required variables
 if (!supabaseUrl || supabaseUrl.trim() === "") {
-  console.error("Missing or empty Supabase URL")
-  throw new Error("Supabase URL is required but not provided")
+  console.error("Missing Supabase URL. Check environment variables.")
+  throw new Error("Supabase URL is required")
 }
 
 if (!supabaseAnonKey || supabaseAnonKey.trim() === "") {
-  console.error("Missing or empty Supabase Anon Key")
-  throw new Error("Supabase Anon Key is required but not provided")
+  console.error("Missing Supabase Anon Key. Check environment variables.")
+  throw new Error("Supabase Anon Key is required")
 }
+
+console.log("Supabase initialized with:", {
+  url: supabaseUrl,
+  anonKeyPresent: !!supabaseAnonKey,
+  serviceKeyPresent: !!supabaseServiceKey,
+})
 
 // Create client instance
 let supabaseInstance: ReturnType<typeof createClient> | null = null
@@ -52,8 +62,6 @@ export const supabase = getSupabaseClient()
 
 // Create server-side client (for server components and server actions)
 export const createServerSupabaseClient = () => {
-  const supabaseServiceKey = serverEnv.SUPABASE_SERVICE_ROLE_KEY
-
   console.log("Creating NEW Supabase server client instance")
 
   return createClient(supabaseUrl, supabaseServiceKey, {

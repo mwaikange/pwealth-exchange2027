@@ -1,22 +1,40 @@
 import { createClient } from "@supabase/supabase-js"
-import { clientEnv } from "./env"
 
-// Ensure we only use client-safe environment variables with fallbacks
-const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL || "https://vqdfhgjhptklwogjadxy.supabase.co"
+// Use the actual environment variables that are available in the workspace
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_UR ||
+  process.env.SUPABASE_URL ||
+  "https://vqdfhgjhptklwogjadxy.supabase.co"
+
 const supabaseAnonKey =
-  clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxZGZoZ2pocHRrbHdvZ2phZHh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ3NzI4MDAsImV4cCI6MjA1MDM0ODgwMH0.fallback-anon-key"
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  ""
 
-// Add validation
+// Add validation with better error messages
 if (!supabaseUrl || supabaseUrl === "") {
-  console.error("Supabase URL is missing or empty")
-  throw new Error("Supabase configuration error: URL is required")
+  console.error(
+    "Supabase URL is missing. Available env vars:",
+    Object.keys(process.env).filter((key) => key.includes("SUPABASE")),
+  )
+  throw new Error("Supabase URL is required")
 }
 
 if (!supabaseAnonKey || supabaseAnonKey === "") {
-  console.error("Supabase Anon Key is missing or empty")
-  throw new Error("Supabase configuration error: Anon Key is required")
+  console.error(
+    "Supabase Anon Key is missing. Available env vars:",
+    Object.keys(process.env).filter((key) => key.includes("SUPABASE")),
+  )
+  throw new Error("Supabase Anon Key is required")
 }
+
+console.log("Supabase config:", {
+  url: supabaseUrl,
+  keyLength: supabaseAnonKey.length,
+  keyPrefix: supabaseAnonKey.substring(0, 20) + "...",
+})
 
 // Create singleton client instance
 let supabaseInstance: ReturnType<typeof createClient> | null = null
