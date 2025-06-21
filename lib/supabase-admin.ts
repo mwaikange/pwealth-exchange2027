@@ -32,6 +32,8 @@ export const supabaseAdmin = createClient<Database>(
   },
 )
 
+export const createAdminClient = () => supabaseAdmin
+
 /**
  * Admin operations helper functions
  */
