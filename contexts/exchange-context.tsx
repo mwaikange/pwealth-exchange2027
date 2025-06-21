@@ -137,30 +137,24 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: "Insufficient funds in Buy Wallet" }
         }
 
-        // Calculate shares that can be bought
-        const sharesPossible = Math.floor(amount / currentSharePrice)
-        const actualAmount = sharesPossible * currentSharePrice
-
-        if (sharesPossible === 0) {
-          return { success: false, message: `Minimum purchase is N$${currentSharePrice} (1 share)` }
-        }
-
-        // Place buy order in Supabase
+        // Place buy order in Supabase - UPDATED PARAMETERS
         const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
-          p_total_amount: actualAmount,
-          p_price_per_share: currentSharePrice,
+          p_total_amount: amount,
         })
 
         if (error) throw error
 
         // Refresh orders and wallet
         await refreshOrders()
-        await updateBuyWallet(actualAmount, "subtract")
+        await updateBuyWallet(amount, "subtract")
+
+        // Calculate shares based on current price for the message
+        const sharesPossible = amount / currentSharePrice
 
         return {
           success: true,
-          message: `Buy order placed for ${sharesPossible} shares at N$${currentSharePrice} each`,
+          message: `Buy order placed for approximately ${sharesPossible.toFixed(2)} shares at N$${currentSharePrice} each`,
         }
       } catch (error: any) {
         console.error("Error placing buy order:", error)
@@ -188,11 +182,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: "Insufficient shares in Post-Hold wallet" }
         }
 
-        // Place sell order in Supabase
+        // Place sell order in Supabase - UPDATED PARAMETERS
         const { data, error } = await supabase.rpc("place_sell_order", {
           p_user_uuid: user.id,
-          p_shares: shares,
-          p_price_per_share: currentSharePrice,
+          p_shares_to_sell: shares,
         })
 
         if (error) throw error
