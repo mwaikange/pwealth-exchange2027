@@ -5,6 +5,11 @@ import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
+// Define valid wallet types based on the constraint
+type ValidWalletType = "buy_wallet" | "hold_pre" | "hold_post" | "cashout_wallet"
+
+const VALID_WALLET_TYPES = new Set<ValidWalletType>(["buy_wallet", "hold_pre", "hold_post", "cashout_wallet"])
+
 // Define the shape of our wallet state (real data from Supabase)
 type WalletState = {
   buyWalletBalance: number // NAD in buy_wallet
@@ -141,74 +146,67 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Update buy wallet
-  const updateBuyWallet = async (amount: number, operation: "add" | "subtract") => {
+  // Helper function to update wallet balance directly
+  const updateWalletBalance = async (walletType: ValidWalletType, amount: number, operation: "add" | "subtract") => {
     if (!user) return
 
     try {
-      const newAmount = operation === "add" ? amount : -amount
+      // Validate wallet type
+      if (!VALID_WALLET_TYPES.has(walletType)) {
+        throw new Error(`Invalid wallet type: ${walletType}`)
+      }
 
-      const { error } = await supabase.rpc("transfer_shares", {
-        p_user_uuid: user.id,
-        p_from_wallet: operation === "subtract" ? "buy_wallet" : "external",
-        p_to_wallet: operation === "add" ? "buy_wallet" : "external",
-        p_shares: Math.abs(amount),
-        p_description: `Buy wallet ${operation}: ${formatCurrency(Math.abs(amount))}`,
-      })
+      const changeAmount = operation === "add" ? amount : -amount
 
-      if (error) throw error
+      // First, try to update existing row
+      const { data: updateData, error: updateError } = await supabase
+        .from("user_shares")
+        .update({
+          shares: supabase.raw(`shares + ${changeAmount}`),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_uuid", user.id)
+        .eq("wallet_type", walletType)
+        .select()
+
+      // If no rows were updated, create a new row
+      if (updateData && updateData.length === 0) {
+        const { error: insertError } = await supabase.from("user_shares").insert({
+          user_uuid: user.id,
+          wallet_type: walletType,
+          shares: Math.max(0, changeAmount), // Don't allow negative balances
+          source: "wallet_update",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+
+        if (insertError) throw insertError
+      } else if (updateError) {
+        throw updateError
+      }
+
       await refreshBalances()
     } catch (err: any) {
-      console.error("Error updating buy wallet:", err)
+      console.error(`Error updating ${walletType}:`, err)
       setError(err.message)
+      throw err
     }
+  }
+
+  // Update buy wallet
+  const updateBuyWallet = async (amount: number, operation: "add" | "subtract") => {
+    await updateWalletBalance("buy_wallet", amount, operation)
   }
 
   // Update hold wallet (pre or post)
   const updateHoldWallet = async (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => {
-    if (!user) return
-
-    try {
-      const walletName = walletType === "pre" ? "hold_pre" : "hold_post"
-      const newAmount = operation === "add" ? amount : -amount
-
-      const { error } = await supabase.rpc("transfer_shares", {
-        p_user_uuid: user.id,
-        p_from_wallet: operation === "subtract" ? walletName : "external",
-        p_to_wallet: operation === "add" ? walletName : "external",
-        p_shares: Math.abs(amount),
-        p_description: `Hold ${walletType} ${operation}: ${Math.abs(amount)} shares`,
-      })
-
-      if (error) throw error
-      await refreshBalances()
-    } catch (err: any) {
-      console.error("Error updating hold wallet:", err)
-      setError(err.message)
-    }
+    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_pre" : "hold_post"
+    await updateWalletBalance(dbWalletType, amount, operation)
   }
 
   // Update cashout wallet
   const updateCashoutWallet = async (amount: number, operation: "add" | "subtract") => {
-    if (!user) return
-
-    try {
-      const newAmount = operation === "add" ? amount : -amount
-
-      const { error } = await supabase.rpc("transfer_shares", {
-        p_user_uuid: user.id,
-        p_from_wallet: operation === "subtract" ? "cashout_wallet" : "external",
-        p_to_wallet: operation === "add" ? "cashout_wallet" : "external",
-        p_shares: Math.abs(amount),
-        p_description: `Cashout wallet ${operation}: ${formatCurrency(Math.abs(amount))}`,
-      })
-
-      if (error) throw error
-      await refreshBalances()
-    } catch (err: any) {
-      console.error("Error updating cashout wallet:", err)
-      setError(err.message)
-    }
+    await updateWalletBalance("cashout_wallet", amount, operation)
   }
 
   // Convenience methods
@@ -220,19 +218,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!user) return
 
     try {
-      const fromWallet = fromType === "pre" ? "hold_pre" : "hold_post"
-      const toWallet = toType === "pre" ? "hold_pre" : "hold_post"
-
-      const { error } = await supabase.rpc("transfer_shares", {
-        p_user_uuid: user.id,
-        p_from_wallet: fromWallet,
-        p_to_wallet: toWallet,
-        p_shares: amount,
-        p_description: `Transfer: ${amount} shares from ${fromType} to ${toType}`,
-      })
-
-      if (error) throw error
-      await refreshBalances()
+      // Subtract from source wallet
+      await updateHoldWallet(amount, "subtract", fromType)
+      // Add to destination wallet
+      await updateHoldWallet(amount, "add", toType)
     } catch (err: any) {
       console.error("Error transferring between hold wallets:", err)
       setError(err.message)
