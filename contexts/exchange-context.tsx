@@ -51,12 +51,12 @@ const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   const [sellOrders, setSellOrders] = useState<SellOrder[]>([])
   const [buyOrders, setBuyOrders] = useState<BuyOrder[]>([])
-  const [currentSharePrice, setCurrentSharePrice] = useState(108.2)
+  const [currentSharePrice, setCurrentSharePrice] = useState(100.0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const { user, session } = useAuth()
-  const { buyWalletBalance, holdWalletPostHold, updateBuyWallet, updateHoldWallet } = useWallet()
+  const { buyWalletBalance, holdWalletPostHold, refreshBalances } = useWallet()
 
   // Filter orders for current user
   const userSellOrders = sellOrders.filter((order) => order.user_uuid === user?.id)
@@ -67,10 +67,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase.rpc("get_current_share_price")
       if (error) throw error
-      setCurrentSharePrice(Number(data) || 108.2)
+      setCurrentSharePrice(Number(data) || 100.0)
     } catch (err) {
       console.error("Error fetching share price:", err)
-      setCurrentSharePrice(108.2) // Fallback
+      setCurrentSharePrice(100.0) // Fallback
     }
   }
 
@@ -158,28 +158,33 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: "Amount must be greater than 0" }
         }
 
+        if (amount < 50) {
+          return { success: false, message: "Minimum purchase is N$50" }
+        }
+
         if (amount > buyWalletBalance) {
           return { success: false, message: "Insufficient funds in Buy Wallet" }
         }
 
-        // Place buy order in Supabase - UPDATED PARAMETERS
+        // Place buy order with CORRECT function signature
         const { data, error } = await supabase.rpc("place_buy_order", {
-          p_user_uuid: user.id,
+          p_price_per_share: currentSharePrice,
           p_total_amount: amount,
+          p_user_uuid: user.id,
         })
 
         if (error) throw error
 
         // Refresh orders and wallet
         await refreshOrders()
-        await updateBuyWallet(amount, "subtract")
+        await refreshBalances()
 
         // Calculate shares based on current price for the message
         const sharesPossible = amount / currentSharePrice
 
         return {
           success: true,
-          message: `Buy order placed for approximately ${sharesPossible.toFixed(2)} shares at N$${currentSharePrice} each`,
+          message: `Buy order placed for ${sharesPossible.toFixed(2)} shares at N$${currentSharePrice} each`,
         }
       } catch (error: any) {
         console.error("Error placing buy order:", error)
@@ -188,7 +193,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     },
-    [user, buyWalletBalance, currentSharePrice, updateBuyWallet],
+    [user, buyWalletBalance, currentSharePrice, refreshBalances],
   )
 
   const placeSellOrder = useCallback(
@@ -203,21 +208,26 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           return { success: false, message: "Shares must be greater than 0" }
         }
 
+        if (shares < 0.5) {
+          return { success: false, message: "Minimum sell is 0.5 shares" }
+        }
+
         if (shares > holdWalletPostHold) {
           return { success: false, message: "Insufficient shares in Post-Hold wallet" }
         }
 
-        // Place sell order in Supabase - UPDATED PARAMETERS
+        // Place sell order with CORRECT function signature
         const { data, error } = await supabase.rpc("place_sell_order", {
+          p_price_per_share: currentSharePrice,
+          p_shares: shares,
           p_user_uuid: user.id,
-          p_shares_to_sell: shares,
         })
 
         if (error) throw error
 
         // Refresh orders and wallet
         await refreshOrders()
-        await updateHoldWallet(shares, "subtract", "post")
+        await refreshBalances()
 
         return {
           success: true,
@@ -230,7 +240,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     },
-    [user, holdWalletPostHold, currentSharePrice, updateHoldWallet],
+    [user, holdWalletPostHold, currentSharePrice, refreshBalances],
   )
 
   const value: ExchangeContextType = {
