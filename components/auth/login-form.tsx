@@ -142,7 +142,7 @@ export function LoginForm({ className, ...props }: React.HTMLAttributes<HTMLDivE
               Forgot password?
             </a>
           </div>
-          <Button disabled={isLoading} className="w-full">
+          <Button disabled={isLoading} className="w-full bg-red-600 hover:bg-red-700 text-white">
             {isLoading && (
               <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
