@@ -5,6 +5,14 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
+import {
+  getMarketBuyOrderStatuses,
+  getMarketSellOrderStatuses,
+  getUserBuyOrderStatuses,
+  getUserSellOrderStatuses,
+  type BuyOrderStatus,
+  type SellOrderStatus,
+} from "@/types/order-enums"
 
 /* ---------- Types ---------- */
 export interface SellOrder {
@@ -12,7 +20,7 @@ export interface SellOrder {
   user_uuid: string
   shares: number
   price_per_share: number
-  status: "available" | "matched" | "expired" | "cancelled"
+  status: SellOrderStatus
   created_at: string
   filled_shares: number
   shares_remaining: number
@@ -23,7 +31,7 @@ export interface BuyOrder {
   user_uuid: string
   total_amount: number
   price_per_share: number
-  status: "pending" | "completed" | "cancelled" | "matched" | "filled"
+  status: BuyOrderStatus
   created_at: string
   filled_amount: number
   shares_requested: number
@@ -128,38 +136,37 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       console.log("🔄 Refreshing orders...")
 
-      // ✅ GLOBAL MARKET ORDERS - ALL USERS (NO user_uuid filter!)
+      // ✅ GLOBAL MARKET ORDERS - Use centralized enum values
       const [marketSellResult, marketBuyResult] = await Promise.all([
-        // Global sell orders - ALL users
         supabase
           .from("sell_orders")
           .select("*")
-          .in("status", ["available", "partial"])
+          .in("status", getMarketSellOrderStatuses())
           .order("created_at", { ascending: false }),
-        // ✅ Global buy orders - ALL users (NO user_uuid filter!)
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial", "filled"])
+          .in("status", getMarketBuyOrderStatuses())
           .order("created_at", { ascending: false }),
       ])
 
-      // USER-SPECIFIC orders (private)
+      // USER-SPECIFIC orders - Use centralized enum values
       const [userSellResult, userBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
           .select("*")
           .eq("user_uuid", user.id)
-          .in("status", ["available", "partial", "completed"])
+          .in("status", getUserSellOrderStatuses())
           .order("created_at", { ascending: false }),
         supabase
           .from("buy_orders")
           .select("*")
           .eq("user_uuid", user.id)
-          .in("status", ["pending", "partial", "completed", "filled"])
+          .in("status", getUserBuyOrderStatuses())
           .order("created_at", { ascending: false }),
       ])
 
+      // Rest of the function remains the same...
       console.log("📊 Query results:")
       console.log("  Market Sell Orders:", marketSellResult.data?.length || 0)
       console.log("  Market Buy Orders:", marketBuyResult.data?.length || 0)

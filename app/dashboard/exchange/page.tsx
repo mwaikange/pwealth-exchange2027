@@ -88,23 +88,30 @@ export default function ExchangePage() {
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      active: "default",
-      queued: "secondary",
+      pending: "secondary",
+      partial: "outline",
+      completed: "default",
       filled: "default",
-      partially_filled: "outline",
+      available: "default",
       expired: "destructive",
+      cancelled: "destructive",
     } as const
 
     const colors = {
-      active: "bg-green-500",
-      queued: "bg-yellow-500",
+      pending: "bg-yellow-500",
+      partial: "bg-orange-500",
+      completed: "bg-green-500",
       filled: "bg-blue-500",
-      partially_filled: "bg-orange-500",
+      available: "bg-green-500",
       expired: "bg-red-500",
+      cancelled: "bg-gray-500",
     } as const
 
     return (
-      <Badge variant={variants[status as keyof typeof variants]} className={colors[status as keyof typeof colors]}>
+      <Badge
+        variant={variants[status as keyof typeof variants] || "secondary"}
+        className={colors[status as keyof typeof colors] || "bg-gray-500"}
+      >
         {status.replace("_", " ").toUpperCase()}
       </Badge>
     )
