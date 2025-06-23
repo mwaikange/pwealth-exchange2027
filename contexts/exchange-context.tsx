@@ -205,9 +205,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
+        // ✅ FIX: Add price_per_share parameter and match the correct function signature
         const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
           p_total_amount: amount,
+          p_price_per_share: currentSharePrice,
         })
 
         console.log("📥 Buy order result:", { data, error })
