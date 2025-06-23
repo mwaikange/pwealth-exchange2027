@@ -23,7 +23,7 @@ export interface BuyOrder {
   user_uuid: string
   total_amount: number
   price_per_share: number
-  status: "pending" | "completed" | "cancelled" | "matched"
+  status: "pending" | "completed" | "cancelled" | "matched" | "filled"
   created_at: string
   filled_amount: number
 }
@@ -81,15 +81,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   /* ---------- queries ---------- */
   const fetchSharePrice = async () => {
     try {
-      // ✅ FIX: Remove .single() and handle multiple rows properly
+      // ✅ Use current_pricing_info table instead of share_supply
       const { data, error } = await supabase
-        .from("share_supply")
-        .select("current_price, last_price_update")
-        .order("last_price_update", { ascending: false })
+        .from("current_pricing_info")
+        .select("current_price, week_start, latest_hodl_date")
+        .order("week_start", { ascending: false })
         .limit(1)
 
       if (error) {
-        console.error("Error fetching price from share_supply:", error)
+        console.error("Error fetching price from current_pricing_info:", error)
         // Fallback to RPC function
         const rpcResult = await supabase.rpc("get_current_share_price")
         if (rpcResult.data) {
@@ -102,8 +102,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (data && data.length > 0) {
         const latestPrice = data[0] // Get first (most recent) row
         setCurrentSharePrice(Number(latestPrice.current_price) || 100)
-        setLastPriceUpdate(latestPrice.last_price_update)
-        console.log("📈 Current share price:", latestPrice.current_price, "updated:", latestPrice.last_price_update)
+        setLastPriceUpdate(latestPrice.latest_hodl_date || latestPrice.week_start)
+        console.log("📈 Current share price:", latestPrice.current_price, "week:", latestPrice.week_start)
       } else {
         // No data found, use fallback
         console.log("No price data found, using fallback")
@@ -138,7 +138,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial"])
+          .in("status", ["pending", "partial", "filled"])
           .order("created_at", { ascending: false }),
       ])
 
@@ -154,7 +154,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           .from("buy_orders")
           .select("*")
           .eq("user_uuid", user.id)
-          .in("status", ["pending", "partial", "completed"])
+          .in("status", ["pending", "partial", "completed", "filled"])
           .order("created_at", { ascending: false }),
       ])
 
