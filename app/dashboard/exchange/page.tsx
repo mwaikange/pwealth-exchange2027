@@ -361,7 +361,10 @@ export default function ExchangePage() {
                       </div>
                       {getStatusBadge(order.status)}
                     </div>
-                    <Progress value={(order.filled_amount / order.total_amount) * 100} className="h-2" />
+                    <Progress
+                      value={(order.filled_amount / order.total_amount) * 100}
+                      className="h-2 [&>div]:bg-yellow-500"
+                    />
                     <div className="text-xs text-slate-400 mt-1">
                       Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
                     </div>
@@ -393,7 +396,10 @@ export default function ExchangePage() {
                       </div>
                       {getStatusBadge(order.status)}
                     </div>
-                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2" />
+                    <Progress
+                      value={(order.filled_shares / order.shares) * 100}
+                      className="h-2 [&>div]:bg-yellow-500"
+                    />
                     <div className="text-xs text-slate-400 mt-1">
                       Filled: {order.filled_shares} / {order.shares} shares
                     </div>
