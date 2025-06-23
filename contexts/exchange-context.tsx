@@ -79,7 +79,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   /* ---------- queries ---------- */
   const fetchSharePrice = async () => {
     try {
-      const { data, error } = await supabase.rpc("get_current_share_price")
+      // Try the main function first, fallback to simple version
+      let { data, error } = await supabase.rpc("get_current_share_price")
+
+      if (error) {
+        console.log("Trying fallback price function...")
+        const fallback = await supabase.rpc("get_current_share_price_simple")
+        data = fallback.data
+        error = fallback.error
+      }
+
       if (error) throw error
       setCurrentSharePrice(Number(data) || 100)
     } catch (err) {
@@ -99,13 +108,23 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       console.log("🔄 Refreshing orders...")
 
-      // Fetch ALL market orders (global - all users)
+      // ✅ GLOBAL MARKET ORDERS - ALL USERS (same method for both buy and sell)
       const [marketSellResult, marketBuyResult] = await Promise.all([
-        supabase.from("sell_orders").select("*").eq("status", "available").order("created_at", { ascending: false }),
-        supabase.from("buy_orders").select("*").eq("status", "pending").order("created_at", { ascending: false }),
+        // Global sell orders - ALL users
+        supabase
+          .from("sell_orders")
+          .select("*")
+          .eq("status", "available")
+          .order("created_at", { ascending: false }),
+        // ✅ Global buy orders - ALL users (not filtered by user_uuid)
+        supabase
+          .from("buy_orders")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false }),
       ])
 
-      // Fetch USER-SPECIFIC orders (private)
+      // USER-SPECIFIC orders (private)
       const [userSellResult, userBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
@@ -139,6 +158,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
+      // ✅ Map market buy orders (ALL USERS - same method as sell orders)
       const mappedMarketBuy = (marketBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
