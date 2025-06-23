@@ -29,9 +29,11 @@ export interface BuyOrder {
 }
 
 interface ExchangeContextType {
-  /* orders */
-  sellOrders: SellOrder[]
-  buyOrders: BuyOrder[]
+  /* GLOBAL MARKET ORDERS (all users) */
+  marketSellOrders: SellOrder[]
+  marketBuyOrders: BuyOrder[]
+
+  /* USER-SPECIFIC ORDERS (private) */
   userSellOrders: SellOrder[]
   userBuyOrders: BuyOrder[]
 
@@ -53,18 +55,26 @@ const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined
 
 /* ---------- Provider ---------- */
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
-  const [sellOrders, setSellOrders] = useState<SellOrder[]>([])
-  const [buyOrders, setBuyOrders] = useState<BuyOrder[]>([])
+  // GLOBAL market orders (all users)
+  const [marketSellOrders, setMarketSellOrders] = useState<SellOrder[]>([])
+  const [marketBuyOrders, setMarketBuyOrders] = useState<BuyOrder[]>([])
+
+  // USER-SPECIFIC orders (private)
+  const [userSellOrders, setUserSellOrders] = useState<SellOrder[]>([])
+  const [userBuyOrders, setUserBuyOrders] = useState<BuyOrder[]>([])
+
   const [currentSharePrice, setCurrentSharePrice] = useState(100)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const { user, session } = useAuth()
-  const { buyWalletBalance, holdWalletPostHold, refreshBalances: refreshWalletBalances } = useWallet()
-
-  /* computed helpers */
-  const userSellOrders = sellOrders.filter((o) => o.user_uuid === user?.id)
-  const userBuyOrders = buyOrders.filter((o) => o.user_uuid === user?.id)
+  const {
+    buyWalletBalance,
+    holdWalletPostHold,
+    refreshBalances: refreshWalletBalances,
+    updateBuyWallet,
+    updateHoldWallet,
+  } = useWallet()
 
   /* ---------- queries ---------- */
   const fetchSharePrice = async () => {
@@ -87,120 +97,100 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      console.log("🔍 Refreshing orders for user:", user.id)
+      console.log("🔄 Refreshing orders...")
 
-      // Query sell orders - try multiple approaches
-      const sellQueries = await Promise.allSettled([
-        // Query 1: All sell orders (no status filter)
+      // Fetch ALL market orders (global - all users)
+      const [marketSellResult, marketBuyResult] = await Promise.all([
+        supabase.from("sell_orders").select("*").eq("status", "available").order("created_at", { ascending: false }),
+        supabase.from("buy_orders").select("*").eq("status", "pending").order("created_at", { ascending: false }),
+      ])
+
+      // Fetch USER-SPECIFIC orders (private)
+      const [userSellResult, userBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
           .select("*")
+          .eq("user_uuid", user.id)
+          .in("status", ["available", "matched", "expired"])
           .order("created_at", { ascending: false }),
-
-        // Query 2: Available sell orders only
         supabase
-          .from("sell_orders")
+          .from("buy_orders")
           .select("*")
-          .eq("status", "available")
-          .order("created_at", { ascending: false }),
-
-        // Query 3: Try active_sell_orders view if it exists
-        supabase
-          .from("active_sell_orders")
-          .select("*")
+          .eq("user_uuid", user.id)
+          .in("status", ["pending", "completed", "matched"])
           .order("created_at", { ascending: false }),
       ])
 
-      // Query buy orders
-      const { data: buyData, error: buyError } = await supabase
-        .from("buy_orders")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-
       console.log("📊 Query results:")
-      sellQueries.forEach((result, index) => {
-        if (result.status === "fulfilled") {
-          console.log(`  Sell Query ${index + 1}:`, result.value.data?.length || 0, "orders")
-          if (result.value.error) console.log(`  Sell Query ${index + 1} Error:`, result.value.error.message)
-        } else {
-          console.log(`  Sell Query ${index + 1} Failed:`, result.reason)
-        }
-      })
-      console.log("  Buy Orders:", buyData?.length || 0)
-      if (buyError) console.log("  Buy Error:", buyError.message)
+      console.log("  Market Sell Orders:", marketSellResult.data?.length || 0)
+      console.log("  Market Buy Orders:", marketBuyResult.data?.length || 0)
+      console.log("  User Sell Orders:", userSellResult.data?.length || 0)
+      console.log("  User Buy Orders:", userBuyResult.data?.length || 0)
 
-      // Use the first successful sell query that has data
-      let sellData = null
-      for (const result of sellQueries) {
-        if (result.status === "fulfilled" && result.value.data && result.value.data.length > 0) {
-          sellData = result.value.data
-          console.log("✅ Using sell data with", sellData.length, "orders")
-          break
-        }
-      }
-
-      // If no data found, use the first successful query (even if empty)
-      if (!sellData) {
-        for (const result of sellQueries) {
-          if (result.status === "fulfilled" && !result.value.error) {
-            sellData = result.value.data || []
-            console.log("📝 Using empty sell data from successful query")
-            break
-          }
-        }
-      }
-
-      console.log("🔍 Raw sell data:", sellData)
-
-      /* map DB rows to strict types */
-      const mappedSell = (sellData || []).map((r: any) => {
-        console.log("🔄 Mapping sell order:", r)
-        return {
-          id: r.id,
-          user_uuid: r.user_uuid,
-          shares: r.shares_available || r.shares || 0,
-          price_per_share: r.price_per_share || 0,
-          status: r.status || "available",
-          created_at: r.created_at,
-          filled_shares:
-            (r.shares_available || r.shares || 0) - (r.shares_remaining || r.shares_available || r.shares || 0),
-          shares_remaining: r.shares_remaining || r.shares_available || r.shares || 0,
-        }
-      })
-
-      const mappedBuy = (buyData || []).map((r: any) => ({
+      /* Map market orders (ALL USERS) */
+      const mappedMarketSell = (marketSellResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
-        total_amount: r.total_amount,
-        price_per_share: r.price_per_share,
-        status: r.status,
+        shares: r.shares_available || 0,
+        price_per_share: r.price_per_share || 0,
+        status: r.status || "available",
+        created_at: r.created_at,
+        filled_shares: (r.shares_available || 0) - (r.shares_remaining || 0),
+        shares_remaining: r.shares_remaining || 0,
+      }))
+
+      const mappedMarketBuy = (marketBuyResult.data || []).map((r: any) => ({
+        id: r.id,
+        user_uuid: r.user_uuid,
+        total_amount: r.total_amount || 0,
+        price_per_share: r.price_per_share || 0,
+        status: r.status || "pending",
         created_at: r.created_at,
         filled_amount: r.amount_filled || 0,
       }))
 
-      console.log("✅ Final mapped data:")
-      console.log("  Sell Orders:", mappedSell.length, mappedSell)
-      console.log("  Buy Orders:", mappedBuy.length, mappedBuy)
-      console.log("  User Sell Orders:", mappedSell.filter((o) => o.user_uuid === user.id).length)
-      console.log("  User Buy Orders:", mappedBuy.filter((o) => o.user_uuid === user.id).length)
+      /* Map user orders (CURRENT USER ONLY) */
+      const mappedUserSell = (userSellResult.data || []).map((r: any) => ({
+        id: r.id,
+        user_uuid: r.user_uuid,
+        shares: r.shares_available || 0,
+        price_per_share: r.price_per_share || 0,
+        status: r.status || "available",
+        created_at: r.created_at,
+        filled_shares: (r.shares_available || 0) - (r.shares_remaining || 0),
+        shares_remaining: r.shares_remaining || 0,
+      }))
 
-      setSellOrders(mappedSell)
-      setBuyOrders(mappedBuy)
+      const mappedUserBuy = (userBuyResult.data || []).map((r: any) => ({
+        id: r.id,
+        user_uuid: r.user_uuid,
+        total_amount: r.total_amount || 0,
+        price_per_share: r.price_per_share || 0,
+        status: r.status || "pending",
+        created_at: r.created_at,
+        filled_amount: r.amount_filled || 0,
+      }))
 
-      console.log("Orders refreshed:", {
-        sellOrders: mappedSell.length,
-        buyOrders: mappedBuy.length,
-      })
+      // Update state
+      setMarketSellOrders(mappedMarketSell)
+      setMarketBuyOrders(mappedMarketBuy)
+      setUserSellOrders(mappedUserSell)
+      setUserBuyOrders(mappedUserBuy)
+
+      console.log("✅ Orders updated:")
+      console.log("  Market Sell:", mappedMarketSell.length)
+      console.log("  Market Buy:", mappedMarketBuy.length)
+      console.log("  User Sell:", mappedUserSell.length)
+      console.log("  User Buy:", mappedUserBuy.length)
     } catch (err: any) {
-      console.error("Refresh orders error", err)
+      console.error("❌ Refresh orders error", err)
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  /* ---------- actions ---------- */
+  /* ---------- actions with IMMEDIATE UI updates ---------- */
   const placeBuyOrder = useCallback(
     async (amount: number) => {
       if (!user) return { success: false, message: "Not authenticated" }
@@ -209,32 +199,39 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (amount > buyWalletBalance) return { success: false, message: "Insufficient Buy-wallet funds" }
 
       try {
-        setLoading(true)
+        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        console.log("💰 Immediately deducting N$", amount, "from buy wallet")
+        await updateBuyWallet(amount, "subtract")
 
-        console.log("Placing buy order:", { amount, currentSharePrice, user_id: user.id })
+        console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
         const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
           p_total_amount: amount,
         })
 
-        console.log("Buy order result:", { data, error })
+        console.log("📥 Buy order result:", { data, error })
 
-        if (error) throw error
+        if (error) {
+          // Rollback on error
+          console.log("❌ Error - rolling back wallet deduction")
+          await updateBuyWallet(amount, "add")
+          throw error
+        }
 
-        await Promise.all([refreshOrders(), refreshWalletBalances()])
+        // Refresh orders to show new order
+        await refreshOrders()
+
         return {
           success: true,
-          message: `Queued buy order for ${(amount / currentSharePrice).toFixed(2)} shares`,
+          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares`,
         }
       } catch (e: any) {
-        console.error("Buy order error", e)
+        console.error("❌ Buy order error", e)
         return { success: false, message: e.message }
-      } finally {
-        setLoading(false)
       }
     },
-    [user, currentSharePrice, buyWalletBalance, refreshWalletBalances],
+    [user, currentSharePrice, buyWalletBalance, updateBuyWallet],
   )
 
   const placeSellOrder = useCallback(
@@ -245,9 +242,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (shares > holdWalletPostHold) return { success: false, message: "Insufficient Post-hold shares" }
 
       try {
-        setLoading(true)
+        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        console.log("📈 Immediately deducting", shares, "shares from post-hold wallet")
+        await updateHoldWallet(shares, "subtract", "post")
 
-        console.log("Placing sell order:", { shares, currentSharePrice, user_id: user.id, holdWalletPostHold })
+        console.log("📤 Placing sell order:", { shares, currentSharePrice, user_id: user.id })
 
         const { data, error } = await supabase.rpc("place_sell_order", {
           p_user_uuid: user.id,
@@ -255,26 +254,28 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           p_shares: shares,
         })
 
-        console.log("Sell order result:", { data, error })
+        console.log("📥 Sell order result:", { data, error })
 
-        if (error) throw error
+        if (error) {
+          // Rollback on error
+          console.log("❌ Error - rolling back share deduction")
+          await updateHoldWallet(shares, "add", "post")
+          throw error
+        }
 
-        // Wait a moment for the database to update
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        // Refresh orders to show new order
+        await refreshOrders()
 
-        await Promise.all([refreshOrders(), refreshWalletBalances()])
         return {
           success: true,
-          message: `Queued sell order for ${shares} shares`,
+          message: `Sell order placed for ${shares} shares`,
         }
       } catch (e: any) {
-        console.error("Sell order error", e)
+        console.error("❌ Sell order error", e)
         return { success: false, message: e.message }
-      } finally {
-        setLoading(false)
       }
     },
-    [user, currentSharePrice, holdWalletPostHold, refreshWalletBalances],
+    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet],
   )
 
   /* ---------- lifecycle ---------- */
@@ -285,10 +286,14 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- context value ---------- */
   const ctx: ExchangeContextType = {
-    sellOrders,
-    buyOrders,
+    // GLOBAL market orders (all users)
+    marketSellOrders,
+    marketBuyOrders,
+
+    // USER-SPECIFIC orders (private)
     userSellOrders,
     userBuyOrders,
+
     placeBuyOrder,
     placeSellOrder,
     currentSharePrice,
