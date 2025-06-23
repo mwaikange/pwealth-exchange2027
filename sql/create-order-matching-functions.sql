@@ -30,17 +30,8 @@ BEGIN
         );
     END IF;
 
-    -- Get current share price using table alias to avoid ambiguity
-    SELECT cpi.current_price INTO current_price
-    FROM current_pricing_info cpi
-    ORDER BY cpi.week_start DESC
-    LIMIT 1;
-    
-    -- Fallback if no price data found
-    IF current_price IS NULL THEN
-        current_price := 100;
-    END IF;
-    
+    -- Get current share price
+    current_price := get_current_share_price();
     shares_requested := FLOOR(p_total_amount / current_price);
     
     IF shares_requested = 0 THEN
@@ -80,11 +71,11 @@ BEGIN
 
     -- Try to match with existing sell orders (FIFO - oldest first)
     FOR sell_order IN 
-        SELECT so.* FROM sell_orders so
-        WHERE so.status = 'available' 
-        AND so.shares_remaining > 0
-        AND so.expires_at > NOW()
-        ORDER BY so.created_at ASC
+        SELECT * FROM sell_orders 
+        WHERE status = 'available' 
+        AND shares_remaining > 0
+        AND expires_at > NOW()
+        ORDER BY created_at ASC
     LOOP
         -- Calculate how many shares we can match
         shares_to_match := LEAST(remaining_shares, sell_order.shares_remaining);
@@ -221,21 +212,8 @@ DECLARE
     sell_order_id UUID;
     expires_at TIMESTAMPTZ;
 BEGIN
-    -- Use the provided price or get current price with table alias
-    IF p_price_per_share IS NOT NULL THEN
-        current_price := p_price_per_share;
-    ELSE
-        SELECT cpi.current_price INTO current_price
-        FROM current_pricing_info cpi
-        ORDER BY cpi.week_start DESC
-        LIMIT 1;
-        
-        -- Fallback if no price data found
-        IF current_price IS NULL THEN
-            current_price := 100;
-        END IF;
-    END IF;
-    
+    -- Use the provided price or get current price
+    current_price := COALESCE(p_price_per_share, get_current_share_price());
     total_amount := p_shares * current_price;
     
     -- Validate minimum amount

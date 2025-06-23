@@ -140,7 +140,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial", "filled", "completed"])
+          .in("status", ["pending", "partial", "filled"])
           .order("created_at", { ascending: false }),
       ])
 
@@ -178,7 +178,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
-      // ✅ Enhanced buy order mapping with all fields
+      // ✅ Map market buy orders (ALL USERS - with all fields)
       const mappedMarketBuy = (marketBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
@@ -203,7 +203,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
-      // ✅ Enhanced user buy order mapping with all fields
+      // Map user buy orders (CURRENT USER ONLY - with all fields)
       const mappedUserBuy = (userBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
