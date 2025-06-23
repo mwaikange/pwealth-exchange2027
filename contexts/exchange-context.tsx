@@ -26,6 +26,8 @@ export interface BuyOrder {
   status: "pending" | "completed" | "cancelled" | "matched" | "filled"
   created_at: string
   filled_amount: number
+  shares_requested: number
+  shares_filled: number
 }
 
 interface ExchangeContextType {
@@ -138,7 +140,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial", "filled"])
+          .in("status", ["pending", "partial", "filled", "completed"])
           .order("created_at", { ascending: false }),
       ])
 
@@ -176,7 +178,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
-      // ✅ Map market buy orders (ALL USERS - same method as sell orders)
+      // ✅ Enhanced buy order mapping with all fields
       const mappedMarketBuy = (marketBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
@@ -185,6 +187,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         status: r.status || "pending",
         created_at: r.created_at,
         filled_amount: r.amount_filled || 0,
+        shares_requested: r.shares_requested || 0,
+        shares_filled: r.shares_filled || 0,
       }))
 
       /* Map user orders (CURRENT USER ONLY) */
@@ -199,6 +203,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
+      // ✅ Enhanced user buy order mapping with all fields
       const mappedUserBuy = (userBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
@@ -207,6 +212,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         status: r.status || "pending",
         created_at: r.created_at,
         filled_amount: r.amount_filled || 0,
+        shares_requested: r.shares_requested || 0,
+        shares_filled: r.shares_filled || 0,
       }))
 
       // Update state
