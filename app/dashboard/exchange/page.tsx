@@ -41,8 +41,8 @@ export default function ExchangePage() {
 
   const handleBuyOrder = async () => {
     const amount = Number.parseFloat(buyAmount)
-    if (isNaN(amount)) {
-      setMessage({ type: "error", text: "Please enter a valid amount" })
+    if (isNaN(amount) || amount <= 0) {
+      setMessage({ type: "error", text: "Please enter a valid positive amount" })
       return
     }
 
@@ -56,8 +56,8 @@ export default function ExchangePage() {
 
   const handleSellOrder = async () => {
     const shares = Number.parseFloat(sellShares)
-    if (isNaN(shares)) {
-      setMessage({ type: "error", text: "Please enter a valid number of shares" })
+    if (isNaN(shares) || shares <= 0) {
+      setMessage({ type: "error", text: "Please enter a valid positive number of shares" })
       return
     }
 
@@ -71,8 +71,8 @@ export default function ExchangePage() {
 
   const handleCashout = async () => {
     const amount = Number.parseFloat(cashoutAmount)
-    if (isNaN(amount)) {
-      setMessage({ type: "error", text: "Please enter a valid cashout amount" })
+    if (isNaN(amount) || amount <= 0) {
+      setMessage({ type: "error", text: "Please enter a valid positive cashout amount" })
       return
     }
 
@@ -86,7 +86,32 @@ export default function ExchangePage() {
     setCashoutAmount("")
   }
 
-  const getStatusBadge = (status: string) => {
+  // Helper function to determine correct status based on fill percentage
+  const getCorrectStatus = (order: any, isUserOrder = false) => {
+    let fillPercentage = 0
+
+    if ("total_amount" in order) {
+      // Buy order
+      fillPercentage = (order.filled_amount / order.total_amount) * 100
+    } else {
+      // Sell order
+      fillPercentage = (order.filled_shares / order.shares) * 100
+    }
+
+    if (fillPercentage === 0) {
+      return "total_amount" in order ? "pending" : "available"
+    } else if (fillPercentage > 0 && fillPercentage < 100) {
+      return "partial"
+    } else if (fillPercentage >= 100) {
+      return isUserOrder ? "completed" : "filled"
+    }
+
+    return order.status // fallback to original status
+  }
+
+  const getStatusBadge = (order: any, isUserOrder = false) => {
+    const actualStatus = getCorrectStatus(order, isUserOrder)
+
     const variants = {
       pending: "secondary",
       partial: "outline",
@@ -109,10 +134,10 @@ export default function ExchangePage() {
 
     return (
       <Badge
-        variant={variants[status as keyof typeof variants] || "secondary"}
-        className={colors[status as keyof typeof colors] || "bg-gray-500"}
+        variant={variants[actualStatus as keyof typeof variants] || "secondary"}
+        className={colors[actualStatus as keyof typeof colors] || "bg-gray-500"}
       >
-        {status.replace("_", " ").toUpperCase()}
+        {actualStatus.replace("_", " ").toUpperCase()}
       </Badge>
     )
   }
@@ -188,12 +213,14 @@ export default function ExchangePage() {
                   value={buyAmount}
                   onChange={(e) => setBuyAmount(e.target.value)}
                   disabled={loading}
+                  min="0"
+                  step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleBuyOrder}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={loading || !buyAmount}
+                  disabled={loading || !buyAmount || Number.parseFloat(buyAmount) <= 0}
                 >
                   {loading ? "Processing..." : "Buy Shares"}
                 </Button>
@@ -218,12 +245,14 @@ export default function ExchangePage() {
                   value={sellShares}
                   onChange={(e) => setSellShares(e.target.value)}
                   disabled={loading}
+                  min="0"
+                  step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleSellOrder}
                   className="w-full bg-green-600 hover:bg-green-700 text-white"
-                  disabled={loading || !sellShares}
+                  disabled={loading || !sellShares || Number.parseFloat(sellShares) <= 0}
                 >
                   {loading ? "Processing..." : "Sell Shares"}
                 </Button>
@@ -248,12 +277,14 @@ export default function ExchangePage() {
                   value={cashoutAmount}
                   onChange={(e) => setCashoutAmount(e.target.value)}
                   disabled={loading}
+                  min="0"
+                  step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleCashout}
                   className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                  disabled={loading || !cashoutAmount}
+                  disabled={loading || !cashoutAmount || Number.parseFloat(cashoutAmount) <= 0}
                 >
                   {loading ? "Processing..." : "Cashout"}
                 </Button>
@@ -289,7 +320,7 @@ export default function ExchangePage() {
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(order, false)}
                       <span className="text-xs text-slate-400">
                         {Math.round((order.filled_amount / order.total_amount) * 100)}%
                       </span>
@@ -323,7 +354,7 @@ export default function ExchangePage() {
                       <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(order, false)}
                       <span className="text-xs text-slate-400">
                         {order.filled_shares}/{order.shares}
                       </span>
@@ -359,7 +390,7 @@ export default function ExchangePage() {
                           ({Math.floor(order.total_amount / order.price_per_share)} shares)
                         </span>
                       </div>
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(order, true)}
                     </div>
                     <Progress
                       value={(order.filled_amount / order.total_amount) * 100}
@@ -394,12 +425,9 @@ export default function ExchangePage() {
                         <span className="font-medium text-slate-100">{order.shares} shares</span>
                         <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
                       </div>
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(order, true)}
                     </div>
-                    <Progress
-                      value={(order.filled_shares / order.shares) * 100}
-                      className="h-2 [&>div]:bg-yellow-500"
-                    />
+                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
                     <div className="text-xs text-slate-400 mt-1">
                       Filled: {order.filled_shares} / {order.shares} shares
                     </div>

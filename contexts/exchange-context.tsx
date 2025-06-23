@@ -6,8 +6,6 @@ import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
 import {
-  getMarketBuyOrderStatuses,
-  getMarketSellOrderStatuses,
   getUserBuyOrderStatuses,
   getUserSellOrderStatuses,
   type BuyOrderStatus,
@@ -136,21 +134,21 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       console.log("🔄 Refreshing orders...")
 
-      // ✅ GLOBAL MARKET ORDERS - Use centralized enum values
+      // ✅ GLOBAL MARKET ORDERS - Include partial orders that still need matching
       const [marketSellResult, marketBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
           .select("*")
-          .in("status", getMarketSellOrderStatuses())
-          .order("created_at", { ascending: false }),
+          .in("status", ["available", "partial"]) // Only show orders that can still be matched
+          .order("created_at", { ascending: true }), // FIFO order for matching
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", getMarketBuyOrderStatuses())
-          .order("created_at", { ascending: false }),
+          .in("status", ["pending", "partial"]) // Only show orders that still need filling
+          .order("created_at", { ascending: true }), // FIFO order for matching
       ])
 
-      // USER-SPECIFIC orders - Use centralized enum values
+      // USER-SPECIFIC orders - Show all user orders including completed ones
       const [userSellResult, userBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
@@ -166,7 +164,6 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           .order("created_at", { ascending: false }),
       ])
 
-      // Rest of the function remains the same...
       console.log("📊 Query results:")
       console.log("  Market Sell Orders:", marketSellResult.data?.length || 0)
       console.log("  Market Buy Orders:", marketBuyResult.data?.length || 0)
@@ -258,11 +255,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
-        // ✅ FIX: Use correct parameter order to match your function signature
-        const { data, error } = await supabase.rpc("place_buy_order", {
+        // ✅ Place order with 30-second delay before matching
+        const { data, error } = await supabase.rpc("place_buy_order_with_delay", {
           p_user_uuid: user.id,
           p_price_per_share: currentSharePrice,
           p_total_amount: amount,
+          p_delay_seconds: 30,
         })
 
         console.log("📥 Buy order result:", { data, error })
@@ -274,18 +272,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Trigger order matching after placing order
-        console.log("🔄 Triggering order matching...")
-        const matchResult = await supabase.rpc("match_orders")
-        console.log("🔄 Match result:", matchResult)
-
-        // Refresh orders to show new order and any matches
+        // Refresh orders to show new order
         await refreshOrders()
         await refreshWalletBalances()
 
         return {
           success: true,
-          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares`,
+          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares. Will be matched in 30 seconds.`,
         }
       } catch (e: any) {
         console.error("❌ Buy order error", e)
@@ -324,7 +317,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Trigger order matching after placing order
+        // Trigger immediate order matching for sell orders
         console.log("🔄 Triggering order matching...")
         const matchResult = await supabase.rpc("match_orders")
         console.log("🔄 Match result:", matchResult)
