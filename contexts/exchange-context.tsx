@@ -81,13 +81,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   /* ---------- queries ---------- */
   const fetchSharePrice = async () => {
     try {
-      // Get current price from share_supply table
+      // ✅ FIX: Remove .single() and handle multiple rows properly
       const { data, error } = await supabase
         .from("share_supply")
         .select("current_price, last_price_update")
         .order("last_price_update", { ascending: false })
         .limit(1)
-        .single()
 
       if (error) {
         console.error("Error fetching price from share_supply:", error)
@@ -99,10 +98,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      if (data) {
-        setCurrentSharePrice(Number(data.current_price) || 100)
-        setLastPriceUpdate(data.last_price_update)
-        console.log("📈 Current share price:", data.current_price, "updated:", data.last_price_update)
+      // ✅ Handle array response (data is an array, not single object)
+      if (data && data.length > 0) {
+        const latestPrice = data[0] // Get first (most recent) row
+        setCurrentSharePrice(Number(latestPrice.current_price) || 100)
+        setLastPriceUpdate(latestPrice.last_price_update)
+        console.log("📈 Current share price:", latestPrice.current_price, "updated:", latestPrice.last_price_update)
+      } else {
+        // No data found, use fallback
+        console.log("No price data found, using fallback")
+        setCurrentSharePrice(100)
       }
     } catch (err) {
       console.error("Error fetching price", err)
