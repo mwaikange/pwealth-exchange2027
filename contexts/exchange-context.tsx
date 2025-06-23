@@ -43,6 +43,7 @@ interface ExchangeContextType {
 
   /* market data  */
   currentSharePrice: number
+  lastPriceUpdate: string | null
 
   /* ui state */
   loading: boolean
@@ -64,6 +65,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   const [userBuyOrders, setUserBuyOrders] = useState<BuyOrder[]>([])
 
   const [currentSharePrice, setCurrentSharePrice] = useState(100)
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -79,18 +81,29 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   /* ---------- queries ---------- */
   const fetchSharePrice = async () => {
     try {
-      // Try the main function first, fallback to simple version
-      let { data, error } = await supabase.rpc("get_current_share_price")
+      // Get current price from share_supply table
+      const { data, error } = await supabase
+        .from("share_supply")
+        .select("current_price, last_price_update")
+        .order("last_price_update", { ascending: false })
+        .limit(1)
+        .single()
 
       if (error) {
-        console.log("Trying fallback price function...")
-        const fallback = await supabase.rpc("get_current_share_price_simple")
-        data = fallback.data
-        error = fallback.error
+        console.error("Error fetching price from share_supply:", error)
+        // Fallback to RPC function
+        const rpcResult = await supabase.rpc("get_current_share_price")
+        if (rpcResult.data) {
+          setCurrentSharePrice(Number(rpcResult.data))
+        }
+        return
       }
 
-      if (error) throw error
-      setCurrentSharePrice(Number(data) || 100)
+      if (data) {
+        setCurrentSharePrice(Number(data.current_price) || 100)
+        setLastPriceUpdate(data.last_price_update)
+        console.log("📈 Current share price:", data.current_price, "updated:", data.last_price_update)
+      }
     } catch (err) {
       console.error("Error fetching price", err)
       setCurrentSharePrice(100)
@@ -308,10 +321,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     [user, currentSharePrice, holdWalletPostHold, updateHoldWallet],
   )
 
-  /* ---------- lifecycle ---------- */
+  /* ---------- Auto-refresh price every 30 seconds ---------- */
   useEffect(() => {
     fetchSharePrice()
     refreshOrders()
+
+    // Set up price refresh interval
+    const priceInterval = setInterval(fetchSharePrice, 30000) // 30 seconds
+
+    return () => clearInterval(priceInterval)
   }, [user, session])
 
   /* ---------- context value ---------- */
@@ -327,6 +345,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     placeBuyOrder,
     placeSellOrder,
     currentSharePrice,
+    lastPriceUpdate,
     loading,
     error,
     refreshOrders,
