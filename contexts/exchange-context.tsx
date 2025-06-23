@@ -12,9 +12,10 @@ export interface SellOrder {
   user_uuid: string
   shares: number
   price_per_share: number
-  status: "active" | "filled" | "expired" | "queued"
+  status: "available" | "matched" | "expired" | "cancelled"
   created_at: string
   filled_shares: number
+  shares_remaining: number
 }
 
 export interface BuyOrder {
@@ -22,7 +23,7 @@ export interface BuyOrder {
   user_uuid: string
   total_amount: number
   price_per_share: number
-  status: "active" | "filled" | "expired" | "queued"
+  status: "pending" | "completed" | "cancelled" | "matched"
   created_at: string
   filled_amount: number
 }
@@ -86,33 +87,75 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      const [{ data: sell }, { data: buy }] = await Promise.all([
-        supabase.from("sell_orders").select("*").eq("status", "active").order("created_at", { ascending: true }),
-        supabase.from("buy_orders").select("*").eq("status", "pending").order("created_at", { ascending: true }),
+      // Try both table names and both status values
+      const [sellResult1, sellResult2, buyResult] = await Promise.all([
+        // Try active_sell_orders table first
+        supabase
+          .from("active_sell_orders")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .then((r) => ({ ...r, source: "active_sell_orders" })),
+        // Try sell_orders with 'available' status
+        supabase
+          .from("sell_orders")
+          .select("*")
+          .eq("status", "available")
+          .order("created_at", { ascending: true })
+          .then((r) => ({ ...r, source: "sell_orders" })),
+        // Buy orders
+        supabase
+          .from("buy_orders")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at", { ascending: true }),
       ])
 
-      /* map DB rows to strict types */
-      const mappedSell =
-        sell?.map((r) => ({
-          id: r.id,
-          user_uuid: r.user_uuid,
-          shares: r.shares,
-          price_per_share: r.price_per_share,
-          status: r.status,
-          created_at: r.created_at,
-          filled_shares: r.shares - r.shares_remaining,
-        })) ?? []
+      console.log("Query results:", {
+        active_sell_orders: sellResult1.data?.length || 0,
+        sell_orders_available: sellResult2.data?.length || 0,
+        sellResult1_error: sellResult1.error?.message,
+        sellResult2_error: sellResult2.error?.message,
+      })
 
-      const mappedBuy =
-        buy?.map((r) => ({
-          id: r.id,
-          user_uuid: r.user_uuid,
-          total_amount: r.total_amount,
-          price_per_share: r.price_per_share,
-          status: r.status,
-          created_at: r.created_at,
-          filled_amount: r.amount_filled || 0,
-        })) ?? []
+      // Use whichever query worked and has data
+      let sellData = null
+      if (sellResult1.data && sellResult1.data.length > 0) {
+        sellData = sellResult1.data
+        console.log("Using active_sell_orders table")
+      } else if (sellResult2.data && sellResult2.data.length > 0) {
+        sellData = sellResult2.data
+        console.log("Using sell_orders table")
+      } else {
+        // If both failed, try sell_orders without status filter to see what's there
+        const { data: allSellOrders } = await supabase
+          .from("sell_orders")
+          .select("*")
+          .order("created_at", { ascending: true })
+        console.log("All sell orders (any status):", allSellOrders)
+        sellData = allSellOrders || []
+      }
+
+      /* map DB rows to strict types */
+      const mappedSell = (sellData || []).map((r: any) => ({
+        id: r.id,
+        user_uuid: r.user_uuid,
+        shares: r.shares_available || r.shares || 0,
+        price_per_share: r.price_per_share || 0,
+        status: r.status || "available",
+        created_at: r.created_at,
+        filled_shares: (r.shares_available || r.shares || 0) - (r.shares_remaining || 0),
+        shares_remaining: r.shares_remaining || 0,
+      }))
+
+      const mappedBuy = (buyResult.data || []).map((r: any) => ({
+        id: r.id,
+        user_uuid: r.user_uuid,
+        total_amount: r.total_amount,
+        price_per_share: r.price_per_share,
+        status: r.status,
+        created_at: r.created_at,
+        filled_amount: r.amount_filled || 0,
+      }))
 
       setSellOrders(mappedSell)
       setBuyOrders(mappedBuy)
@@ -138,12 +181,18 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       try {
         setLoading(true)
-        const { error } = await supabase.rpc("place_buy_order", {
-          p_price_per_share: currentSharePrice,
-          p_total_amount: amount,
+
+        console.log("Placing buy order:", { amount, currentSharePrice, user_id: user.id })
+
+        const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
+          p_total_amount: amount,
         })
+
+        console.log("Buy order result:", { data, error })
+
         if (error) throw error
+
         await Promise.all([refreshOrders(), refreshWalletBalances()])
         return {
           success: true,
@@ -168,12 +217,21 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       try {
         setLoading(true)
-        const { error } = await supabase.rpc("place_sell_order", {
-          p_price_per_share: currentSharePrice,
-          p_shares: shares,
+
+        console.log("Placing sell order:", { shares, currentSharePrice, user_id: user.id, holdWalletPostHold })
+
+        const { data, error } = await supabase.rpc("place_sell_order", {
           p_user_uuid: user.id,
+          p_shares_to_sell: shares,
         })
+
+        console.log("Sell order result:", { data, error })
+
         if (error) throw error
+
+        // Wait a moment for the database to update
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+
         await Promise.all([refreshOrders(), refreshWalletBalances()])
         return {
           success: true,
