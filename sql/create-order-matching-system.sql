@@ -16,6 +16,7 @@ BEGIN
     FOR buy_rec IN
         SELECT * FROM buy_orders 
         WHERE status = 'pending' 
+        AND shares_fulfilled < shares_requested
         ORDER BY created_at ASC
     LOOP
         -- Loop through available sell orders at the same price
@@ -29,7 +30,7 @@ BEGIN
             -- Calculate how many shares can be matched
             matched_shares := LEAST(
                 sell_rec.shares_remaining,
-                FLOOR(buy_rec.total_amount / buy_rec.price_per_share) - COALESCE(buy_rec.shares_fulfilled, 0)
+                buy_rec.shares_requested - COALESCE(buy_rec.shares_fulfilled, 0)
             );
             
             -- Skip if no shares to match
@@ -43,13 +44,17 @@ BEGIN
             INSERT INTO user_shares (user_uuid, wallet_type, shares, source)
             VALUES (buy_rec.user_uuid, 'hold_pre', matched_shares, 'purchase')
             ON CONFLICT (user_uuid, wallet_type)
-            DO UPDATE SET shares = user_shares.shares + EXCLUDED.shares;
+            DO UPDATE SET 
+                shares = user_shares.shares + EXCLUDED.shares,
+                updated_at = NOW();
             
             -- Transfer money to seller (cashout_wallet)
             INSERT INTO user_shares (user_uuid, wallet_type, shares, source)
             VALUES (sell_rec.user_uuid, 'cashout_wallet', matched_amount, 'sale')
             ON CONFLICT (user_uuid, wallet_type)
-            DO UPDATE SET shares = user_shares.shares + EXCLUDED.shares;
+            DO UPDATE SET 
+                shares = user_shares.shares + EXCLUDED.shares,
+                updated_at = NOW();
             
             -- Update sell order
             UPDATE sell_orders
@@ -68,7 +73,7 @@ BEGIN
                 shares_fulfilled = COALESCE(shares_fulfilled, 0) + matched_shares,
                 amount_filled = COALESCE(amount_filled, 0) + matched_amount,
                 status = CASE 
-                    WHEN COALESCE(shares_fulfilled, 0) + matched_shares >= FLOOR(total_amount / price_per_share) THEN 'completed'
+                    WHEN COALESCE(shares_fulfilled, 0) + matched_shares >= shares_requested THEN 'completed'
                     ELSE 'pending'
                 END,
                 updated_at = NOW()
@@ -86,7 +91,7 @@ BEGIN
             
             total_matches := total_matches + 1;
             
-            -- Update the records for next iteration
+            -- Refresh the records for next iteration
             SELECT * INTO buy_rec FROM buy_orders WHERE id = buy_rec.id;
             SELECT * INTO sell_rec FROM sell_orders WHERE id = sell_rec.id;
             
