@@ -26,8 +26,8 @@ export default function ExchangePage() {
   } = useWallet()
 
   const {
-    sellOrders,
-    buyOrders,
+    marketSellOrders,
+    marketBuyOrders,
     userSellOrders,
     userBuyOrders,
     placeBuyOrder,
@@ -262,15 +262,15 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Buy Orders ({buyOrders.length})
+              Market Buy Orders ({(marketBuyOrders ?? []).length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {buyOrders.length === 0 ? (
+              {(marketBuyOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active buy orders</p>
               ) : (
-                buyOrders.slice(0, 10).map((order) => (
+                marketBuyOrders.slice(0, 10).map((order) => (
                   <div
                     key={order.id}
                     className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
@@ -298,15 +298,15 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Sell Orders ({sellOrders.length})
+              Market Sell Orders ({(marketSellOrders ?? []).length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {sellOrders.length === 0 ? (
+              {(marketSellOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active sell orders</p>
               ) : (
-                sellOrders.slice(0, 10).map((order) => (
+                marketSellOrders.slice(0, 10).map((order) => (
                   <div
                     key={order.id}
                     className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
@@ -335,12 +335,12 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Buy Orders ({userBuyOrders.length})
+              Your Buy Orders ({(userBuyOrders ?? []).length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {userBuyOrders.length === 0 ? (
+              {(userBuyOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
               ) : (
                 userBuyOrders.map((order) => (
@@ -369,12 +369,12 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Sell Orders ({userSellOrders.length})
+              Your Sell Orders ({(userSellOrders ?? []).length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {userSellOrders.length === 0 ? (
+              {(userSellOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
                 userSellOrders.map((order) => (
