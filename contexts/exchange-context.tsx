@@ -321,13 +321,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     [user, currentSharePrice, holdWalletPostHold, updateHoldWallet],
   )
 
-  /* ---------- Auto-refresh price every 30 seconds ---------- */
+  /* ---------- Auto-refresh price every hour ---------- */
   useEffect(() => {
     fetchSharePrice()
     refreshOrders()
 
-    // Set up price refresh interval
-    const priceInterval = setInterval(fetchSharePrice, 30000) // 30 seconds
+    // Set up price refresh interval - every hour (3600000 ms)
+    const priceInterval = setInterval(fetchSharePrice, 3600000) // 1 hour
 
     return () => clearInterval(priceInterval)
   }, [user, session])
