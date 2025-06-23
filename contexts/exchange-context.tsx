@@ -205,11 +205,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
-        // ✅ FIX: Add price_per_share parameter and match the correct function signature
+        // ✅ FIX: Use correct parameter order to match your function signature
         const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
-          p_total_amount: amount,
           p_price_per_share: currentSharePrice,
+          p_total_amount: amount,
         })
 
         console.log("📥 Buy order result:", { data, error })
@@ -221,7 +221,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Refresh orders to show new order
+        // Trigger order matching after placing order
+        console.log("🔄 Triggering order matching...")
+        await supabase.rpc("match_orders")
+
+        // Refresh orders to show new order and any matches
         await refreshOrders()
 
         return {
@@ -265,7 +269,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Refresh orders to show new order
+        // Trigger order matching after placing order
+        console.log("🔄 Triggering order matching...")
+        await supabase.rpc("match_orders")
+
+        // Refresh orders to show new order and any matches
         await refreshOrders()
 
         return {
