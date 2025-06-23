@@ -222,7 +222,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         const { data, error } = await supabase.rpc("place_sell_order", {
           p_user_uuid: user.id,
-          p_shares_to_sell: shares,
+          p_price_per_share: currentSharePrice,
+          p_shares: shares,
         })
 
         console.log("Sell order result:", { data, error })
