@@ -87,67 +87,89 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      // Try both table names and both status values
-      const [sellResult1, sellResult2, buyResult] = await Promise.all([
-        // Try active_sell_orders table first
+      console.log("🔍 Refreshing orders for user:", user.id)
+
+      // Query sell orders - try multiple approaches
+      const sellQueries = await Promise.allSettled([
+        // Query 1: All sell orders (no status filter)
         supabase
-          .from("active_sell_orders")
+          .from("sell_orders")
           .select("*")
-          .order("created_at", { ascending: true })
-          .then((r) => ({ ...r, source: "active_sell_orders" })),
-        // Try sell_orders with 'available' status
+          .order("created_at", { ascending: false }),
+
+        // Query 2: Available sell orders only
         supabase
           .from("sell_orders")
           .select("*")
           .eq("status", "available")
-          .order("created_at", { ascending: true })
-          .then((r) => ({ ...r, source: "sell_orders" })),
-        // Buy orders
+          .order("created_at", { ascending: false }),
+
+        // Query 3: Try active_sell_orders view if it exists
         supabase
-          .from("buy_orders")
+          .from("active_sell_orders")
           .select("*")
-          .eq("status", "pending")
-          .order("created_at", { ascending: true }),
+          .order("created_at", { ascending: false }),
       ])
 
-      console.log("Query results:", {
-        active_sell_orders: sellResult1.data?.length || 0,
-        sell_orders_available: sellResult2.data?.length || 0,
-        sellResult1_error: sellResult1.error?.message,
-        sellResult2_error: sellResult2.error?.message,
-      })
+      // Query buy orders
+      const { data: buyData, error: buyError } = await supabase
+        .from("buy_orders")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
 
-      // Use whichever query worked and has data
+      console.log("📊 Query results:")
+      sellQueries.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          console.log(`  Sell Query ${index + 1}:`, result.value.data?.length || 0, "orders")
+          if (result.value.error) console.log(`  Sell Query ${index + 1} Error:`, result.value.error.message)
+        } else {
+          console.log(`  Sell Query ${index + 1} Failed:`, result.reason)
+        }
+      })
+      console.log("  Buy Orders:", buyData?.length || 0)
+      if (buyError) console.log("  Buy Error:", buyError.message)
+
+      // Use the first successful sell query that has data
       let sellData = null
-      if (sellResult1.data && sellResult1.data.length > 0) {
-        sellData = sellResult1.data
-        console.log("Using active_sell_orders table")
-      } else if (sellResult2.data && sellResult2.data.length > 0) {
-        sellData = sellResult2.data
-        console.log("Using sell_orders table")
-      } else {
-        // If both failed, try sell_orders without status filter to see what's there
-        const { data: allSellOrders } = await supabase
-          .from("sell_orders")
-          .select("*")
-          .order("created_at", { ascending: true })
-        console.log("All sell orders (any status):", allSellOrders)
-        sellData = allSellOrders || []
+      for (const result of sellQueries) {
+        if (result.status === "fulfilled" && result.value.data && result.value.data.length > 0) {
+          sellData = result.value.data
+          console.log("✅ Using sell data with", sellData.length, "orders")
+          break
+        }
       }
 
-      /* map DB rows to strict types */
-      const mappedSell = (sellData || []).map((r: any) => ({
-        id: r.id,
-        user_uuid: r.user_uuid,
-        shares: r.shares_available || r.shares || 0,
-        price_per_share: r.price_per_share || 0,
-        status: r.status || "available",
-        created_at: r.created_at,
-        filled_shares: (r.shares_available || r.shares || 0) - (r.shares_remaining || 0),
-        shares_remaining: r.shares_remaining || 0,
-      }))
+      // If no data found, use the first successful query (even if empty)
+      if (!sellData) {
+        for (const result of sellQueries) {
+          if (result.status === "fulfilled" && !result.value.error) {
+            sellData = result.value.data || []
+            console.log("📝 Using empty sell data from successful query")
+            break
+          }
+        }
+      }
 
-      const mappedBuy = (buyResult.data || []).map((r: any) => ({
+      console.log("🔍 Raw sell data:", sellData)
+
+      /* map DB rows to strict types */
+      const mappedSell = (sellData || []).map((r: any) => {
+        console.log("🔄 Mapping sell order:", r)
+        return {
+          id: r.id,
+          user_uuid: r.user_uuid,
+          shares: r.shares_available || r.shares || 0,
+          price_per_share: r.price_per_share || 0,
+          status: r.status || "available",
+          created_at: r.created_at,
+          filled_shares:
+            (r.shares_available || r.shares || 0) - (r.shares_remaining || r.shares_available || r.shares || 0),
+          shares_remaining: r.shares_remaining || r.shares_available || r.shares || 0,
+        }
+      })
+
+      const mappedBuy = (buyData || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
         total_amount: r.total_amount,
@@ -157,8 +179,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         filled_amount: r.amount_filled || 0,
       }))
 
+      console.log("✅ Final mapped data:")
+      console.log("  Sell Orders:", mappedSell.length, mappedSell)
+      console.log("  Buy Orders:", mappedBuy.length, mappedBuy)
+      console.log("  User Sell Orders:", mappedSell.filter((o) => o.user_uuid === user.id).length)
+      console.log("  User Buy Orders:", mappedBuy.filter((o) => o.user_uuid === user.id).length)
+
       setSellOrders(mappedSell)
       setBuyOrders(mappedBuy)
+
       console.log("Orders refreshed:", {
         sellOrders: mappedSell.length,
         buyOrders: mappedBuy.length,
@@ -231,7 +260,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error
 
         // Wait a moment for the database to update
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1500))
 
         await Promise.all([refreshOrders(), refreshWalletBalances()])
         return {
