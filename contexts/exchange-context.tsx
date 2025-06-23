@@ -126,19 +126,19 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       console.log("🔄 Refreshing orders...")
 
-      // ✅ GLOBAL MARKET ORDERS - ALL USERS (same method for both buy and sell)
+      // ✅ GLOBAL MARKET ORDERS - ALL USERS (NO user_uuid filter!)
       const [marketSellResult, marketBuyResult] = await Promise.all([
         // Global sell orders - ALL users
         supabase
           .from("sell_orders")
           .select("*")
-          .eq("status", "available")
+          .in("status", ["available", "partial"])
           .order("created_at", { ascending: false }),
-        // ✅ Global buy orders - ALL users (not filtered by user_uuid)
+        // ✅ Global buy orders - ALL users (NO user_uuid filter!)
         supabase
           .from("buy_orders")
           .select("*")
-          .eq("status", "pending")
+          .in("status", ["pending", "partial"])
           .order("created_at", { ascending: false }),
       ])
 
@@ -148,13 +148,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           .from("sell_orders")
           .select("*")
           .eq("user_uuid", user.id)
-          .in("status", ["available", "matched", "expired"])
+          .in("status", ["available", "partial", "completed"])
           .order("created_at", { ascending: false }),
         supabase
           .from("buy_orders")
           .select("*")
           .eq("user_uuid", user.id)
-          .in("status", ["pending", "completed", "matched"])
+          .in("status", ["pending", "partial", "completed"])
           .order("created_at", { ascending: false }),
       ])
 
@@ -215,9 +215,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setUserSellOrders(mappedUserSell)
       setUserBuyOrders(mappedUserBuy)
 
+      // ✅ DEBUG: Log the actual data
       console.log("✅ Orders updated:")
-      console.log("  Market Sell:", mappedMarketSell.length)
-      console.log("  Market Buy:", mappedMarketBuy.length)
+      console.log("  Market Sell:", mappedMarketSell.length, mappedMarketSell)
+      console.log("  Market Buy:", mappedMarketBuy.length, mappedMarketBuy)
       console.log("  User Sell:", mappedUserSell.length)
       console.log("  User Buy:", mappedUserBuy.length)
     } catch (err: any) {
@@ -261,10 +262,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         // Trigger order matching after placing order
         console.log("🔄 Triggering order matching...")
-        await supabase.rpc("match_orders")
+        const matchResult = await supabase.rpc("match_orders")
+        console.log("🔄 Match result:", matchResult)
 
         // Refresh orders to show new order and any matches
         await refreshOrders()
+        await refreshWalletBalances()
 
         return {
           success: true,
@@ -275,7 +278,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, buyWalletBalance, updateBuyWallet],
+    [user, currentSharePrice, buyWalletBalance, updateBuyWallet, refreshWalletBalances],
   )
 
   const placeSellOrder = useCallback(
@@ -309,10 +312,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         // Trigger order matching after placing order
         console.log("🔄 Triggering order matching...")
-        await supabase.rpc("match_orders")
+        const matchResult = await supabase.rpc("match_orders")
+        console.log("🔄 Match result:", matchResult)
 
         // Refresh orders to show new order and any matches
         await refreshOrders()
+        await refreshWalletBalances()
 
         return {
           success: true,
@@ -323,7 +328,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet],
+    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet, refreshWalletBalances],
   )
 
   /* ---------- Auto-refresh price every hour ---------- */
