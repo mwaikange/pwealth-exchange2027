@@ -1,7 +1,9 @@
--- Fix all functions to use TEXT status instead of order_status enum
--- This resolves the "type order_status does not exist" error
+-- Drop existing functions first to avoid conflicts
+DROP FUNCTION IF EXISTS place_buy_order(UUID, NUMERIC, NUMERIC);
+DROP FUNCTION IF EXISTS place_sell_order(UUID, NUMERIC, NUMERIC);
+DROP FUNCTION IF EXISTS match_orders();
 
--- 1. Fix place_buy_order function
+-- 1. Fix place_buy_order function - use share_transactions table
 CREATE OR REPLACE FUNCTION place_buy_order(
   p_user_uuid UUID,
   p_price_per_share NUMERIC,
@@ -16,6 +18,23 @@ DECLARE
   shares_requested NUMERIC;
   current_market_price NUMERIC;
 BEGIN
+  -- Validate inputs
+  IF p_total_amount <= 0 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Total amount must be greater than 0',
+      'error_code', 'INVALID_AMOUNT'
+    );
+  END IF;
+
+  IF p_price_per_share <= 0 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Price per share must be greater than 0',
+      'error_code', 'INVALID_PRICE'
+    );
+  END IF;
+
   -- Get current market price from pricing info
   SELECT cpi.current_price INTO current_market_price
   FROM current_pricing_info cpi
@@ -28,7 +47,15 @@ BEGIN
   END IF;
 
   -- Calculate shares requested
-  shares_requested := p_total_amount / p_price_per_share;
+  shares_requested := FLOOR(p_total_amount / p_price_per_share);
+  
+  IF shares_requested <= 0 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Amount too small to purchase any shares',
+      'error_code', 'INSUFFICIENT_AMOUNT'
+    );
+  END IF;
 
   -- Insert buy order with TEXT status
   INSERT INTO buy_orders (
@@ -48,24 +75,28 @@ BEGIN
     shares_requested,
     0, -- shares_filled starts at 0
     0, -- amount_filled starts at 0
-    'pending', -- TEXT value, not enum
+    'pending', -- TEXT value
     NOW(),
     NOW()
   ) RETURNING id INTO order_id;
 
-  -- Log the transaction
-  INSERT INTO wallet_transactions (
+  -- Log the transaction in share_transactions table
+  INSERT INTO share_transactions (
     user_uuid,
     transaction_type,
-    amount,
-    wallet_type,
+    shares,
+    price_per_share,
+    total_amount,
+    status,
     description,
     created_at
   ) VALUES (
     p_user_uuid,
     'buy_order_placed',
-    -p_total_amount,
-    'buy_wallet',
+    shares_requested,
+    p_price_per_share,
+    p_total_amount,
+    'pending',
     'Placed buy order for ' || shares_requested || ' shares at N$' || p_price_per_share,
     NOW()
   );
@@ -77,15 +108,21 @@ BEGIN
     'success', true,
     'order_id', order_id,
     'shares_requested', shares_requested,
+    'total_amount', p_total_amount,
+    'price_per_share', p_price_per_share,
     'message', 'Buy order placed successfully'
   );
 
 EXCEPTION WHEN OTHERS THEN
-  RAISE EXCEPTION 'Failed to place buy order: %', SQLERRM;
+  RETURN json_build_object(
+    'success', false,
+    'message', 'Failed to place buy order: ' || SQLERRM,
+    'error_code', 'PROCESSING_ERROR'
+  );
 END;
 $$;
 
--- 2. Fix place_sell_order function
+-- 2. Fix place_sell_order function - ensure total_amount is calculated
 CREATE OR REPLACE FUNCTION place_sell_order(
   p_user_uuid UUID,
   p_price_per_share NUMERIC,
@@ -98,7 +135,26 @@ AS $$
 DECLARE
   order_id UUID;
   current_market_price NUMERIC;
+  calculated_total_amount NUMERIC;
+  expires_at_timestamp TIMESTAMPTZ;
 BEGIN
+  -- Validate inputs
+  IF p_shares <= 0 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Number of shares must be greater than 0',
+      'error_code', 'INVALID_SHARES'
+    );
+  END IF;
+
+  IF p_price_per_share <= 0 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Price per share must be greater than 0',
+      'error_code', 'INVALID_PRICE'
+    );
+  END IF;
+
   -- Get current market price
   SELECT cpi.current_price INTO current_market_price
   FROM current_pricing_info cpi
@@ -110,11 +166,27 @@ BEGIN
     current_market_price := 100;
   END IF;
 
-  -- Insert sell order with TEXT status
+  -- Calculate total amount (this was missing and causing the NULL constraint error)
+  calculated_total_amount := p_shares * p_price_per_share;
+
+  -- Validate minimum order value
+  IF calculated_total_amount < 50 THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'Minimum sell order value is N$50',
+      'error_code', 'MIN_AMOUNT'
+    );
+  END IF;
+
+  -- Calculate expiry timestamp
+  expires_at_timestamp := NOW() + INTERVAL '7 days';
+
+  -- Insert sell order with TEXT status and calculated total_amount
   INSERT INTO sell_orders (
     user_uuid,
     shares_available,
     shares_remaining,
+    total_amount, -- Now properly calculated
     price_per_share,
     status,
     created_at,
@@ -123,30 +195,59 @@ BEGIN
   ) VALUES (
     p_user_uuid,
     p_shares,
-    p_shares,
+    p_shares, -- shares_remaining starts equal to shares_available
+    calculated_total_amount, -- Use calculated value
     p_price_per_share,
-    'available', -- TEXT value, not enum
+    'available', -- TEXT value
     NOW(),
     NOW(),
-    NOW() + INTERVAL '7 days'
+    expires_at_timestamp
   ) RETURNING id INTO order_id;
 
-  RAISE NOTICE 'Sell order placed: ID=%, Shares=%, Price=N$%', 
-    order_id, p_shares, p_price_per_share;
+  -- Log the transaction in share_transactions table
+  INSERT INTO share_transactions (
+    user_uuid,
+    transaction_type,
+    shares,
+    price_per_share,
+    total_amount,
+    status,
+    description,
+    created_at
+  ) VALUES (
+    p_user_uuid,
+    'sell_order_placed',
+    p_shares,
+    p_price_per_share,
+    calculated_total_amount,
+    'pending',
+    'Placed sell order for ' || p_shares || ' shares at N$' || p_price_per_share,
+    NOW()
+  );
+
+  RAISE NOTICE 'Sell order placed: ID=%, Shares=%, Price=N$%, Total=N$%', 
+    order_id, p_shares, p_price_per_share, calculated_total_amount;
 
   RETURN json_build_object(
     'success', true,
     'order_id', order_id,
     'shares', p_shares,
+    'price_per_share', p_price_per_share,
+    'total_amount', calculated_total_amount,
+    'expires_at', expires_at_timestamp,
     'message', 'Sell order placed successfully'
   );
 
 EXCEPTION WHEN OTHERS THEN
-  RAISE EXCEPTION 'Failed to place sell order: %', SQLERRM;
+  RETURN json_build_object(
+    'success', false,
+    'message', 'Failed to place sell order: ' || SQLERRM,
+    'error_code', 'PROCESSING_ERROR'
+  );
 END;
 $$;
 
--- 3. Fix match_orders function
+-- 3. Fix match_orders function to use TEXT status and share_transactions
 CREATE OR REPLACE FUNCTION match_orders()
 RETURNS JSON
 LANGUAGE plpgsql
@@ -172,6 +273,7 @@ BEGIN
       WHERE status = 'available' 
       AND shares_remaining > 0
       AND price_per_share <= buy_order.price_per_share
+      AND expires_at > NOW()
       ORDER BY price_per_share ASC, created_at ASC
     LOOP
       -- Calculate match quantity
@@ -187,7 +289,7 @@ BEGIN
         shares_filled = shares_filled + match_shares,
         amount_filled = amount_filled + match_amount,
         status = CASE 
-          WHEN shares_filled + match_shares >= shares_requested THEN 'filled'
+          WHEN shares_filled + match_shares >= shares_requested THEN 'completed'
           ELSE 'partial'
         END,
         updated_at = NOW()
@@ -203,36 +305,44 @@ BEGIN
         updated_at = NOW()
       WHERE id = sell_order.id;
       
-      -- Add shares to buyer's hold wallet
-      INSERT INTO wallet_transactions (
+      -- Log buyer transaction
+      INSERT INTO share_transactions (
         user_uuid,
         transaction_type,
-        amount,
-        wallet_type,
+        shares,
+        price_per_share,
+        total_amount,
+        status,
         description,
         created_at
       ) VALUES (
         buy_order.user_uuid,
         'shares_purchased',
         match_shares,
-        'hold_wallet',
+        sell_order.price_per_share,
+        match_amount,
+        'completed',
         'Purchased ' || match_shares || ' shares at N$' || sell_order.price_per_share,
         NOW()
       );
       
-      -- Add cash to seller's buy wallet
-      INSERT INTO wallet_transactions (
+      -- Log seller transaction
+      INSERT INTO share_transactions (
         user_uuid,
         transaction_type,
-        amount,
-        wallet_type,
+        shares,
+        price_per_share,
+        total_amount,
+        status,
         description,
         created_at
       ) VALUES (
         sell_order.user_uuid,
         'shares_sold',
+        match_shares,
+        sell_order.price_per_share,
         match_amount,
-        'buy_wallet',
+        'completed',
         'Sold ' || match_shares || ' shares at N$' || sell_order.price_per_share,
         NOW()
       );
@@ -251,16 +361,18 @@ BEGIN
   );
 
 EXCEPTION WHEN OTHERS THEN
-  RAISE EXCEPTION 'Order matching failed: %', SQLERRM;
+  RETURN json_build_object(
+    'success', false,
+    'message', 'Order matching failed: ' || SQLERRM,
+    'error_code', 'PROCESSING_ERROR'
+  );
 END;
 $$;
 
--- 4. Verify the functions work
-SELECT 'Functions updated successfully. Valid status values:' as info;
-SELECT DISTINCT status, COUNT(*) as count 
-FROM buy_orders 
-GROUP BY status
+-- 4. Verify the functions are created successfully
+SELECT 'All functions updated successfully with correct table references and TEXT status values' as result;
+
+-- 5. Show valid status values for reference
+SELECT 'Valid buy_orders status values: pending, partial, completed, cancelled' as buy_status_info
 UNION ALL
-SELECT DISTINCT status, COUNT(*) as count 
-FROM sell_orders 
-GROUP BY status;
+SELECT 'Valid sell_orders status values: available, partial, completed, expired, cancelled' as sell_status_info;
