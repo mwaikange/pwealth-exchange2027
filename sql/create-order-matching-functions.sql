@@ -201,7 +201,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Function to place a sell order
 CREATE OR REPLACE FUNCTION place_sell_order(
     p_user_uuid UUID,
-    p_shares_to_sell NUMERIC
+    p_price_per_share NUMERIC,
+    p_shares NUMERIC
 )
 RETURNS JSON AS $$
 DECLARE
@@ -211,10 +212,11 @@ DECLARE
     sell_order_id UUID;
     expires_at TIMESTAMPTZ;
 BEGIN
-    -- Validate minimum amount
-    current_price := get_current_share_price();
-    total_amount := p_shares_to_sell * current_price;
+    -- Use the provided price or get current price
+    current_price := COALESCE(p_price_per_share, get_current_share_price());
+    total_amount := p_shares * current_price;
     
+    -- Validate minimum amount
     IF total_amount < 50 THEN
         RETURN json_build_object(
             'success', false,
@@ -236,7 +238,7 @@ BEGIN
         user_post_hold_balance := 0;
     END IF;
     
-    IF user_post_hold_balance < p_shares_to_sell THEN
+    IF user_post_hold_balance < p_shares THEN
         RETURN json_build_object(
             'success', false,
             'message', 'Insufficient shares in Post-Hold wallet',
@@ -246,7 +248,7 @@ BEGIN
 
     -- Lock shares by deducting from post-hold wallet
     UPDATE user_shares 
-    SET shares = shares - p_shares_to_sell,
+    SET shares = shares - p_shares,
         updated_at = NOW()
     WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_post';
 
@@ -262,12 +264,12 @@ BEGIN
     -- Calculate expiry (Sunday 23:59 of current week)
     expires_at := DATE_TRUNC('week', NOW()) + INTERVAL '6 days' + INTERVAL '23 hours 59 minutes';
 
-    -- Create sell order
+    -- Create sell order with CORRECT column names
     INSERT INTO sell_orders (
         user_uuid, shares_available, shares_remaining, total_amount, 
         price_per_share, status, expires_at
     ) VALUES (
-        p_user_uuid, p_shares_to_sell, p_shares_to_sell, total_amount,
+        p_user_uuid, p_shares, p_shares, total_amount,
         current_price, 'available', expires_at
     ) RETURNING id INTO sell_order_id;
 
@@ -276,7 +278,7 @@ BEGIN
         user_uuid, transaction_type, shares, price_per_share, total_amount,
         from_wallet, status, description, reference_id
     ) VALUES (
-        p_user_uuid, 'sell', p_shares_to_sell, current_price, total_amount,
+        p_user_uuid, 'sell', p_shares, current_price, total_amount,
         'hold_post', 'pending', 'Sell order placed - shares locked', 
         'SELL-' || sell_order_id
     );
@@ -284,9 +286,9 @@ BEGIN
     RETURN json_build_object(
         'success', true,
         'message', format('Sell order placed: %s shares at N$%s each (Total: N$%s)', 
-            p_shares_to_sell, current_price, total_amount),
+            p_shares, current_price, total_amount),
         'order_id', sell_order_id,
-        'shares_listed', p_shares_to_sell,
+        'shares_listed', p_shares,
         'price_per_share', current_price,
         'total_value', total_amount,
         'expires_at', expires_at
@@ -296,7 +298,7 @@ EXCEPTION
     WHEN OTHERS THEN
         -- Rollback: return shares to post-hold wallet
         UPDATE user_shares 
-        SET shares = shares + p_shares_to_sell
+        SET shares = shares + p_shares
         WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_post';
         
         RETURN json_build_object(
