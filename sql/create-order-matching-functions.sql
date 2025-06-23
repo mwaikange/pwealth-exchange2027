@@ -224,7 +224,17 @@ BEGIN
     END IF;
 
     -- Check user's post-hold balance
-    SELECT get_user_wallet_shares(p_user_uuid, 'hold_post') INTO user_post_hold_balance;
+    SELECT COALESCE(shares, 0) FROM user_shares 
+    WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_post'
+    INTO user_post_hold_balance;
+
+    -- If no wallet exists, create it with 0 balance
+    IF user_post_hold_balance IS NULL THEN
+        INSERT INTO user_shares (user_uuid, wallet_type, shares, source)
+        VALUES (p_user_uuid, 'hold_post', 0, 'wallet_creation')
+        ON CONFLICT (user_uuid, wallet_type) DO NOTHING;
+        user_post_hold_balance := 0;
+    END IF;
     
     IF user_post_hold_balance < p_shares_to_sell THEN
         RETURN json_build_object(
@@ -236,8 +246,18 @@ BEGIN
 
     -- Lock shares by deducting from post-hold wallet
     UPDATE user_shares 
-    SET shares = shares - p_shares_to_sell
+    SET shares = shares - p_shares_to_sell,
+        updated_at = NOW()
     WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_post';
+
+    -- Verify the update worked
+    IF NOT FOUND THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Failed to lock shares - wallet not found',
+            'error_code', 'WALLET_NOT_FOUND'
+        );
+    END IF;
 
     -- Calculate expiry (Sunday 23:59 of current week)
     expires_at := DATE_TRUNC('week', NOW()) + INTERVAL '6 days' + INTERVAL '23 hours 59 minutes';

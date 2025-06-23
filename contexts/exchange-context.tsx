@@ -1,268 +1,209 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
-import { supabase } from "@/lib/supabase-singleton"
-import { useAuth } from "@/contexts/auth-context"
-import { useWallet } from "@/contexts/wallet-context"
+import { createContext, useState, useEffect, useContext } from "react"
+import { ethers } from "ethers"
 
-export interface SellOrder {
-  id: string
-  user_uuid: string
-  shares: number
-  price_per_share: number
-  status: "active" | "filled" | "expired" | "queued"
-  created_at: string
-  filled_shares: number
-}
+import { getExchangeContract, getERC20Contract } from "../utils/ethers"
+import { useWallet } from "./wallet-context"
 
-export interface BuyOrder {
-  id: string
-  user_uuid: string
-  total_amount: number
-  price_per_share: number
-  status: "active" | "filled" | "expired" | "queued"
-  created_at: string
-  filled_amount: number
+interface Order {
+  id: number
+  token: string
+  amount: number
+  price: number
+  creator: string
+  filled: boolean
 }
 
 interface ExchangeContextType {
-  // Orders
-  sellOrders: SellOrder[]
-  buyOrders: BuyOrder[]
-  userSellOrders: SellOrder[]
-  userBuyOrders: BuyOrder[]
-
-  // Actions
-  placeBuyOrder: (amount: number) => Promise<{ success: boolean; message: string }>
-  placeSellOrder: (shares: number) => Promise<{ success: boolean; message: string }>
-
-  // Market data
-  currentSharePrice: number
-
-  // Loading states
+  sellOrders: Order[]
+  buyOrders: Order[]
   loading: boolean
   error: string | null
-  refreshOrders: () => Promise<void>
+  placeSellOrder: (token: string, amount: number, price: number) => Promise<void>
+  placeBuyOrder: (token: string, amount: number, price: number) => Promise<void>
+  fillOrder: (orderId: number, isSellOrder: boolean) => Promise<void>
+  refreshExchangeData: () => Promise<void>
 }
 
 const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined)
 
-export function ExchangeProvider({ children }: { children: React.ReactNode }) {
-  const [sellOrders, setSellOrders] = useState<SellOrder[]>([])
-  const [buyOrders, setBuyOrders] = useState<BuyOrder[]>([])
-  const [currentSharePrice, setCurrentSharePrice] = useState(100.0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const { user, session } = useAuth()
-  const { buyWalletBalance, holdWalletPostHold, refreshBalances } = useWallet()
-
-  // Filter orders for current user
-  const userSellOrders = sellOrders.filter((order) => order.user_uuid === user?.id)
-  const userBuyOrders = buyOrders.filter((order) => order.user_uuid === user?.id)
-
-  // Fetch current share price from Supabase
-  const fetchSharePrice = async () => {
-    try {
-      const { data, error } = await supabase.rpc("get_current_share_price")
-      if (error) throw error
-      setCurrentSharePrice(Number(data) || 100.0)
-    } catch (err) {
-      console.error("Error fetching share price:", err)
-      setCurrentSharePrice(100.0) // Fallback
-    }
+export const useExchange = () => {
+  const context = useContext(ExchangeContext)
+  if (!context) {
+    throw new Error("useExchange must be used within an ExchangeProvider")
   }
+  return context
+}
 
-  // Fetch all orders from Supabase
-  const refreshOrders = async () => {
-    if (!user || !session) {
-      setLoading(false)
-      return
-    }
+interface ExchangeProviderProps {
+  children: React.ReactNode
+}
 
+export const ExchangeProvider: React.FC<ExchangeProviderProps> = ({ children }) => {
+  const [sellOrders, setSellOrders] = useState<Order[]>([])
+  const [buyOrders, setBuyOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const { account, provider, refreshWalletData } = useWallet()
+
+  const refreshExchangeData = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Fetch sell orders from the new sell_orders table
-      const { data: sellData, error: sellError } = await supabase
-        .from("sell_orders")
-        .select("*")
-        .eq("status", "active")
-        .order("created_at", { ascending: true })
+      if (!provider) {
+        console.warn("Provider not available. Cannot refresh exchange data.")
+        return
+      }
 
-      if (sellError) throw sellError
+      const exchangeContract = getExchangeContract(provider)
 
-      // Fetch buy orders from the new buy_orders table
-      const { data: buyData, error: buyError } = await supabase
-        .from("buy_orders")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: true })
+      const sellOrderCount = (await exchangeContract.sellOrderCount()).toNumber()
+      const buyOrderCount = (await exchangeContract.buyOrderCount()).toNumber()
 
-      if (buyError) throw buyError
+      const fetchOrders = async (count: number, isSellOrder: boolean): Promise<Order[]> => {
+        const orders: Order[] = []
+        for (let i = 1; i <= count; i++) {
+          try {
+            const order = await exchangeContract.getOrder(i, isSellOrder)
+            if (order) {
+              orders.push({
+                id: i,
+                token: order.token,
+                amount: order.amount.toNumber(),
+                price: order.price.toNumber(),
+                creator: order.creator,
+                filled: order.filled,
+              })
+            }
+          } catch (fetchError) {
+            console.error(`Error fetching order ${i}:`, fetchError)
+          }
+        }
+        return orders
+      }
 
-      // Transform buy_orders data to match the expected interface
-      const transformedBuyOrders = (buyData || []).map((order) => ({
-        id: order.id,
-        user_uuid: order.user_uuid,
-        total_amount: order.total_amount,
-        price_per_share: order.price_per_share,
-        status: order.status,
-        created_at: order.created_at,
-        filled_amount: order.amount_filled || 0,
-      }))
+      const [sellOrders, buyOrders] = await Promise.all([
+        fetchOrders(sellOrderCount, true),
+        fetchOrders(buyOrderCount, false),
+      ])
 
-      // Transform sell_orders data to match the expected interface
-      const transformedSellOrders = (sellData || []).map((order) => ({
-        id: order.id,
-        user_uuid: order.user_uuid,
-        shares: order.shares,
-        price_per_share: order.price_per_share,
-        status: order.status,
-        created_at: order.created_at,
-        filled_shares: order.shares - order.shares_remaining,
-      }))
-
-      setSellOrders(transformedSellOrders)
-      setBuyOrders(transformedBuyOrders)
-
-      console.log("Orders refreshed:", {
-        sellOrders: transformedSellOrders.length,
-        buyOrders: transformedBuyOrders.length,
-      })
-    } catch (err: any) {
-      console.error("Error fetching orders:", err)
-      setError(err.message || "Failed to load orders")
+      setSellOrders(sellOrders)
+      setBuyOrders(buyOrders)
+      console.log("Orders refreshed:", { sellOrders: sellOrders.length, buyOrders: buyOrders.length })
+    } catch (error) {
+      console.error("Error refreshing exchange data:", error)
+      setError(error.message)
     } finally {
       setLoading(false)
     }
   }
 
-  // Load data when user changes
+  const placeSellOrder = async (token: string, amount: number, price: number) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      if (!provider || !account) {
+        throw new Error("Provider or account not available.")
+      }
+
+      const signer = provider.getSigner()
+      const exchangeContract = getExchangeContract(signer)
+      const tokenContract = getERC20Contract(token, signer)
+
+      // Approve the exchange contract to spend the user's tokens
+      const approveTx = await tokenContract.approve(exchangeContract.address, ethers.constants.MaxUint256)
+      await approveTx.wait()
+
+      // Place the sell order
+      const tx = await exchangeContract.placeSellOrder(token, amount, price)
+      const result = await tx.wait()
+
+      if (result.success) {
+        // Refresh both wallet and exchange data
+        await Promise.all([refreshWalletData(), refreshExchangeData()])
+      }
+    } catch (error) {
+      console.error("Error placing sell order:", error)
+      setError(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const placeBuyOrder = async (token: string, amount: number, price: number) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      if (!provider || !account) {
+        throw new Error("Provider or account not available.")
+      }
+
+      const signer = provider.getSigner()
+      const exchangeContract = getExchangeContract(signer)
+
+      // Place the buy order
+      const tx = await exchangeContract.placeBuyOrder(token, amount, price, {
+        value: ethers.utils.parseEther((amount * price).toString()),
+      })
+      await tx.wait()
+
+      // Refresh both wallet and exchange data
+      await Promise.all([refreshWalletData(), refreshExchangeData()])
+    } catch (error) {
+      console.error("Error placing buy order:", error)
+      setError(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fillOrder = async (orderId: number, isSellOrder: boolean) => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      if (!provider || !account) {
+        throw new Error("Provider or account not available.")
+      }
+
+      const signer = provider.getSigner()
+      const exchangeContract = getExchangeContract(signer)
+
+      // Fill the order
+      const tx = await exchangeContract.fillOrder(orderId, isSellOrder)
+      await tx.wait()
+
+      // Refresh both wallet and exchange data
+      await Promise.all([refreshWalletData(), refreshExchangeData()])
+    } catch (error) {
+      console.error("Error filling order:", error)
+      setError(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetchSharePrice()
-    refreshOrders()
-  }, [user, session])
-
-  const placeBuyOrder = useCallback(
-    async (amount: number): Promise<{ success: boolean; message: string }> => {
-      if (!user) return { success: false, message: "User not authenticated" }
-
-      setLoading(true)
-
-      try {
-        // Validate amount
-        if (amount <= 0) {
-          return { success: false, message: "Amount must be greater than 0" }
-        }
-
-        if (amount < 50) {
-          return { success: false, message: "Minimum purchase is N$50" }
-        }
-
-        if (amount > buyWalletBalance) {
-          return { success: false, message: "Insufficient funds in Buy Wallet" }
-        }
-
-        // Place buy order with CORRECT function signature
-        const { data, error } = await supabase.rpc("place_buy_order", {
-          p_price_per_share: currentSharePrice,
-          p_total_amount: amount,
-          p_user_uuid: user.id,
-        })
-
-        if (error) throw error
-
-        // Refresh orders and wallet
-        await refreshOrders()
-        await refreshBalances()
-
-        // Calculate shares based on current price for the message
-        const sharesPossible = amount / currentSharePrice
-
-        return {
-          success: true,
-          message: `Buy order placed for ${sharesPossible.toFixed(2)} shares at N$${currentSharePrice} each`,
-        }
-      } catch (error: any) {
-        console.error("Error placing buy order:", error)
-        return { success: false, message: error.message || "Failed to place buy order" }
-      } finally {
-        setLoading(false)
-      }
-    },
-    [user, buyWalletBalance, currentSharePrice, refreshBalances],
-  )
-
-  const placeSellOrder = useCallback(
-    async (shares: number): Promise<{ success: boolean; message: string }> => {
-      if (!user) return { success: false, message: "User not authenticated" }
-
-      setLoading(true)
-
-      try {
-        // Validate shares
-        if (shares <= 0) {
-          return { success: false, message: "Shares must be greater than 0" }
-        }
-
-        if (shares < 0.5) {
-          return { success: false, message: "Minimum sell is 0.5 shares" }
-        }
-
-        if (shares > holdWalletPostHold) {
-          return { success: false, message: "Insufficient shares in Post-Hold wallet" }
-        }
-
-        // Place sell order with CORRECT function signature
-        const { data, error } = await supabase.rpc("place_sell_order", {
-          p_price_per_share: currentSharePrice,
-          p_shares: shares,
-          p_user_uuid: user.id,
-        })
-
-        if (error) throw error
-
-        // Refresh orders and wallet
-        await refreshOrders()
-        await refreshBalances()
-
-        return {
-          success: true,
-          message: `Sell order placed for ${shares} shares at N$${currentSharePrice} each`,
-        }
-      } catch (error: any) {
-        console.error("Error placing sell order:", error)
-        return { success: false, message: error.message || "Failed to place sell order" }
-      } finally {
-        setLoading(false)
-      }
-    },
-    [user, holdWalletPostHold, currentSharePrice, refreshBalances],
-  )
+    if (provider) {
+      refreshExchangeData()
+    }
+  }, [provider])
 
   const value: ExchangeContextType = {
     sellOrders,
     buyOrders,
-    userSellOrders,
-    userBuyOrders,
-    placeBuyOrder,
-    placeSellOrder,
-    currentSharePrice,
     loading,
     error,
-    refreshOrders,
+    placeSellOrder,
+    placeBuyOrder,
+    fillOrder,
+    refreshExchangeData,
   }
 
   return <ExchangeContext.Provider value={value}>{children}</ExchangeContext.Provider>
-}
-
-export function useExchange() {
-  const context = useContext(ExchangeContext)
-  if (context === undefined) {
-    throw new Error("useExchange must be used within an ExchangeProvider")
-  }
-  return context
 }

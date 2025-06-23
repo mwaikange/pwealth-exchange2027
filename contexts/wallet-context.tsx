@@ -108,16 +108,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       })
 
-      // Also check for legacy activation fee balance if needed
-      const { data: legacyData } = await supabase
-        .from("user_wallets")
-        .select("activation_fee_balance")
-        .eq("user_uuid", user.id)
-        .single()
-
-      if (legacyData?.activation_fee_balance) {
-        newState.aftBalance = Number(legacyData.activation_fee_balance) || 0
-      }
+      // Set AFT balance to 0 since we're not using legacy wallets
+      newState.aftBalance = 0
 
       setWalletState(newState)
       console.log("Wallet balances refreshed:", newState)
