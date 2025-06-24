@@ -14,3 +14,4 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ title }) => {
 }
 
 export default DashboardHeader
+export { DashboardHeader }
