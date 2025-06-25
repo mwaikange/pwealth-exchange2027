@@ -228,7 +228,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+              className="w-full py-3 bg-green-600 hover:bg-green-700 rounded-full text-white font-medium transition-colors"
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </button>
@@ -276,7 +276,7 @@ export default function Login() {
           </button>
         </Link>
         <Link href="/register" className="block">
-          <button className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 text-black font-medium transition-colors">
+          <button className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium transition-colors">
             Register
           </button>
         </Link>
