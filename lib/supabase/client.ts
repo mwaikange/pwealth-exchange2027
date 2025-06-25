@@ -1,32 +1,32 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@supabase/supabase-js"
+import { clientEnv } from "../env"
 import type { Database } from "@/types/supabase"
-import { env } from "../env"
 
 // Create a single instance for client components
-let clientInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null
+let clientInstance: ReturnType<typeof createClient<Database>> | null = null
 
 export const getSupabaseClient = () => {
-  // Check if environment variables are available and provide fallbacks
-  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL || (typeof window !== "undefined" ? window.location.origin : "")
-  const supabaseKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "missing-key"
+  const supabaseUrl = clientEnv.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  if (!supabaseUrl) {
-    console.error("Supabase URL is missing. Please check your environment variables.")
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing required Supabase environment variables")
+    throw new Error("Supabase configuration is missing")
   }
 
   if (typeof window === "undefined") {
     // Server-side: always create a new instance
-    return createClientComponentClient<Database>({
-      supabaseUrl,
-      supabaseKey,
-    })
+    return createClient<Database>(supabaseUrl, supabaseKey)
   }
 
   // Client-side: maintain a singleton
   if (!clientInstance) {
-    clientInstance = createClientComponentClient<Database>({
-      supabaseUrl,
-      supabaseKey,
+    clientInstance = createClient<Database>(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     })
   }
 

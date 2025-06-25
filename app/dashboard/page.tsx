@@ -1,13 +1,14 @@
 "use client"
 
-import { DashboardContent } from "@/components/dashboard-content"
-import { MobileRedirect } from "@/components/mobile-redirect"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 
 export default function Dashboard() {
-  return (
-    <>
-      <MobileRedirect />
-      <DashboardContent />
-    </>
-  )
+  const router = useRouter()
+
+  useEffect(() => {
+    router.replace("/dashboard/overview")
+  }, [router])
+
+  return null
 }

@@ -1,15 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/login",
-      "has": [
-        {
-          "type": "cookie",
-          "key": "supabase-auth-token"
-        }
-      ],
-      "destination": "/dashboard",
-      "permanent": false
-    }
-  ]
+  "buildCommand": "npm run build",
+  "installCommand": "npm install"
 }

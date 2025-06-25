@@ -2,745 +2,332 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { useWallet } from "./wallet-context"
-import { useTransactions } from "./transaction-context"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
-import { v4 as uuidv4 } from "uuid"
 
-// Define the vesting schedule state
-export type VestingScheduleState = {
+// Define the vesting schedule state from Supabase
+export type VestingSlotData = {
   id: string
-  level: number
-  position: string // A, B, C, D, E
-  level_rank: number // 1-15
-  color: string
-  activated: boolean
-  invested: boolean
-  claimed: boolean
-  progress: number
-  startTime: number | null
-  lastClaimTime: number | null
-  lastClaimPercentage: number
-  prematurelyClaimed: boolean
-  schedule_id?: string // Supabase ID
-  schedule_id_text?: string // Text representation of UUID
+  schedule_id: number
+  level: string
+  status: "Unclaimed" | "Active" | "Completed" | "Claimed"
+  shares_amount?: number
+  start_date?: string
+  completion_date?: string
+  progress?: number
+  user_uuid: string
+}
+
+// Define vesting levels with their limits and hold periods
+export const VESTING_LEVELS = {
+  1: { name: "Retail", min: 1, max: 50, holdDays: 5 },
+  2: { name: "Small Business", min: 51, max: 500, holdDays: 30 },
+  3: { name: "Corporate", min: 501, max: Number.POSITIVE_INFINITY, holdDays: 90 },
 }
 
 // Define the context type
 type VestingContextType = {
-  vestingSchedules: VestingScheduleState[]
-  activateSchedule: (scheduleId: string) => Promise<void>
-  investInSchedule: (scheduleId: string) => Promise<void>
-  claimSchedule: (scheduleId: string) => Promise<void>
-  getScheduleById: (scheduleId: string) => VestingScheduleState | undefined
-  getSchedulesByLevel: (level: number) => VestingScheduleState[]
-  getScheduleByRank: (rank: number) => VestingScheduleState | undefined
-  resetAllSchedulesInLevel: (level: number) => Promise<void>
+  getVestingSlotsForLevel: (level: number) => VestingSlotData[]
+  vestShares: (level: number, slotIndex: number, amount: number) => Promise<void>
+  claimShares: (level: number, slotIndex: number) => Promise<void>
+  getTotalVestingInProgress: () => number
+  getTotalClaimableShares: () => number
+  getSchedulesByLevel: (level: number) => VestingSlotData[]
+  getScheduleById: (id: string) => VestingSlotData | undefined
+  validateVestingAmount: (amount: number, level: number) => { valid: boolean; error?: string }
+  getHoldPeriodForLevel: (level: number) => number
+  refreshVestingData: () => Promise<void>
   loading: boolean
+  error: string | null
 }
 
 // Create the context
 const VestingContext = createContext<VestingContextType | undefined>(undefined)
 
-// Colors for vesting schedules
-const scheduleColors = {
-  A: "green-500",
-  B: "blue-500",
-  C: "pink-500",
-  D: "yellow-500",
-  E: "red-500",
-}
-
-// Map level and position to rank (1-15)
-const getLevelRank = (level: number, position: string): number => {
-  const positions = ["A", "B", "C", "D", "E"]
-  const positionIndex = positions.indexOf(position)
-  if (positionIndex === -1) return 0
-  return (level - 1) * 5 + positionIndex + 1
-}
-
-// Map rank to level and position
-const getLevelAndPosition = (rank: number): { level: number; position: string } => {
-  if (rank < 1 || rank > 15) {
-    return { level: 1, position: "A" }
-  }
-
-  const level = Math.ceil(rank / 5)
-  const positionIndex = (rank - 1) % 5
-  const positions = ["A", "B", "C", "D", "E"]
-  const position = positions[positionIndex]
-
-  return { level, position }
-}
-
-// Helper function to ensure valid UUID or null
-const ensureValidUuidOrNull = (id: string | null | undefined): string | null => {
-  if (!id) return null
-  return id
-}
-
 // Provider component
 export function VestingProvider({ children }: { children: React.ReactNode }) {
-  const { updatePwtInvestBalance, updatePwtCashoutBalance, updateAftBalance } = useWallet()
-  const { addTransaction } = useTransactions()
-  const { user } = useAuth()
-
-  // State for vesting schedules
-  const [vestingSchedules, setVestingSchedules] = useState<VestingScheduleState[]>([])
+  const { user, session } = useAuth()
+  const [vestingSchedules, setVestingSchedules] = useState<VestingSlotData[]>([])
   const [loading, setLoading] = useState(true)
-  const [sessionChecked, setSessionChecked] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Check for active session first
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        setSessionChecked(!!session)
-      } catch (error) {
-        console.error("Error checking session:", error)
-      }
+  // Fetch vesting data from Supabase
+  const refreshVestingData = async () => {
+    if (!user || !session) {
+      setLoading(false)
+      return
     }
 
-    checkSession()
-  }, [])
-
-  // Load vesting schedules from Supabase
-  useEffect(() => {
-    async function fetchVestingSchedules() {
-      if (!user || !sessionChecked) {
-        setLoading(false)
-        return
-      }
-
-      try {
-        setLoading(true)
-
-        // Ensure we have an active session before proceeding
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (!session) {
-          console.error("No active session when fetching vesting schedules")
-          setLoading(false)
-          return
-        }
-
-        // First, check if the user has any vesting schedules
-        const { data: existingSchedules, error: checkError } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-
-        if (checkError) {
-          console.error("Error checking vesting schedules:", checkError)
-          setLoading(false)
-          return
-        }
-
-        // If no schedules exist, create default ones
-        if (!existingSchedules || existingSchedules.length === 0) {
-          await createDefaultVestingSchedules(user.id)
-        }
-
-        // Fetch all schedules
-        const { data, error } = await supabase
-          .from("vesting_schedules")
-          .select("*")
-          .eq("user_uuid", user.id)
-          .order("level_rank", { ascending: true }) // Use level_rank for ordering
-
-        if (error) {
-          console.error("Error fetching vesting schedules:", error)
-          setLoading(false)
-          return
-        }
-
-        if (data) {
-          // Transform the data to match our VestingScheduleState interface
-          const formattedSchedules: VestingScheduleState[] = data.map((schedule) => ({
-            id: `LEVEL${schedule.level}-${schedule.position}`,
-            level: schedule.level,
-            position: schedule.position,
-            level_rank: schedule.level_rank,
-            color: scheduleColors[schedule.position as keyof typeof scheduleColors] || "gray-500",
-            activated: schedule.activated,
-            invested: schedule.invested,
-            claimed: schedule.claimed,
-            progress: schedule.progress,
-            startTime: schedule.start_time ? new Date(schedule.start_time).getTime() : null,
-            lastClaimTime: schedule.last_claim_time ? new Date(schedule.last_claim_time).getTime() : null,
-            lastClaimPercentage: schedule.last_claim_percentage,
-            prematurelyClaimed: schedule.prematurely_claimed,
-            schedule_id: schedule.schedule_id,
-            schedule_id_text: schedule.schedule_id_text, // Add the text representation
-          }))
-
-          setVestingSchedules(formattedSchedules)
-        }
-      } catch (error) {
-        console.error("Error in fetchVestingSchedules:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchVestingSchedules()
-  }, [user, sessionChecked])
-
-  // Create default vesting schedules for a new user
-  const createDefaultVestingSchedules = async (userId: string) => {
     try {
-      // First, verify we have an active session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (!session || session.user.id !== userId) {
-        console.error("User not authenticated or session user ID doesn't match")
-        return
+      setLoading(true)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from("vesting_schedules")
+        .select("*")
+        .eq("user_uuid", user.id)
+        .order("schedule_id", { ascending: true })
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch vesting data: ${fetchError.message}`)
       }
 
-      // Check if user exists in app_users
-      const { data: userData, error: userError } = await supabase
-        .from("app_users")
-        .select("user_uuid")
-        .eq("user_uuid", userId)
-        .maybeSingle()
+      // Process the data and calculate progress for active schedules
+      const processedData = (data || []).map((schedule) => {
+        let progress = 0
+        if (schedule.status === "Active" && schedule.start_date) {
+          const startDate = new Date(schedule.start_date)
+          const now = new Date()
+          const elapsed = now.getTime() - startDate.getTime()
+          const level = Number.parseInt(schedule.level)
+          const holdDays = getHoldPeriodForLevel(level)
+          const totalTime = holdDays * 24 * 60 * 60 * 1000
+          progress = Math.min(100, (elapsed / totalTime) * 100)
 
-      if (userError || !userData) {
-        console.error("User not found in app_users, cannot create vesting schedules")
-        return
-      }
-
-      const schedules = []
-
-      // Create schedules for each level (1, 2, 3) and position (A, B, C, D, E)
-      for (let level = 1; level <= 3; level++) {
-        for (const position of ["A", "B", "C", "D", "E"]) {
-          const level_rank = getLevelRank(level, position)
-          const scheduleId = uuidv4()
-          schedules.push({
-            schedule_id: scheduleId,
-            schedule_id_text: scheduleId, // Add the text representation
-            user_uuid: userId, // This must match auth.uid() for RLS
-            level,
-            position,
-            level_rank, // Add the level_rank
-            activated: false,
-            invested: false,
-            claimed: false,
-            progress: 0,
-            start_time: null,
-            last_claim_time: null,
-            last_claim_percentage: 0,
-            prematurely_claimed: false,
-            created_at: new Date().toISOString(),
-          })
+          // If progress reaches 100%, mark as completed
+          if (progress >= 100) {
+            schedule.status = "Completed"
+          }
+        } else if (schedule.status === "Completed" || schedule.status === "Claimed") {
+          progress = 100
         }
-      }
 
-      // Insert schedules one by one to better handle errors
-      for (const schedule of schedules) {
-        const { error } = await supabase.from("vesting_schedules").insert(schedule)
-        if (error) {
-          console.error(`Error creating vesting schedule: ${error.message}`, schedule)
+        return {
+          ...schedule,
+          progress,
         }
-      }
-    } catch (error) {
-      console.error("Error in createDefaultVestingSchedules:", error)
+      })
+
+      setVestingSchedules(processedData)
+      console.log("Vesting data refreshed:", processedData.length, "schedules")
+    } catch (err: any) {
+      console.error("Error fetching vesting data:", err)
+      setError(err.message || "Failed to load vesting data")
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Update progress of active schedules
+  // Load vesting data when user changes
   useEffect(() => {
-    if (loading || vestingSchedules.length === 0) return
+    refreshVestingData()
+  }, [user, session])
 
-    const interval = setInterval(async () => {
-      let updatedSchedules = false
-      const schedulesToUpdate = []
+  // Update progress of active vesting slots
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVestingSchedules((prev) =>
+        prev.map((schedule) => {
+          if (schedule.status === "Active" && schedule.start_date) {
+            const startDate = new Date(schedule.start_date)
+            const now = new Date()
+            const elapsed = now.getTime() - startDate.getTime()
+            const level = Number.parseInt(schedule.level)
+            const holdDays = getHoldPeriodForLevel(level)
+            const totalTime = holdDays * 24 * 60 * 60 * 1000
+            const newProgress = Math.min(100, (elapsed / totalTime) * 100)
 
-      // Create a copy of the current schedules
-      const updatedSchedulesList = [...vestingSchedules]
-
-      for (let i = 0; i < updatedSchedulesList.length; i++) {
-        const schedule = updatedSchedulesList[i]
-
-        if (schedule.invested && schedule.startTime && !schedule.claimed) {
-          const elapsedTime = Date.now() - schedule.startTime
-          // For live: 5 days to reach 100%
-          const totalTime = 5 * 24 * 60 * 60 * 1000
-          const newProgress = Math.min(100, Math.floor((elapsedTime / totalTime) * 100))
-
-          if (newProgress !== schedule.progress) {
-            // Update local state
-            updatedSchedulesList[i] = {
-              ...schedule,
-              progress: newProgress,
-            }
-
-            // Add to list of schedules to update in Supabase
-            schedulesToUpdate.push({
-              schedule_id: schedule.schedule_id,
-              progress: newProgress,
-            })
-
-            updatedSchedules = true
-          }
-        }
-      }
-
-      // Update state if any schedules changed
-      if (updatedSchedules) {
-        setVestingSchedules(updatedSchedulesList)
-
-        // Update Supabase in batches
-        if (schedulesToUpdate.length > 0 && user && sessionChecked) {
-          try {
-            // Verify session is still active
-            const {
-              data: { session },
-            } = await supabase.auth.getSession()
-            if (!session) return
-
-            for (const schedule of schedulesToUpdate) {
-              await supabase
+            // If progress reaches 100%, mark as completed
+            if (newProgress >= 100 && schedule.status !== "Completed") {
+              // Update in Supabase
+              supabase
                 .from("vesting_schedules")
-                .update({ progress: schedule.progress })
-                .eq("schedule_id", schedule.schedule_id)
+                .update({ status: "Completed" })
+                .eq("id", schedule.id)
+                .then(() => {
+                  console.log("Vesting schedule completed:", schedule.id)
+                })
+
+              return {
+                ...schedule,
+                status: "Completed" as const,
+                progress: 100,
+              }
             }
-          } catch (error) {
-            console.error("Error updating schedule progress:", error)
-          }
-        }
-      }
-    }, 60000) // Check every minute instead of every second for production
 
-    return () => clearInterval(interval)
-  }, [loading, vestingSchedules, user, sessionChecked])
-
-  // Check if all schedules in a level are completed
-  useEffect(() => {
-    if (loading || vestingSchedules.length === 0) return
-
-    const checkLevelCompletion = async () => {
-      for (let level = 1; level <= 3; level++) {
-        const levelSchedules = vestingSchedules.filter((s) => s.level === level)
-        const allCompleted = levelSchedules.every((s) => s.claimed)
-
-        if (allCompleted && levelSchedules.length > 0) {
-          // Set a timeout to reset all schedules in this level
-          setTimeout(() => {
-            resetAllSchedulesInLevel(level)
-          }, 5000) // 5 seconds
-        }
-      }
-    }
-
-    checkLevelCompletion()
-  }, [vestingSchedules, loading])
-
-  // Get activation cost based on level
-  const getActivationCost = (level: number): number => {
-    switch (level) {
-      case 1:
-        return 2
-      case 2:
-        return 4
-      case 3:
-        return 8
-      default:
-        return 2
-    }
-  }
-
-  // Get investment cost based on level
-  const getInvestmentCost = (level: number): number => {
-    switch (level) {
-      case 1:
-        return 2
-      case 2:
-        return 4
-      case 3:
-        return 8
-      default:
-        return 2
-    }
-  }
-
-  // Calculate reward based on level and progress
-  const calculateReward = (level: number, progress: number): number => {
-    let baseReward = 0
-
-    if (progress >= 20) baseReward = 2
-    if (progress >= 40) baseReward = 4
-    if (progress >= 60) baseReward = 6
-    if (progress >= 80) baseReward = 8
-    if (progress >= 100) baseReward = 10
-
-    // Multiply by level factor
-    const levelMultiplier = level === 1 ? 1 : level === 2 ? 2 : 4
-    return baseReward * levelMultiplier
-  }
-
-  // Activate a schedule
-  const activateSchedule = async (scheduleId: string) => {
-    if (!user || !sessionChecked) return
-
-    // Verify session is still active
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
-    const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
-    if (scheduleIndex === -1) return
-
-    const schedule = vestingSchedules[scheduleIndex]
-    if (schedule.activated) return
-
-    try {
-      console.log("Activating schedule:", {
-        scheduleId: schedule.id,
-        schedule_id: schedule.schedule_id,
-        schedule_id_text: schedule.schedule_id_text,
-        userId: user.id,
-      })
-
-      // Use the schedule_id directly without validation or casting
-      const params = {
-        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
-        p_user_uuid: user.id,
-      }
-
-      console.log("RPC parameters:", JSON.stringify(params))
-
-      // Call the stored procedure using rpc with the correct parameter names
-      const { data, error } = await supabase.rpc("activate_schedule_final", params)
-
-      if (error) {
-        console.error("Supabase error:", error)
-        throw error
-      }
-
-      if (!data?.success) {
-        console.error("Activation failed:", data?.error || "Unknown error")
-        throw new Error(data?.error || "Activation failed")
-      }
-
-      console.log("Activation successful:", data)
-
-      // Update local state
-      setVestingSchedules((prevSchedules) => {
-        const updatedSchedules = [...prevSchedules]
-        updatedSchedules[scheduleIndex] = {
-          ...schedule,
-          activated: true,
-        }
-        return updatedSchedules
-      })
-
-      // Note: AFT balance update and transaction recording are now handled in the page component
-    } catch (error) {
-      console.error("Activation error:", {
-        error,
-        scheduleId: schedule.schedule_id,
-        userId: user.id,
-        timestamp: new Date().toISOString(),
-      })
-      throw error
-    }
-  }
-
-  // Invest in a schedule
-  const investInSchedule = async (scheduleId: string) => {
-    if (!user || !sessionChecked) return
-
-    // Verify session is still active
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
-    const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
-    if (scheduleIndex === -1) return
-
-    const schedule = vestingSchedules[scheduleIndex]
-    if (!schedule.activated || schedule.invested) return
-
-    const investmentCost = getInvestmentCost(schedule.level)
-    const startTime = new Date()
-
-    try {
-      console.log(
-        "Investing in schedule:",
-        schedule.id,
-        "with schedule_id:",
-        schedule.schedule_id_text || schedule.schedule_id,
-      )
-
-      // Create a new Supabase client to clear any cached schema information
-      const freshSupabase = supabase
-
-      // Use the schedule_id directly without validation or casting
-      const params = {
-        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
-        p_start_time: startTime.toISOString(),
-      }
-
-      console.log("RPC parameters for invest_schedule:", JSON.stringify(params))
-
-      // Use the invest_schedule function with correct parameter names
-      const { data, error } = await freshSupabase.rpc("invest_schedule", params)
-
-      if (error) {
-        console.error("Error investing in schedule:", error)
-        throw error
-      }
-
-      console.log("Investment result:", data)
-
-      // Check if the operation was successful
-      if (data && data.success === false) {
-        console.error("Failed to invest in schedule:", data.error)
-        throw new Error(data.error)
-      }
-
-      // Update local state
-      setVestingSchedules((prevSchedules) => {
-        const updatedSchedules = [...prevSchedules]
-        updatedSchedules[scheduleIndex] = {
-          ...schedule,
-          invested: true,
-          startTime: startTime.getTime(),
-        }
-        return updatedSchedules
-      })
-
-      // Update wallet balance
-      await updatePwtInvestBalance(investmentCost, "subtract")
-
-      // Add transaction - Ensure this is properly recorded
-      try {
-        await addTransaction({
-          type: "VESTING",
-          account: "PWT Invest",
-          amount: investmentCost,
-          amountUsd: investmentCost * 10,
-          description: `Vesting investment for Schedule ${scheduleId}`,
-        })
-        console.log("Vesting transaction recorded successfully")
-      } catch (transactionError) {
-        console.error("Error recording vesting transaction:", transactionError)
-        // Don't throw here as the investment was successful, but log the error
-      }
-    } catch (error) {
-      console.error("Error investing in schedule:", error)
-      throw error // Re-throw the error so it can be caught by the UI
-    }
-  }
-
-  // Claim rewards from a schedule
-  const claimSchedule = async (scheduleId: string) => {
-    if (!user || !sessionChecked) return
-
-    // Verify session is still active
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
-    const scheduleIndex = vestingSchedules.findIndex((s) => s.id === scheduleId)
-    if (scheduleIndex === -1) return
-
-    const schedule = vestingSchedules[scheduleIndex]
-    if (!schedule.invested || schedule.claimed) return
-
-    // Check if progress is at least 20%
-    if (schedule.progress < 20) return
-
-    // Calculate reward based on progress and level
-    const reward = calculateReward(schedule.level, schedule.progress)
-    const previousClaim = calculateReward(schedule.level, schedule.lastClaimPercentage)
-    const netReward = reward - previousClaim
-
-    // Check if this is a premature claim (before 100%)
-    const isPremature = schedule.progress < 100
-    const claimTime = new Date()
-
-    try {
-      console.log(
-        "Claiming schedule:",
-        schedule.id,
-        "with schedule_id:",
-        schedule.schedule_id_text || schedule.schedule_id,
-      )
-
-      // Use the schedule_id directly without validation or casting
-      const params = {
-        p_schedule_id: ensureValidUuidOrNull(schedule.schedule_id_text || schedule.schedule_id), // Use text version if available
-        p_claim_time: claimTime.toISOString(),
-        p_claim_percentage: schedule.progress,
-        p_is_premature: isPremature,
-      }
-
-      console.log("RPC parameters:", JSON.stringify(params))
-
-      // Call the claim_schedule function with correct parameter names
-      const { data, error } = await supabase.rpc("claim_schedule", params)
-
-      if (error) {
-        console.error("Error claiming schedule:", error)
-        throw error
-      }
-
-      console.log("Claim result:", data)
-
-      // Check if the operation was successful
-      if (data && data.success === false) {
-        console.error("Failed to claim schedule:", data.error)
-        throw new Error(data.error)
-      }
-
-      // Update local state
-      setVestingSchedules((prevSchedules) => {
-        const updatedSchedules = [...prevSchedules]
-        updatedSchedules[scheduleIndex] = {
-          ...schedule,
-          claimed: true,
-          lastClaimTime: claimTime.getTime(),
-          lastClaimPercentage: schedule.progress,
-          prematurelyClaimed: isPremature,
-        }
-        return updatedSchedules
-      })
-
-      // Update wallet balance
-      await updatePwtCashoutBalance(netReward, "add")
-
-      // Add transaction - Ensure this is properly recorded
-      try {
-        await addTransaction({
-          type: "CLAIM",
-          account: "PWT Cashout",
-          amount: netReward,
-          amountUsd: netReward * 10,
-          description: `Claim from Schedule ${scheduleId} (${isPremature ? "Premature" : "Mature"})`,
-        })
-        console.log("Claim transaction recorded successfully")
-      } catch (transactionError) {
-        console.error("Error recording claim transaction:", transactionError)
-        // Don't throw here as the claim was successful, but log the error
-      }
-    } catch (error) {
-      console.error("Error claiming schedule:", error)
-      throw error // Re-throw the error so it can be caught by the UI
-    }
-  }
-
-  // Get a schedule by ID
-  const getScheduleById = (scheduleId: string) => {
-    return vestingSchedules.find((s) => s.id === scheduleId)
-  }
-
-  // Get a schedule by rank
-  const getScheduleByRank = (rank: number) => {
-    return vestingSchedules.find((s) => s.level_rank === rank)
-  }
-
-  // Get schedules by level
-  const getSchedulesByLevel = (level: number) => {
-    return vestingSchedules.filter((s) => s.level === level)
-  }
-
-  // Reset all schedules in a level
-  const resetAllSchedulesInLevel = async (level: number) => {
-    if (!user || !sessionChecked) return
-
-    // Verify session is still active
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
-    try {
-      console.log("Resetting schedules for level:", level)
-
-      // Create the parameters object and log it
-      const params = {
-        p_level: level,
-      }
-
-      console.log("RPC parameters:", JSON.stringify(params))
-
-      // Use the reset_schedules_by_level function with correct parameter name
-      const { data, error } = await supabase.rpc("reset_schedules_by_level", params)
-
-      if (error) {
-        console.error("Error resetting schedules:", error)
-        throw error
-      }
-
-      console.log("Reset result:", data)
-
-      // Reset any referral claims where this user is the referred person
-      try {
-        const { error: resetClaimsError } = await supabase.rpc("reset_referral_claims_for_user", {
-          p_referred_uuid: user.id,
-          p_level: level,
-        })
-
-        if (resetClaimsError) {
-          console.error("Error resetting referral claims:", resetClaimsError)
-        } else {
-          console.log(`Successfully reset referral claims for user ${user.id} at level ${level}`)
-        }
-      } catch (resetError) {
-        console.error("Error in reset_referral_claims_for_user:", resetError)
-      }
-
-      // Check if the operation was successful
-      if (data && data.success === false) {
-        console.error("Failed to reset schedules:", data.error)
-        throw new Error(data.error)
-      }
-
-      // Update local state
-      setVestingSchedules((prevSchedules) => {
-        return prevSchedules.map((schedule) => {
-          if (schedule.level === level) {
             return {
               ...schedule,
-              activated: false,
-              invested: false,
-              claimed: false,
-              progress: 0,
-              startTime: null,
-              lastClaimTime: null,
-              lastClaimPercentage: 0,
-              prematurelyClaimed: false,
+              progress: newProgress,
             }
           }
           return schedule
+        }),
+      )
+    }, 1000) // Update every second
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Get hold period for a specific level
+  const getHoldPeriodForLevel = (level: number): number => {
+    const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
+    return levelConfig ? levelConfig.holdDays : 5 // Default to 5 days
+  }
+
+  // Get slots for a specific level (6 slots per level)
+  const getVestingSlotsForLevel = (level: number): VestingSlotData[] => {
+    return vestingSchedules.filter((schedule) => Number.parseInt(schedule.level) === level).slice(0, 6) // Limit to 6 slots per level
+  }
+
+  // Validate vesting amount based on level
+  const validateVestingAmount = (amount: number, level: number) => {
+    const levelConfig = VESTING_LEVELS[level as keyof typeof VESTING_LEVELS]
+    if (!levelConfig) {
+      return { valid: false, error: "Invalid vesting level" }
+    }
+
+    if (amount < levelConfig.min) {
+      return { valid: false, error: `Minimum ${levelConfig.min} shares required for ${levelConfig.name} level` }
+    }
+
+    if (amount > levelConfig.max) {
+      return { valid: false, error: `Maximum ${levelConfig.max} shares allowed for ${levelConfig.name} level` }
+    }
+
+    return { valid: true }
+  }
+
+  // Vest shares function (real Supabase implementation)
+  const vestShares = async (level: number, slotIndex: number, amount: number) => {
+    if (!user) return
+
+    try {
+      setLoading(true)
+
+      // Validate amount for level
+      const validation = validateVestingAmount(amount, level)
+      if (!validation.valid) {
+        throw new Error(validation.error)
+      }
+
+      // Get the specific schedule to update
+      const levelSchedules = getVestingSlotsForLevel(level)
+      if (slotIndex >= levelSchedules.length) {
+        throw new Error("Invalid slot index")
+      }
+
+      const schedule = levelSchedules[slotIndex]
+      if (schedule.status !== "Unclaimed") {
+        throw new Error("Slot is not available for vesting")
+      }
+
+      // Update the vesting schedule in Supabase
+      const { error: updateError } = await supabase
+        .from("vesting_schedules")
+        .update({
+          status: "Active",
+          shares_amount: amount,
+          start_date: new Date().toISOString(),
         })
+        .eq("id", schedule.id)
+
+      if (updateError) throw updateError
+
+      // Transfer shares from hold_pre to locked state (handled by vesting system)
+      const { error: transferError } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: "hold_pre",
+        p_to_wallet: "vesting_locked",
+        p_shares: amount,
+        p_description: `Vested ${amount} shares in ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot`,
       })
-    } catch (error) {
-      console.error("Error resetting schedules:", error)
+
+      if (transferError) throw transferError
+
+      await refreshVestingData()
+      console.log(`Vested ${amount} shares in level ${level} slot ${slotIndex + 1}`)
+    } catch (error: any) {
+      console.error("Error vesting shares:", error)
+      setError(error.message)
+      throw error
+    } finally {
+      setLoading(false)
     }
   }
 
+  // Claim shares function (real Supabase implementation)
+  const claimShares = async (level: number, slotIndex: number) => {
+    if (!user) return
+
+    try {
+      setLoading(true)
+
+      const levelSchedules = getVestingSlotsForLevel(level)
+      if (slotIndex >= levelSchedules.length) {
+        throw new Error("Invalid slot index")
+      }
+
+      const schedule = levelSchedules[slotIndex]
+      if (schedule.status !== "Completed" || !schedule.shares_amount) {
+        throw new Error("Slot is not ready for claiming")
+      }
+
+      // Update the vesting schedule status
+      const { error: updateError } = await supabase
+        .from("vesting_schedules")
+        .update({
+          status: "Claimed",
+          completion_date: new Date().toISOString(),
+        })
+        .eq("id", schedule.id)
+
+      if (updateError) throw updateError
+
+      // Transfer shares to hold_post wallet
+      const { error: transferError } = await supabase.rpc("transfer_shares", {
+        p_user_uuid: user.id,
+        p_from_wallet: "vesting_locked",
+        p_to_wallet: "hold_post",
+        p_shares: schedule.shares_amount,
+        p_description: `Claimed ${schedule.shares_amount} shares from ${VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].name} slot`,
+      })
+
+      if (transferError) throw transferError
+
+      await refreshVestingData()
+      console.log(`Claimed ${schedule.shares_amount} shares from level ${level} slot ${slotIndex + 1}`)
+    } catch (error: any) {
+      console.error("Error claiming shares:", error)
+      setError(error.message)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Get total shares currently vesting
+  const getTotalVestingInProgress = () => {
+    return vestingSchedules
+      .filter((schedule) => schedule.status === "Active")
+      .reduce((total, schedule) => total + (schedule.shares_amount || 0), 0)
+  }
+
+  // Get total claimable shares
+  const getTotalClaimableShares = () => {
+    return vestingSchedules
+      .filter((schedule) => schedule.status === "Completed")
+      .reduce((total, schedule) => total + (schedule.shares_amount || 0), 0)
+  }
+
+  // Legacy helpers for backward compatibility
+  const getSchedulesByLevel = (level: number) => getVestingSlotsForLevel(level)
+  const getScheduleById = (id: string) => vestingSchedules.find((s) => s.id === id)
+
   // Context value
   const value = {
-    vestingSchedules,
-    activateSchedule,
-    investInSchedule,
-    claimSchedule,
-    getScheduleById,
+    getVestingSlotsForLevel,
+    vestShares,
+    claimShares,
+    getTotalVestingInProgress,
+    getTotalClaimableShares,
+    validateVestingAmount,
+    getHoldPeriodForLevel,
+    refreshVestingData,
+    // legacy
     getSchedulesByLevel,
-    getScheduleByRank,
-    resetAllSchedulesInLevel,
+    getScheduleById,
     loading,
+    error,
   }
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>

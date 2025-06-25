@@ -13,7 +13,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full py-3 bg-[#fff27a] hover:bg-yellow-400 rounded-full text-black font-medium transition-colors"
+      className="w-full py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-medium transition-colors"
     >
       {pending ? "Signing in..." : "Sign in"}
     </button>

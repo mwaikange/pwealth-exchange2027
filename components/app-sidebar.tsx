@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
-import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
+import { LayoutDashboard, Clock, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
@@ -26,13 +26,13 @@ export function AppSidebar({ open }: AppSidebarProps) {
       name: "Vesting",
       href: "/dashboard/vesting",
       icon: Clock,
-      description: "Investment Schedules",
+      description: "Lock shares for 5 days",
     },
     {
-      name: "Cashout",
-      href: "/dashboard/cashout",
-      icon: DollarSign,
-      description: "Transfer, Sell & Swap Tokens",
+      name: "Exchange",
+      href: "/dashboard/exchange",
+      icon: BarChart3,
+      description: "Buy & Sell Shares",
     },
     {
       name: "Transactions",

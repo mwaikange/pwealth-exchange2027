@@ -1,30 +1,41 @@
 import { createClient } from "@supabase/supabase-js"
-import { env } from "./env"
 
-// Update the Supabase initialization to handle missing environment variables
+// Use the actual environment variables from the workspace
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_UR ||
+  process.env.SUPABASE_URL ||
+  "https://vqdfhgjhptklwogjadxy.supabase.co"
 
-// Ensure environment variables are available with fallbacks
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL || (typeof window !== "undefined" ? window.location.origin : "")
-const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "missing-key"
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
 
-// Add error handling
-if (!supabaseUrl) {
-  console.error("Supabase URL is missing. Please check your environment variables.")
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KE || ""
+
+// Validate required variables
+if (!supabaseUrl || supabaseUrl.trim() === "") {
+  console.error("Missing Supabase URL. Check environment variables.")
+  throw new Error("Supabase URL is required")
 }
 
-// Check if we're running on the client side
-const isClient = typeof window !== "undefined"
+if (!supabaseAnonKey || supabaseAnonKey.trim() === "") {
+  console.error("Missing Supabase Anon Key. Check environment variables.")
+  throw new Error("Supabase Anon Key is required")
+}
 
-// Create a singleton instance for the client side
+console.log("Supabase initialized with:", {
+  url: supabaseUrl,
+  anonKeyPresent: !!supabaseAnonKey,
+  serviceKeyPresent: !!supabaseServiceKey,
+})
+
+// Create client instance
 let supabaseInstance: ReturnType<typeof createClient> | null = null
 
-// Function to get the Supabase client (singleton pattern)
 export const getSupabaseClient = () => {
-  if (isClient) {
-    // For client-side, maintain a singleton instance
+  if (typeof window !== "undefined") {
+    // Client-side: maintain singleton
     if (!supabaseInstance) {
       console.log("Creating NEW Supabase client instance (client-side)")
-
       supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
           persistSession: true,
@@ -33,15 +44,12 @@ export const getSupabaseClient = () => {
           detectSessionInUrl: true,
         },
       })
-    } else {
-      console.log("Reusing existing Supabase client instance")
     }
     return supabaseInstance
   }
 
-  // For server-side, always create a new instance
+  // Server-side: always create new instance
   console.log("Creating NEW Supabase client instance (server-side)")
-
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
@@ -49,13 +57,11 @@ export const getSupabaseClient = () => {
   })
 }
 
-// Export the singleton client for client-side usage
+// Export the client
 export const supabase = getSupabaseClient()
 
-// Create a server-side client (for server components and server actions)
+// Create server-side client (for server components and server actions)
 export const createServerSupabaseClient = () => {
-  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
-
   console.log("Creating NEW Supabase server client instance")
 
   return createClient(supabaseUrl, supabaseServiceKey, {
@@ -65,8 +71,5 @@ export const createServerSupabaseClient = () => {
     },
   })
 }
-
-// Re-export the singleton
-// import { supabase } from "./supabase-singleton" // Removed redundant import
 
 export default supabase

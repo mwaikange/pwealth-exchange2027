@@ -1,126 +1,86 @@
 "use client"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
-import { useVesting } from "@/contexts/vesting-context"
-import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
-import { useState, useEffect } from "react"
+
+// Static mock data for testing
+const mockDashboardData = {
+  totalOutTransfersUSD: 2450,
+  totalOutTransfersTokens: 245,
+  totalReferralClaims: 12,
+  expectedVestingYield: 8,
+  vestingSchedules: [
+    {
+      level: 1,
+      position: "A",
+      color: "green-500",
+      progress: 75,
+      invested: true,
+      claimed: false,
+    },
+    {
+      level: 2,
+      position: "B",
+      color: "blue-500",
+      progress: 45,
+      invested: true,
+      claimed: false,
+    },
+    {
+      level: 3,
+      position: "C",
+      color: "pink-500",
+      progress: 90,
+      invested: true,
+      claimed: false,
+    },
+  ],
+  recentTransactions: [
+    {
+      id: "1",
+      type: "VEST",
+      account: "Hold Wallet",
+      amount: 5,
+      amountUsd: 50,
+      description: "Vested 5 shares in Slot 1",
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+    },
+    {
+      id: "2",
+      type: "CLAIM",
+      account: "Hold Wallet",
+      amount: 3,
+      amountUsd: 30,
+      description: "Claimed 3 shares from Slot 2",
+      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
+    },
+    {
+      id: "3",
+      type: "OUT-TRANSFER",
+      account: "Cashout Wallet",
+      amount: 10,
+      amountUsd: 100,
+      description: "Cashout to bank account",
+      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+    },
+  ],
+}
 
 export function DashboardContent() {
-  const { vestingSchedules } = useVesting()
-  const { transactions } = useTransactions()
-  const { getRecentTransactions } = useTransactions()
-  const recentTransactions = getRecentTransactions(3)
+  // Use static data instead of dynamic hooks
+  const {
+    totalOutTransfersUSD,
+    totalOutTransfersTokens,
+    totalReferralClaims,
+    expectedVestingYield,
+    vestingSchedules,
+    recentTransactions,
+  } = mockDashboardData
 
-  // State for the stat cards
-  const [totalOutTransfersUSD, setTotalOutTransfersUSD] = useState(0)
-  const [totalOutTransfersTokens, setTotalOutTransfersTokens] = useState(0)
-  const [expectedVestingYield, setExpectedVestingYield] = useState(0)
-
-  // Add this useEffect to calculate the sums for OUT-TRANSFER transactions
-  useEffect(() => {
-    // Filter transactions to get only OUT-TRANSFER types
-    const outTransfers = transactions.filter((tx) => tx.type === "OUT-TRANSFER")
-
-    // Sum up the USD values
-    const totalUSD = outTransfers.reduce((sum, tx) => sum + tx.amountUsd, 0)
-
-    // Sum up the token amounts
-    const totalTokens = outTransfers.reduce((sum, tx) => sum + tx.amount, 0)
-
-    // Update the states
-    setTotalOutTransfersUSD(totalUSD)
-    setTotalOutTransfersTokens(totalTokens)
-  }, [transactions])
-
-  // Calculate expected yield from active vesting schedules
-  useEffect(() => {
-    const expectedYield = calculateExpectedYield(vestingSchedules)
-    setExpectedVestingYield(expectedYield)
-  }, [vestingSchedules])
-
-  // Calculate total referral claims from transactions
-  useEffect(() => {
-    // Filter transactions to get only REFERRAL CLAIM types (including all levels)
-    const referralClaims = transactions.filter((tx) => tx.type.includes("REFERRAL CLAIM"))
-
-    // Sum up the token amounts
-    const totalClaims = referralClaims.reduce((sum, tx) => sum + tx.amount, 0)
-
-    // Update the state
-    setTotalReferralClaims(totalClaims)
-  }, [transactions])
-
-  // State for referral claims
-  const [totalReferralClaims, setTotalReferralClaims] = useState(0)
-
-  // Get most active schedule for each level
-  const level1Schedule = getMostActiveSchedule(vestingSchedules, 1)
-  const level2Schedule = getMostActiveSchedule(vestingSchedules, 2)
-  const level3Schedule = getMostActiveSchedule(vestingSchedules, 3)
-
-  // Function to calculate expected yield from vesting schedules
-  function calculateExpectedYield(schedules) {
-    if (!schedules || schedules.length === 0) return 0
-
-    let totalYield = 0
-
-    schedules.forEach((schedule) => {
-      if (schedule.invested && !schedule.claimed) {
-        // Calculate potential reward based on level and progress
-        let baseReward = 0
-
-        if (schedule.progress >= 20) baseReward = 2
-        if (schedule.progress >= 40) baseReward = 4
-        if (schedule.progress >= 60) baseReward = 6
-        if (schedule.progress >= 80) baseReward = 8
-        if (schedule.progress >= 100) baseReward = 10
-
-        // Multiply by level factor
-        const levelMultiplier = schedule.level === 1 ? 1 : schedule.level === 2 ? 2 : 4
-        const potentialReward = baseReward * levelMultiplier
-
-        // Subtract any previous claims
-        const previousClaim = calculateRewardForProgress(schedule.level, schedule.lastClaimPercentage)
-        const netReward = potentialReward - previousClaim
-
-        totalYield += netReward
-      }
-    })
-
-    return totalYield
-  }
-
-  // Helper function to calculate reward for a given progress
-  function calculateRewardForProgress(level, progress) {
-    let baseReward = 0
-
-    if (progress >= 20) baseReward = 2
-    if (progress >= 40) baseReward = 4
-    if (progress >= 60) baseReward = 6
-    if (progress >= 80) baseReward = 8
-    if (progress >= 100) baseReward = 10
-
-    // Multiply by level factor
-    const levelMultiplier = level === 1 ? 1 : level === 2 ? 2 : 4
-    return baseReward * levelMultiplier
-  }
-
-  // Function to get the most active schedule for a level
-  function getMostActiveSchedule(schedules, level) {
-    if (!schedules || schedules.length === 0) return null
-
-    // Filter schedules by level
-    const levelSchedules = schedules.filter((s) => s.level === level)
-    if (levelSchedules.length === 0) return null
-
-    // Find the most active schedule (invested but not claimed, with highest progress)
-    const activeSchedules = levelSchedules.filter((s) => s.invested && !s.claimed)
-    if (activeSchedules.length === 0) return null
-
-    // Sort by progress (descending) and return the first one
-    return activeSchedules.sort((a, b) => b.progress - a.progress)[0]
-  }
+  // Get most active schedule for each level (using mock data)
+  const level1Schedule = vestingSchedules.find((s) => s.level === 1)
+  const level2Schedule = vestingSchedules.find((s) => s.level === 2)
+  const level3Schedule = vestingSchedules.find((s) => s.level === 3)
 
   return (
     <div className="h-full bg-[#1c1e26]">

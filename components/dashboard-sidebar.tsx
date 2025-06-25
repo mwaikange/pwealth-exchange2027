@@ -2,56 +2,39 @@
 
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
-import { LayoutDashboard, Clock, DollarSign, BarChart3, Users, Settings, HelpCircle, LogOut } from "lucide-react"
+import { LayoutDashboard, Clock, BarChart3, Users, Settings, HelpCircle, LogOut, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase-singleton"
+import { useState } from "react"
 import { PeerGPTChat } from "./peer-gpt-chat"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, signOut } = useAuth()
-  const [referralCode, setReferralCode] = useState<string>("")
   const [isChatOpen, setIsChatOpen] = useState(false)
 
-  useEffect(() => {
-    const fetchReferralCode = async () => {
-      if (user?.id) {
-        const { data, error } = await supabase
-          .from("usersettings")
-          .select("referral_code")
-          .eq("user_uuid", user.id)
-          .single()
-
-        if (data && !error) {
-          setReferralCode(data.referral_code)
-        }
-      }
-    }
-
-    fetchReferralCode()
-  }, [user])
+  // Static data for testing - no Supabase calls
+  const mockReferralCode = "DEMO-USER-001"
 
   const navItems = [
     {
       name: "Overview",
       description: "Dashboard Overview",
-      href: "/dashboard",
+      href: "/dashboard/overview",
       icon: LayoutDashboard,
     },
     {
-      name: "Vesting",
-      description: "Investment Schedules",
-      href: "/dashboard/vesting",
-      icon: Clock,
+      name: "Exchange",
+      description: "Buy & Sell Shares",
+      href: "/dashboard/exchange",
+      icon: TrendingUp,
     },
     {
-      name: "Cashout",
-      description: "Transfer, Sell & Swap",
-      href: "/dashboard/cashout",
-      icon: DollarSign,
+      name: "Vesting",
+      description: "Lock shares for 5 days",
+      href: "/dashboard/vesting",
+      icon: Clock,
     },
     {
       name: "Transactions",
@@ -121,11 +104,11 @@ export function DashboardSidebar() {
       <div className="p-2 border-t border-gray-800">
         <div className="flex items-center mb-2">
           <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold mr-2">
-            {user?.email ? user.email.charAt(0).toUpperCase() : "M"}
+            {user?.email ? user.email.charAt(0).toUpperCase() : "D"}
           </div>
           <div>
-            <div className="text-[9px]">User: {referralCode || "RFRL-XXXXXX"}</div>
-            <div className="text-[8px] text-gray-400">{user?.email || "loading..."}</div>
+            <div className="text-[9px]">User: {mockReferralCode}</div>
+            <div className="text-[8px] text-gray-400">{user?.email || "demo@example.com"}</div>
           </div>
         </div>
 

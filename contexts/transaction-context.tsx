@@ -4,285 +4,140 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
-import { v4 as uuidv4 } from "uuid"
 
-// Define transaction types
-export type TransactionType =
-  | "OUT-TRANSFER"
-  | "OUT-AFT GIFT"
-  | "IN-PWT RECEIPT"
-  | "REFERRAL CLAIM"
-  | "REFERRAL CLAIM-LvL1"
-  | "REFERRAL CLAIM-LvL2"
-  | "REFERRAL CLAIM-LvL3"
-  | "BUY-AFT RECEIPT"
-  | "ACTIVATE FEE"
-  | "IN-AFT GIFT"
-  | "VESTING"
-  | "CLAIM"
-  | "AFT-TopUP"
-
-// Define wallet types
-export type WalletType = "PWT Invest" | "PWT Cashout" | "AFT Wallet"
-
-// Define transaction object structure
 export interface Transaction {
   id: string
-  type: TransactionType
-  account: WalletType
-  date: string
-  amount: number
-  amountUsd: number
-  recipient?: string
-  reference: string
-  description?: string
-  sender?: string
+  user_uuid: string
+  transaction_type: string
+  shares?: number
+  price_per_share?: number
+  total_amount?: number
+  from_wallet?: string
+  to_wallet?: string
+  status: string
+  description: string
+  reference_id?: string
+  created_at: string
 }
 
-// Define context type
-type TransactionContextType = {
+interface TransactionContextType {
   transactions: Transaction[]
-  addTransaction: (transaction: Omit<Transaction, "id" | "date" | "reference">) => Promise<Transaction>
-  getRecentTransactions: (count: number) => Transaction[]
-  getTransactionsByType: (type: TransactionType | "All" | "Earnings" | "Outflows") => Transaction[]
-  getCashoutTransactions: () => Transaction[]
+  getTransactionsByType: (type?: string) => Transaction[]
+  addTransaction: (transaction: Partial<Transaction>) => Promise<void>
   refreshTransactions: () => Promise<void>
   loading: boolean
+  error: string | null
 }
 
-// Create context
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined)
 
-// Generate a formatted date string
-const generateDateString = () => {
-  const now = new Date()
-  const day = now.getDate()
-  const month = now.toLocaleString("default", { month: "short" })
-  const hours = now.getHours()
-  const minutes = now.getMinutes()
-  const ampm = hours >= 12 ? "pm" : "am"
-  const formattedHours = hours % 12 || 12
-  const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes
-
-  return `${day} ${month}, ${formattedHours}:${formattedMinutes}${ampm}`
-}
-
-// Provider component
 export function TransactionProvider({ children }: { children: React.ReactNode }) {
-  // State for transactions
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const { user } = useAuth()
+  const [error, setError] = useState<string | null>(null)
+  const { user, session } = useAuth()
 
-  // Function to fetch transactions
-  const fetchTransactions = async () => {
-    if (!user) {
+  // Fetch transactions from Supabase
+  const refreshTransactions = async () => {
+    if (!user || !session) {
       setLoading(false)
       return
     }
 
     try {
       setLoading(true)
+      setError(null)
 
-      // Handle the case where the user has no transactions yet
-      const query = supabase
-        .from("transactions")
+      const { data, error: fetchError } = await supabase
+        .from("share_transactions")
         .select("*")
         .eq("user_uuid", user.id)
         .order("created_at", { ascending: false })
+        .limit(50) // Get last 50 transactions
 
-      const { data, error } = await query
-
-      if (error) {
-        console.error("Error fetching transactions:", error)
-        // Set empty transactions array on error
-        setTransactions([])
-        return
+      if (fetchError) {
+        throw new Error(`Failed to fetch transactions: ${fetchError.message}`)
       }
 
-      if (data) {
-        // Transform the data to match our Transaction interface
-        const formattedTransactions: Transaction[] = data.map((tx) => ({
-          id: tx.transaction_id,
-          type: tx.transaction_type as TransactionType,
-          account: tx.account_type as WalletType,
-          date: new Date(tx.created_at).toLocaleString("en-US", {
-            day: "numeric",
-            month: "short",
-            hour: "numeric",
-            minute: "numeric",
-            hour12: true,
-          }),
-          amount: Number(tx.amount),
-          amountUsd: Number(tx.amount_usd),
-          recipient: tx.recipient_email,
-          reference: tx.reference,
-          description: tx.description,
-          sender: tx.sender_email,
-        }))
-
-        setTransactions(formattedTransactions)
-      } else {
-        // Set empty array if no data
-        setTransactions([])
-      }
-    } catch (error) {
-      console.error("Error in fetchTransactions:", error)
-      // Set empty transactions array on error
-      setTransactions([])
+      setTransactions(data || [])
+      console.log("Transactions refreshed:", data?.length || 0, "records")
+    } catch (err: any) {
+      console.error("Error fetching transactions:", err)
+      setError(err.message || "Failed to load transactions")
     } finally {
       setLoading(false)
     }
   }
 
-  // Load transactions from Supabase on initial render
+  // Load transactions when user changes
   useEffect(() => {
-    fetchTransactions()
-  }, [user])
+    refreshTransactions()
+  }, [user, session])
 
-  // Function to refresh transactions
-  const refreshTransactions = async () => {
-    await fetchTransactions()
-  }
-
-  // Add a new transaction
-  const addTransaction = async (transaction: Omit<Transaction, "id" | "date" | "reference">) => {
-    if (!user) throw new Error("User not authenticated")
-
-    const transactionId = uuidv4()
-    const reference = `TRX-${Math.floor(Math.random() * 10000)}`
-    const dateString = generateDateString()
-
-    // Create the new transaction object
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: transactionId,
-      date: dateString,
-      reference,
-    }
+  // Add new transaction
+  const addTransaction = async (transaction: Partial<Transaction>) => {
+    if (!user) return
 
     try {
-      // Validate transaction type
-      const validTypes: TransactionType[] = [
-        "OUT-TRANSFER",
-        "OUT-AFT GIFT",
-        "IN-PWT RECEIPT",
-        "REFERRAL CLAIM",
-        "REFERRAL CLAIM-LvL1",
-        "REFERRAL CLAIM-LvL2",
-        "REFERRAL CLAIM-LvL3",
-        "BUY-AFT RECEIPT",
-        "ACTIVATE FEE",
-        "IN-AFT GIFT",
-        "VESTING",
-        "CLAIM",
-        "AFT-TopUP",
-      ]
-
-      if (!validTypes.includes(transaction.type as TransactionType)) {
-        console.error("Invalid transaction type:", transaction.type)
-        throw new Error(`Invalid transaction type: ${transaction.type}`)
-      }
-
-      // Insert into Supabase
-      const { error } = await supabase.from("transactions").insert({
+      const newTransaction = {
         user_uuid: user.id,
-        transaction_type: transaction.type,
-        account_type: transaction.account,
-        amount: transaction.amount,
-        amount_usd: transaction.amountUsd,
-        recipient_email: transaction.recipient,
-        sender_email: transaction.sender,
-        reference,
-        description: transaction.description,
-        created_at: new Date().toISOString(),
-      })
-
-      if (error) {
-        console.error("Supabase error when adding transaction:", error)
-        throw error
+        transaction_type: transaction.transaction_type || "transfer",
+        shares: transaction.shares || 0,
+        price_per_share: transaction.price_per_share || 0,
+        total_amount: transaction.total_amount || 0,
+        from_wallet: transaction.from_wallet,
+        to_wallet: transaction.to_wallet,
+        status: transaction.status || "completed",
+        description: transaction.description || "Transaction",
+        reference_id: transaction.reference_id || `TXN-${Date.now()}`,
       }
 
-      // Update local state
-      setTransactions((prev) => [newTransaction, ...prev])
-      console.log(`Transaction of type ${transaction.type} recorded successfully with ID: ${transactionId}`)
+      const { error } = await supabase.from("share_transactions").insert([newTransaction])
 
-      return newTransaction
-    } catch (error) {
-      console.error("Error adding transaction:", error)
-      throw error
+      if (error) throw error
+
+      // Refresh transactions to get the latest data
+      await refreshTransactions()
+    } catch (err: any) {
+      console.error("Error adding transaction:", err)
+      setError(err.message)
     }
   }
 
-  // Get recent transactions
-  const getRecentTransactions = (count: number) => {
-    return transactions.slice(0, count)
-  }
-
-  // Get transactions by type
-  const getTransactionsByType = (type: TransactionType | "All" | "Earnings" | "Outflows") => {
-    if (type === "All") {
+  // Filter transactions by type
+  const getTransactionsByType = (type?: string) => {
+    if (!type || type === "All") {
       return transactions
     }
 
-    if (type === "Earnings") {
-      return transactions.filter((t) => {
-        const transactionType = t.type || ""
-        return (
-          transactionType.includes("IN-PWT RECEIPT") ||
-          transactionType.includes("REFERRAL CLAIM") ||
-          transactionType.includes("BUY-AFT RECEIPT") ||
-          transactionType.includes("IN-AFT GIFT") ||
-          transactionType === "CLAIM" ||
-          transactionType === "AFT-TopUP"
-        )
-      })
+    // Filter by category
+    const categoryMap: Record<string, string[]> = {
+      Earnings: ["referral_bonus", "claim", "vesting"],
+      Outflows: ["cashout_request", "buy", "sell"],
+      Trading: ["buy", "sell", "convert"],
+      Vesting: ["vesting", "claim"],
     }
 
-    if (type === "Outflows") {
-      return transactions.filter((t) => {
-        const transactionType = t.type || ""
-        return (
-          transactionType.includes("OUT-TRANSFER") ||
-          transactionType.includes("OUT-AFT GIFT") ||
-          transactionType.includes("ACTIVATE FEE") ||
-          transactionType === "VESTING"
-        )
-      })
-    }
-
-    // For specific transaction types, handle partial matches for REFERRAL CLAIM with levels
-    if (type === "REFERRAL CLAIM") {
-      return transactions.filter((t) => {
-        const transactionType = t.type || ""
-        return transactionType.includes("REFERRAL CLAIM")
-      })
-    }
-
-    // For other specific types, do an exact match
-    return transactions.filter((t) => t.type === type)
+    const typesToShow = categoryMap[type] || [type.toLowerCase()]
+    return transactions.filter((tx) => typesToShow.includes(tx.transaction_type.toLowerCase()))
   }
 
-  // Get cashout transactions
-  const getCashoutTransactions = () => {
-    return transactions.filter((t) => ["OUT-TRANSFER", "OUT-AFT GIFT"].includes(t.type))
-  }
-
-  // Context value
-  const value = {
-    transactions,
-    addTransaction,
-    getRecentTransactions,
-    getTransactionsByType,
-    getCashoutTransactions,
-    refreshTransactions,
-    loading,
-  }
-
-  return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>
+  return (
+    <TransactionContext.Provider
+      value={{
+        transactions,
+        getTransactionsByType,
+        addTransaction,
+        refreshTransactions,
+        loading,
+        error,
+      }}
+    >
+      {children}
+    </TransactionContext.Provider>
+  )
 }
 
-// Custom hook to use the transaction context
 export function useTransactions() {
   const context = useContext(TransactionContext)
   if (context === undefined) {
@@ -290,3 +145,6 @@ export function useTransactions() {
   }
   return context
 }
+
+// Export types for backward compatibility
+export type TransactionType = "All" | "Earnings" | "Outflows" | "Trading" | "Vesting"
