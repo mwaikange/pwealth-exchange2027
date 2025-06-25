@@ -50,20 +50,6 @@ const getSlotLetter = (index: number) => {
   return letters[index] || "X"
 }
 
-const getTotalAccountValue = (
-  metrics: any,
-  holdWalletPreHold: number,
-  holdWalletPostHold: number,
-  buyWalletBalance: number,
-  cashoutWalletBalance: number,
-) => {
-  const sharePrice = metrics.currentPrice || 108.2
-  const totalHoldShares = holdWalletPreHold + holdWalletPostHold
-  const totalHoldValue = totalHoldShares * sharePrice
-  const totalCashValue = buyWalletBalance + cashoutWalletBalance
-  return totalHoldValue + totalCashValue
-}
-
 export function OverviewComponent() {
   const { user } = useAuth()
   const {
@@ -151,28 +137,28 @@ export function OverviewComponent() {
   // Metric cards with real data
   const metricCards: MetricCard[] = [
     {
-      title: "Total Account Value",
-      value: `N$ ${getTotalAccountValue(metrics, holdWalletPreHold, holdWalletPostHold, buyWalletBalance, cashoutWalletBalance).toFixed(2)}`,
-      color: "green",
-      loading: loading || walletLoading,
-    },
-    {
       title: "Total Cashouts to Date",
       value: `N$ ${metrics.totalCashouts.toFixed(2)}`,
-      color: "blue",
+      color: "green",
       loading: loading || transactionsLoading,
     },
     {
       title: "Total Shares Matched",
       value: metrics.totalSharesMatched.toString(),
-      color: "yellow",
+      color: "blue",
       loading: loading,
     },
     {
       title: "Referral Bonus",
       value: metrics.referralBonus.toString(),
-      color: "purple",
+      color: "yellow",
       loading: loading || transactionsLoading,
+    },
+    {
+      title: "Total Locked Shares",
+      value: getTotalVestingInProgress().toString(),
+      color: "purple",
+      loading: vestingLoading,
     },
     {
       title: "Share Price",
@@ -226,11 +212,8 @@ export function OverviewComponent() {
               ) : (
                 <div className="text-2xl font-bold">{card.value}</div>
               )}
-              {card.color === "green" && card.title === "Total Account Value" && (
-                <div className="text-xs opacity-75 mt-1">NAD</div>
-              )}
-              {card.color === "blue" && <div className="text-xs opacity-75 mt-1">NAD</div>}
-              {(card.color === "yellow" || card.color === "purple") && (
+              {card.color === "green" && <div className="text-xs opacity-75 mt-1">NAD</div>}
+              {(card.color === "blue" || card.color === "yellow" || card.color === "purple") && (
                 <div className="text-xs opacity-75 mt-1">shares</div>
               )}
             </CardContent>
