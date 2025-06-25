@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useWallet, formatCurrency } from "@/contexts/wallet-context"
 import { useExchange } from "@/contexts/exchange-context"
-import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2 } from "lucide-react"
+import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2, Clock, Ban } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function ExchangePage() {
@@ -33,11 +33,13 @@ export default function ExchangePage() {
     placeBuyOrder,
     placeSellOrder,
     currentSharePrice,
+    tradingStatus,
     loading: exchangeLoading,
     error: exchangeError,
   } = useExchange()
 
   const loading = walletLoading || exchangeLoading
+  const tradingAllowed = tradingStatus?.trading_allowed ?? false
 
   const handleBuyOrder = async () => {
     const amount = Number.parseFloat(buyAmount)
@@ -81,7 +83,6 @@ export default function ExchangePage() {
       return
     }
 
-    // Mock cashout logic - would integrate with real cashout system
     setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
     setCashoutAmount("")
   }
@@ -166,13 +167,32 @@ export default function ExchangePage() {
 
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-      {/* Alert Banner */}
-      <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
-        <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-        <AlertDescription className="text-green-800 dark:text-green-100">
-          Share Exchange is now live! Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
-        </AlertDescription>
-      </Alert>
+      {/* Trading Status Banner */}
+      {!tradingAllowed ? (
+        <Alert className="bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100">
+          <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
+          <AlertDescription className="text-red-800 dark:text-red-100">
+            <strong>Trading Closed:</strong> {tradingStatus?.reason}
+            {tradingStatus?.next_trading_window && (
+              <span className="block mt-1">
+                Next trading window: {new Date(tradingStatus.next_trading_window).toLocaleString()}
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
+          <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <AlertDescription className="text-green-800 dark:text-green-100">
+            <strong>Trading Open:</strong> Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
+            {tradingStatus?.current_time && (
+              <span className="block mt-1 text-sm">
+                Market time: {new Date(tradingStatus.current_time).toLocaleString()}
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {message && (
         <Alert variant={message.type === "error" ? "destructive" : "default"}>
@@ -185,11 +205,12 @@ export default function ExchangePage() {
         <div className="col-span-1">
           <Card className="bg-slate-800 border-slate-700 text-slate-100">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-300">Current Share Price</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-300">Weekly Share Price</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-400">{formatCurrency(currentSharePrice)}</div>
               <p className="text-xs text-slate-400 mt-1">per share</p>
+              {!tradingAllowed && <div className="mt-2 text-xs text-red-400">Trading closed</div>}
             </CardContent>
           </Card>
         </div>
@@ -212,17 +233,17 @@ export default function ExchangePage() {
                   placeholder="Amount (N$)"
                   value={buyAmount}
                   onChange={(e) => setBuyAmount(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || !tradingAllowed}
                   min="0"
                   step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleBuyOrder}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={loading || !buyAmount || Number.parseFloat(buyAmount) <= 0}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600"
+                  disabled={loading || !tradingAllowed || !buyAmount || Number.parseFloat(buyAmount) <= 0}
                 >
-                  {loading ? "Processing..." : "Buy Shares"}
+                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Buy Shares"}
                 </Button>
               </div>
             </CardContent>
@@ -237,24 +258,24 @@ export default function ExchangePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="text-lg font-semibold text-slate-100">{holdWalletPostHold.toFixed(2)} shares</div>
+              <div className="text-lg font-semibold text-slate-100">{holdWalletPostHold.toFixed(4)} shares</div>
               <div className="space-y-2">
                 <Input
                   type="number"
                   placeholder="Shares to sell"
                   value={sellShares}
                   onChange={(e) => setSellShares(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || !tradingAllowed}
                   min="0"
-                  step="0.01"
+                  step="0.0001"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleSellOrder}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white"
-                  disabled={loading || !sellShares || Number.parseFloat(sellShares) <= 0}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600"
+                  disabled={loading || !tradingAllowed || !sellShares || Number.parseFloat(sellShares) <= 0}
                 >
-                  {loading ? "Processing..." : "Sell Shares"}
+                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Sell Shares"}
                 </Button>
               </div>
             </CardContent>
@@ -315,14 +336,12 @@ export default function ExchangePage() {
                   >
                     <div className="flex items-center space-x-2">
                       <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                      <span className="text-xs text-slate-400">
-                        ({Math.floor(order.total_amount / order.price_per_share)} shares)
-                      </span>
+                      <span className="text-xs text-slate-400">({order.shares_requested.toFixed(4)} shares)</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       {getStatusBadge(order, false)}
                       <span className="text-xs text-slate-400">
-                        {Math.round((order.filled_amount / order.total_amount) * 100)}%
+                        {Math.round((order.shares_filled / order.shares_requested) * 100)}%
                       </span>
                     </div>
                   </div>
@@ -350,13 +369,13 @@ export default function ExchangePage() {
                     className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
                   >
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{order.shares} shares</span>
+                      <span className="text-sm font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
                       <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       {getStatusBadge(order, false)}
                       <span className="text-xs text-slate-400">
-                        {order.filled_shares}/{order.shares}
+                        {order.filled_shares.toFixed(4)}/{order.shares.toFixed(4)}
                       </span>
                     </div>
                   </div>
@@ -387,17 +406,17 @@ export default function ExchangePage() {
                       <div>
                         <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
                         <span className="text-sm text-slate-400 ml-2">
-                          ({Math.floor(order.total_amount / order.price_per_share)} shares)
+                          ({order.shares_requested.toFixed(4)} shares)
                         </span>
                       </div>
                       {getStatusBadge(order, true)}
                     </div>
                     <Progress
-                      value={(order.filled_amount / order.total_amount) * 100}
+                      value={(order.shares_filled / order.shares_requested) * 100}
                       className="h-2 [&>div]:bg-yellow-500"
                     />
                     <div className="text-xs text-slate-400 mt-1">
-                      Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
+                      Filled: {order.shares_filled.toFixed(4)} / {order.shares_requested.toFixed(4)} shares
                     </div>
                   </div>
                 ))
@@ -422,14 +441,14 @@ export default function ExchangePage() {
                   <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <span className="font-medium text-slate-100">{order.shares} shares</span>
+                        <span className="font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
                         <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
                       </div>
                       {getStatusBadge(order, true)}
                     </div>
                     <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
                     <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.filled_shares} / {order.shares} shares
+                      Filled: {order.filled_shares.toFixed(4)} / {order.shares.toFixed(4)} shares
                     </div>
                   </div>
                 ))

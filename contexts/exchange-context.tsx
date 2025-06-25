@@ -36,6 +36,14 @@ export interface BuyOrder {
   shares_filled: number
 }
 
+interface TradingStatus {
+  trading_allowed: boolean
+  reason?: string
+  current_time: string
+  next_trading_window?: string
+  weekly_price?: number
+}
+
 interface ExchangeContextType {
   /* GLOBAL MARKET ORDERS (all users) */
   marketSellOrders: SellOrder[]
@@ -52,6 +60,7 @@ interface ExchangeContextType {
   /* market data  */
   currentSharePrice: number
   lastPriceUpdate: string | null
+  tradingStatus: TradingStatus | null
 
   /* ui state */
   loading: boolean
@@ -74,6 +83,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
   const [currentSharePrice, setCurrentSharePrice] = useState(100)
   const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null)
+  const [tradingStatus, setTradingStatus] = useState<TradingStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -87,9 +97,46 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   } = useWallet()
 
   /* ---------- queries ---------- */
+  const fetchTradingStatus = async () => {
+    try {
+      const { data, error } = await supabase.rpc("is_trading_allowed")
+
+      if (error) {
+        console.error("Error fetching trading status:", error)
+        return
+      }
+
+      setTradingStatus(data)
+
+      // Update current price from weekly price if available
+      if (data.weekly_price) {
+        setCurrentSharePrice(data.weekly_price)
+        setLastPriceUpdate(data.current_time)
+      }
+
+      console.log("🕐 Trading status:", data)
+    } catch (err) {
+      console.error("Error fetching trading status:", err)
+    }
+  }
+
   const fetchSharePrice = async () => {
     try {
-      // ✅ Use current_pricing_info table instead of share_supply
+      // First try to get weekly price
+      const { data: weeklyData, error: weeklyError } = await supabase
+        .from("weekly_price")
+        .select("price, week_start_date")
+        .order("week_start_date", { ascending: false })
+        .limit(1)
+
+      if (!weeklyError && weeklyData && weeklyData.length > 0) {
+        setCurrentSharePrice(Number(weeklyData[0].price))
+        setLastPriceUpdate(weeklyData[0].week_start_date)
+        console.log("📈 Weekly share price:", weeklyData[0].price, "for week:", weeklyData[0].week_start_date)
+        return
+      }
+
+      // Fallback to current_pricing_info
       const { data, error } = await supabase
         .from("current_pricing_info")
         .select("current_price, week_start, latest_hodl_date")
@@ -97,24 +144,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         .limit(1)
 
       if (error) {
-        console.error("Error fetching price from current_pricing_info:", error)
-        // Fallback to RPC function
-        const rpcResult = await supabase.rpc("get_current_share_price")
-        if (rpcResult.data) {
-          setCurrentSharePrice(Number(rpcResult.data))
-        }
+        console.error("Error fetching price:", error)
+        setCurrentSharePrice(100)
         return
       }
 
-      // ✅ Handle array response (data is an array, not single object)
       if (data && data.length > 0) {
-        const latestPrice = data[0] // Get first (most recent) row
+        const latestPrice = data[0]
         setCurrentSharePrice(Number(latestPrice.current_price) || 100)
         setLastPriceUpdate(latestPrice.latest_hodl_date || latestPrice.week_start)
-        console.log("📈 Current share price:", latestPrice.current_price, "week:", latestPrice.week_start)
       } else {
-        // No data found, use fallback
-        console.log("No price data found, using fallback")
         setCurrentSharePrice(100)
       }
     } catch (err) {
@@ -134,18 +173,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       console.log("🔄 Refreshing orders...")
 
-      // ✅ GLOBAL MARKET ORDERS - Include partial orders that still need matching
+      // ✅ GLOBAL MARKET ORDERS - Only show active orders
       const [marketSellResult, marketBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
           .select("*")
-          .in("status", ["available", "partial"]) // Only show orders that can still be matched
-          .order("created_at", { ascending: true }), // FIFO order for matching
+          .in("status", ["available", "partial"])
+          .order("price_per_share", { ascending: true }) // Lowest price first
+          .order("created_at", { ascending: true }), // Oldest first
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial"]) // Only show orders that still need filling
-          .order("created_at", { ascending: true }), // FIFO order for matching
+          .in("status", ["pending", "partial"])
+          .order("price_per_share", { ascending: false }) // Highest price first
+          .order("created_at", { ascending: true }), // Oldest first
       ])
 
       // USER-SPECIFIC orders - Show all user orders including completed ones
@@ -182,7 +223,6 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
-      // ✅ Map market buy orders (ALL USERS - with all fields)
       const mappedMarketBuy = (marketBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
@@ -207,7 +247,6 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         shares_remaining: r.shares_remaining || 0,
       }))
 
-      // Map user buy orders (CURRENT USER ONLY - with all fields)
       const mappedUserBuy = (userBuyResult.data || []).map((r: any) => ({
         id: r.id,
         user_uuid: r.user_uuid,
@@ -226,12 +265,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setUserSellOrders(mappedUserSell)
       setUserBuyOrders(mappedUserBuy)
 
-      // ✅ DEBUG: Log the actual data
-      console.log("✅ Orders updated:")
-      console.log("  Market Sell:", mappedMarketSell.length, mappedMarketSell)
-      console.log("  Market Buy:", mappedMarketBuy.length, mappedMarketBuy)
-      console.log("  User Sell:", mappedUserSell.length)
-      console.log("  User Buy:", mappedUserBuy.length)
+      console.log("✅ Orders updated")
     } catch (err: any) {
       console.error("❌ Refresh orders error", err)
       setError(err.message)
@@ -240,27 +274,28 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  /* ---------- actions with IMMEDIATE UI updates ---------- */
+  /* ---------- actions ---------- */
   const placeBuyOrder = useCallback(
     async (amount: number) => {
       if (!user) return { success: false, message: "Not authenticated" }
+      if (!tradingStatus?.trading_allowed) {
+        return { success: false, message: tradingStatus?.reason || "Trading not allowed" }
+      }
       if (amount <= 0) return { success: false, message: "Invalid amount" }
       if (amount < 50) return { success: false, message: "Minimum purchase is N$50" }
       if (amount > buyWalletBalance) return { success: false, message: "Insufficient Buy-wallet funds" }
 
       try {
-        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        // Immediate UI update (optimistic)
         console.log("💰 Immediately deducting N$", amount, "from buy wallet")
         await updateBuyWallet(amount, "subtract")
 
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
-        // ✅ Place order with 30-second delay before matching
-        const { data, error } = await supabase.rpc("place_buy_order_with_delay", {
+        const { data, error } = await supabase.rpc("place_buy_order", {
           p_user_uuid: user.id,
           p_price_per_share: currentSharePrice,
           p_total_amount: amount,
-          p_delay_seconds: 30,
         })
 
         console.log("📥 Buy order result:", { data, error })
@@ -272,31 +307,39 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Refresh orders to show new order
+        // Trigger order matching
+        console.log("🔄 Triggering order matching...")
+        const matchResult = await supabase.rpc("match_orders")
+        console.log("🔄 Match result:", matchResult)
+
+        // Refresh orders and balances
         await refreshOrders()
         await refreshWalletBalances()
 
         return {
           success: true,
-          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares. Will be matched in 30 seconds.`,
+          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(4)} shares`,
         }
       } catch (e: any) {
         console.error("❌ Buy order error", e)
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, buyWalletBalance, updateBuyWallet, refreshWalletBalances],
+    [user, currentSharePrice, buyWalletBalance, tradingStatus, updateBuyWallet, refreshWalletBalances],
   )
 
   const placeSellOrder = useCallback(
     async (shares: number) => {
       if (!user) return { success: false, message: "Not authenticated" }
+      if (!tradingStatus?.trading_allowed) {
+        return { success: false, message: tradingStatus?.reason || "Trading not allowed" }
+      }
       if (shares <= 0) return { success: false, message: "Invalid amount" }
-      if (shares < 0.5) return { success: false, message: "Minimum sell is 0.5 shares" }
+      if (shares < 0.0001) return { success: false, message: "Minimum sell is 0.0001 shares" }
       if (shares > holdWalletPostHold) return { success: false, message: "Insufficient Post-hold shares" }
 
       try {
-        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        // Immediate UI update (optimistic)
         console.log("📈 Immediately deducting", shares, "shares from post-hold wallet")
         await updateHoldWallet(shares, "subtract", "post")
 
@@ -317,36 +360,42 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw error
         }
 
-        // Trigger immediate order matching for sell orders
+        // Trigger order matching
         console.log("🔄 Triggering order matching...")
         const matchResult = await supabase.rpc("match_orders")
         console.log("🔄 Match result:", matchResult)
 
-        // Refresh orders to show new order and any matches
+        // Refresh orders and balances
         await refreshOrders()
         await refreshWalletBalances()
 
         return {
           success: true,
-          message: `Sell order placed for ${shares} shares`,
+          message: `Sell order placed for ${shares.toFixed(4)} shares`,
         }
       } catch (e: any) {
         console.error("❌ Sell order error", e)
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet, refreshWalletBalances],
+    [user, currentSharePrice, holdWalletPostHold, tradingStatus, updateHoldWallet, refreshWalletBalances],
   )
 
-  /* ---------- Auto-refresh price every hour ---------- */
+  /* ---------- Auto-refresh ---------- */
   useEffect(() => {
+    fetchTradingStatus()
     fetchSharePrice()
     refreshOrders()
 
-    // Set up price refresh interval - every hour (3600000 ms)
-    const priceInterval = setInterval(fetchSharePrice, 3600000) // 1 hour
+    // Refresh trading status every minute
+    const statusInterval = setInterval(fetchTradingStatus, 60000)
+    // Refresh price every 5 minutes
+    const priceInterval = setInterval(fetchSharePrice, 300000)
 
-    return () => clearInterval(priceInterval)
+    return () => {
+      clearInterval(statusInterval)
+      clearInterval(priceInterval)
+    }
   }, [user, session])
 
   /* ---------- context value ---------- */
@@ -363,6 +412,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     placeSellOrder,
     currentSharePrice,
     lastPriceUpdate,
+    tradingStatus,
     loading,
     error,
     refreshOrders,
