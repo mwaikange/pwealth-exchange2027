@@ -1,75 +1,33 @@
 import { createClient } from "@supabase/supabase-js"
+import { env, isSupabaseConfigured } from "./env"
 
-// Use the actual environment variables from the workspace
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_UR ||
-  process.env.SUPABASE_URL ||
-  "https://vqdfhgjhptklwogjadxy.supabase.co"
+// Client-side Supabase client
+export const supabase = isSupabaseConfigured()
+  ? createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  : null
 
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
-
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KE || ""
-
-// Validate required variables
-if (!supabaseUrl || supabaseUrl.trim() === "") {
-  console.error("Missing Supabase URL. Check environment variables.")
-  throw new Error("Supabase URL is required")
-}
-
-if (!supabaseAnonKey || supabaseAnonKey.trim() === "") {
-  console.error("Missing Supabase Anon Key. Check environment variables.")
-  throw new Error("Supabase Anon Key is required")
-}
-
-console.log("Supabase initialized with:", {
-  url: supabaseUrl,
-  anonKeyPresent: !!supabaseAnonKey,
-  serviceKeyPresent: !!supabaseServiceKey,
-})
-
-// Create client instance
-let supabaseInstance: ReturnType<typeof createClient> | null = null
-
-export const getSupabaseClient = () => {
-  if (typeof window !== "undefined") {
-    // Client-side: maintain singleton
-    if (!supabaseInstance) {
-      console.log("Creating NEW Supabase client instance (client-side)")
-      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+// Server-side Supabase client with service role
+export const supabaseAdmin =
+  isSupabaseConfigured() && env.SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
         auth: {
-          persistSession: true,
-          storageKey: "supabase_auth_token",
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
+          autoRefreshToken: false,
+          persistSession: false,
         },
       })
-    }
-    return supabaseInstance
+    : null
+
+// Helper function to get a configured client or throw an error
+export function getSupabaseClient() {
+  if (!supabase) {
+    throw new Error("Supabase is not configured. Please check your environment variables.")
   }
-
-  // Server-side: always create new instance
-  console.log("Creating NEW Supabase client instance (server-side)")
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-    },
-  })
+  return supabase
 }
 
-// Export the client
-export const supabase = getSupabaseClient()
-
-// Create server-side client (for server components and server actions)
-export const createServerSupabaseClient = () => {
-  console.log("Creating NEW Supabase server client instance")
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
+export function getSupabaseAdminClient() {
+  if (!supabaseAdmin) {
+    throw new Error("Supabase admin client is not configured. Please check your environment variables.")
+  }
+  return supabaseAdmin
 }
-
-export default supabase
