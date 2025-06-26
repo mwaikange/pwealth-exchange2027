@@ -1,35 +1,43 @@
-import { z } from "zod"
-
-const envSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-  SUPABASE_JWT_SECRET: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
-  NEXT_PUBLIC_SITE_URL: z.string().url().optional(),
-})
-
-// Create a safe environment object with fallbacks
-function createEnv() {
-  const parsed = envSchema.safeParse(process.env)
-
-  if (!parsed.success) {
-    console.warn("Environment validation failed, using fallbacks")
-  }
-
-  return {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-    SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET || "",
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-  }
+// Client-side environment variables (available in browser)
+export const clientEnv = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+  NEXT_PUBLIC_SITE_URL:
+    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000",
 }
 
-export const env = createEnv()
+// Server-side environment variables (only available on server)
+export const serverEnv = {
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET || "",
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+}
 
-// Helper function to check if Supabase is configured
+// Combined environment for backwards compatibility
+export const env = {
+  ...clientEnv,
+  ...serverEnv,
+}
+
+// Validation functions
+export function validateClientEnv() {
+  return !!(clientEnv.NEXT_PUBLIC_SUPABASE_URL && clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+}
+
+export function validateServerEnv() {
+  return !!serverEnv.SUPABASE_SERVICE_ROLE_KEY
+}
+
 export function isSupabaseConfigured() {
-  return !!(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  return validateClientEnv()
+}
+
+// Log configuration status (only in development)
+if (process.env.NODE_ENV === "development") {
+  console.log("🔧 Environment Configuration:", {
+    supabaseUrl: !!clientEnv.NEXT_PUBLIC_SUPABASE_URL,
+    anonKey: !!clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    serviceKey: !!serverEnv.SUPABASE_SERVICE_ROLE_KEY,
+    siteUrl: clientEnv.NEXT_PUBLIC_SITE_URL,
+  })
 }

@@ -7,10 +7,11 @@ import { WalletProvider } from "@/contexts/wallet-context"
 import { VestingProvider } from "@/contexts/vesting-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { ExchangeProvider } from "@/contexts/exchange-context"
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
+  title: "Peer Wealth Token - Referral Investment Platform",
+  description: "Join the peer-to-peer wealth building community with referral rewards and investment opportunities",
   generator: "v0.dev",
 }
 
@@ -21,13 +22,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body className="min-h-screen bg-background font-sans antialiased">
         <AuthProvider>
           <WalletProvider>
             <PriceProvider>
               <VestingProvider>
                 <TransactionProvider>
-                  <ExchangeProvider>{children}</ExchangeProvider>
+                  <ExchangeProvider>
+                    {children}
+                    <Toaster />
+                  </ExchangeProvider>
                 </TransactionProvider>
               </VestingProvider>
             </PriceProvider>
