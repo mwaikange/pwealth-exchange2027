@@ -10,13 +10,11 @@ const AuthContext = createContext<{
   session: any
   loading: boolean
   signOut: () => Promise<void>
-  refreshSession: () => Promise<void>
 }>({
   user: null,
   session: null,
   loading: true,
   signOut: async () => {},
-  refreshSession: async () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -25,54 +23,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  const refreshSession = async () => {
-    try {
-      console.log("🔄 Refreshing session...")
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession()
-
-      if (error) {
-        console.error("❌ Session refresh error:", error)
-        return
-      }
-
-      if (session) {
-        console.log("✅ Session refreshed:", session.user.email)
-        setSession(session)
-        setUser(session.user)
-      } else {
-        console.log("⚠️ No session found during refresh")
-        setSession(null)
-        setUser(null)
-      }
-    } catch (error) {
-      console.error("❌ Error refreshing session:", error)
-    }
-  }
-
   useEffect(() => {
+    // Update the loadUserSession function to handle the case where user data might not exist yet
     const loadUserSession = async () => {
       try {
         setLoading(true)
-        console.log("🔐 AuthProvider: Loading user session...")
+        console.log("[CLIENT] AuthProvider: Loading user session...")
+
+        // Add a small delay to ensure Supabase is fully initialized
+        await new Promise((resolve) => setTimeout(resolve, 500))
 
         // Get the initial session
         const {
           data: { session },
-          error,
         } = await supabase.auth.getSession()
 
-        if (error) {
-          console.error("❌ Session error:", error)
-          setSession(null)
-          setUser(null)
-          setLoading(false)
-          return
-        }
-
-        console.log("🔐 Initial session check:", session ? `✅ Found: ${session.user.email}` : "❌ No session")
+        console.log("[CLIENT] AuthProvider: Initial session check:", session ? "Session found" : "No session")
 
         if (session) {
           setSession(session)
@@ -86,32 +52,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const {
           data: { subscription },
         } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-          console.log("🔐 Auth state changed:", event)
+          console.log("[CLIENT] Auth state changed:", event)
 
           if (newSession) {
-            console.log("✅ New session detected:", newSession.user.email)
+            console.log("[CLIENT] AuthProvider: New session detected")
             setSession(newSession)
             setUser(newSession.user)
           } else {
-            console.log("❌ No session in auth state change")
+            console.log("[CLIENT] AuthProvider: No session in auth state change")
             setSession(null)
             setUser(null)
           }
 
           // Only redirect on sign_out event
           if (event === "SIGNED_OUT") {
-            console.log("🚪 User signed out, redirecting to login")
             router.push("/login")
           }
         })
-
-        setLoading(false)
 
         return () => {
           subscription.unsubscribe()
         }
       } catch (error) {
-        console.error("❌ Error loading auth session:", error)
+        console.error("Error loading auth session:", error)
+      } finally {
         setLoading(false)
       }
     }
@@ -121,15 +85,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log("🚪 Signing out...")
       await supabase.auth.signOut()
       router.push("/login")
     } catch (error) {
-      console.error("❌ Error signing out:", error)
+      console.error("Error signing out:", error)
     }
   }
 
-  const value = { user, session, loading, signOut, refreshSession }
+  const value = { user, session, loading, signOut }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

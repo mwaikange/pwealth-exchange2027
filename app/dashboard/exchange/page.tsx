@@ -1,151 +1,177 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { useWallet } from "@/contexts/wallet-context"
+import { useExchange } from "@/contexts/exchange-context"
+import { useTransactions } from "@/contexts/transaction-context"
+import { formatCurrency, formatShares } from "@/lib/utils"
+import { AlertCircle, TrendingUp, TrendingDown, Loader2, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { useWallet, formatCurrency } from "@/contexts/wallet-context"
-import { useExchange } from "@/contexts/exchange-context"
-import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2, Clock, Ban } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { toast } from "@/hooks/use-toast"
 
 export default function ExchangePage() {
   const [buyAmount, setBuyAmount] = useState("")
-  const [sellShares, setSellShares] = useState("")
-  const [cashoutAmount, setCashoutAmount] = useState("")
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [sellAmount, setSellAmount] = useState("")
+  const [buyPrice, setBuyPrice] = useState("")
+  const [sellPrice, setSellPrice] = useState("")
+  const [isProcessing, setIsProcessing] = useState(false)
 
+  const { buyWalletBalance, holdWalletPostHold, loading: walletLoading, error: walletError } = useWallet()
   const {
-    buyWalletBalance,
-    holdWalletPostHold,
-    cashoutWalletBalance,
-    loading: walletLoading,
-    error: walletError,
-  } = useWallet()
-
-  const {
-    marketSellOrders,
-    marketBuyOrders,
-    userSellOrders,
-    userBuyOrders,
+    currentPrice,
+    buyOrders,
+    sellOrders,
+    userOrders,
     placeBuyOrder,
     placeSellOrder,
-    currentSharePrice,
-    tradingStatus,
+    cancelOrder,
     loading: exchangeLoading,
     error: exchangeError,
+    refreshExchangeData,
   } = useExchange()
+  const { addTransaction } = useTransactions()
 
-  const loading = walletLoading || exchangeLoading
-  const tradingAllowed = tradingStatus?.trading_allowed ?? false
+  // Auto-refresh exchange data every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshExchangeData()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [refreshExchangeData])
 
   const handleBuyOrder = async () => {
-    const amount = Number.parseFloat(buyAmount)
-    if (isNaN(amount) || amount <= 0) {
-      setMessage({ type: "error", text: "Please enter a valid positive amount" })
+    if (!buyAmount || !buyPrice) {
+      toast({
+        title: "Invalid Input",
+        description: "Please enter both amount and price",
+        variant: "destructive",
+      })
       return
     }
 
-    const result = await placeBuyOrder(amount)
-    setMessage({ type: result.success ? "success" : "error", text: result.message })
+    const shares = Number(buyAmount)
+    const price = Number(buyPrice)
+    const totalCost = shares * price
 
-    if (result.success) {
+    if (totalCost > buyWalletBalance) {
+      toast({
+        title: "Insufficient Funds",
+        description: `You need ${formatCurrency(totalCost)} but only have ${formatCurrency(buyWalletBalance)}`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsProcessing(true)
+      await placeBuyOrder(shares, price)
+
+      // Record transaction
+      await addTransaction({
+        transaction_type: "buy_order",
+        shares: shares,
+        total_amount: totalCost,
+        from_wallet: "buy_wallet",
+        to_wallet: "exchange",
+        status: "pending",
+        description: `Buy order: ${formatShares(shares)} shares at ${formatCurrency(price)} each`,
+      })
+
+      toast({
+        title: "Buy Order Placed",
+        description: `Order for ${formatShares(shares)} shares at ${formatCurrency(price)} each has been placed`,
+      })
+
       setBuyAmount("")
+      setBuyPrice("")
+    } catch (error: any) {
+      toast({
+        title: "Order Failed",
+        description: error.message || "Failed to place buy order",
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
     }
   }
 
   const handleSellOrder = async () => {
-    const shares = Number.parseFloat(sellShares)
-    if (isNaN(shares) || shares <= 0) {
-      setMessage({ type: "error", text: "Please enter a valid positive number of shares" })
+    if (!sellAmount || !sellPrice) {
+      toast({
+        title: "Invalid Input",
+        description: "Please enter both amount and price",
+        variant: "destructive",
+      })
       return
     }
 
-    const result = await placeSellOrder(shares)
-    setMessage({ type: result.success ? "success" : "error", text: result.message })
+    const shares = Number(sellAmount)
+    const price = Number(sellPrice)
 
-    if (result.success) {
-      setSellShares("")
-    }
-  }
-
-  const handleCashout = async () => {
-    const amount = Number.parseFloat(cashoutAmount)
-    if (isNaN(amount) || amount <= 0) {
-      setMessage({ type: "error", text: "Please enter a valid positive cashout amount" })
+    if (shares > holdWalletPostHold) {
+      toast({
+        title: "Insufficient Shares",
+        description: `You only have ${formatShares(holdWalletPostHold)} shares available to sell`,
+        variant: "destructive",
+      })
       return
     }
 
-    if (amount > cashoutWalletBalance) {
-      setMessage({ type: "error", text: "Insufficient cashout balance" })
-      return
-    }
+    try {
+      setIsProcessing(true)
+      await placeSellOrder(shares, price)
 
-    setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
-    setCashoutAmount("")
+      // Record transaction
+      await addTransaction({
+        transaction_type: "sell_order",
+        shares: shares,
+        total_amount: shares * price,
+        from_wallet: "hold_post",
+        to_wallet: "exchange",
+        status: "pending",
+        description: `Sell order: ${formatShares(shares)} shares at ${formatCurrency(price)} each`,
+      })
+
+      toast({
+        title: "Sell Order Placed",
+        description: `Order for ${formatShares(shares)} shares at ${formatCurrency(price)} each has been placed`,
+      })
+
+      setSellAmount("")
+      setSellPrice("")
+    } catch (error: any) {
+      toast({
+        title: "Order Failed",
+        description: error.message || "Failed to place sell order",
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
-  // Helper function to determine correct status based on fill percentage
-  const getCorrectStatus = (order: any, isUserOrder = false) => {
-    let fillPercentage = 0
-
-    if ("total_amount" in order) {
-      // Buy order
-      fillPercentage = (order.filled_amount / order.total_amount) * 100
-    } else {
-      // Sell order
-      fillPercentage = (order.filled_shares / order.shares) * 100
+  const handleCancelOrder = async (orderId: string, orderType: "buy" | "sell") => {
+    try {
+      await cancelOrder(orderId, orderType)
+      toast({
+        title: "Order Cancelled",
+        description: "Your order has been cancelled successfully",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Cancellation Failed",
+        description: error.message || "Failed to cancel order",
+        variant: "destructive",
+      })
     }
-
-    if (fillPercentage === 0) {
-      return "total_amount" in order ? "pending" : "available"
-    } else if (fillPercentage > 0 && fillPercentage < 100) {
-      return "partial"
-    } else if (fillPercentage >= 100) {
-      return isUserOrder ? "completed" : "filled"
-    }
-
-    return order.status // fallback to original status
   }
 
-  const getStatusBadge = (order: any, isUserOrder = false) => {
-    const actualStatus = getCorrectStatus(order, isUserOrder)
-
-    const variants = {
-      pending: "secondary",
-      partial: "outline",
-      completed: "default",
-      filled: "default",
-      available: "default",
-      expired: "destructive",
-      cancelled: "destructive",
-    } as const
-
-    const colors = {
-      pending: "bg-yellow-500",
-      partial: "bg-orange-500",
-      completed: "bg-green-500",
-      filled: "bg-blue-500",
-      available: "bg-green-500",
-      expired: "bg-red-500",
-      cancelled: "bg-gray-500",
-    } as const
-
+  if (walletLoading || exchangeLoading) {
     return (
-      <Badge
-        variant={variants[actualStatus as keyof typeof variants] || "secondary"}
-        className={colors[actualStatus as keyof typeof colors] || "bg-gray-500"}
-      >
-        {actualStatus.replace("_", " ").toUpperCase()}
-      </Badge>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+      <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-white" />
           <span className="ml-2 text-white">Loading exchange data...</span>
@@ -156,300 +182,289 @@ export default function ExchangePage() {
 
   if (walletError || exchangeError) {
     return (
-      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>Error loading data: {walletError || exchangeError}</AlertDescription>
-        </Alert>
+      <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+        <div className="px-6 py-4">
+          <div className="bg-red-600 text-white p-4 rounded-lg flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2" />
+            <div>
+              <h3 className="font-bold">Error Loading Exchange</h3>
+              <p>{walletError || exchangeError}</p>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-      {/* Trading Status Banner */}
-      {!tradingAllowed ? (
-        <Alert className="bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100">
-          <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
-          <AlertDescription className="text-red-800 dark:text-red-100">
-            <strong>Trading Closed:</strong> {tradingStatus?.reason}
-            {tradingStatus?.next_trading_window && (
-              <span className="block mt-1">
-                Next trading window: {new Date(tradingStatus.next_trading_window).toLocaleString()}
-              </span>
-            )}
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
-          <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <AlertDescription className="text-green-800 dark:text-green-100">
-            <strong>Trading Open:</strong> Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
-            {tradingStatus?.current_time && (
-              <span className="block mt-1 text-sm">
-                Market time: {new Date(tradingStatus.current_time).toLocaleString()}
-              </span>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+    <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+      <div className="px-6 py-4 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Share Exchange</h1>
+            <p className="text-gray-400">Trade shares with other users</p>
+          </div>
+          <Button onClick={refreshExchangeData} variant="outline" size="sm">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
 
-      {message && (
-        <Alert variant={message.type === "error" ? "destructive" : "default"}>
-          <AlertDescription>{message.text}</AlertDescription>
-        </Alert>
-      )}
+        {/* Current Price */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-white">Current Share Price</h3>
+                <p className="text-3xl font-bold text-green-400">{formatCurrency(currentPrice)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-400">24h Change</p>
+                <div className="flex items-center text-green-400">
+                  <TrendingUp className="w-4 h-4 mr-1" />
+                  <span>+2.5%</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid grid-cols-4 gap-6">
-        {/* Share Price Section */}
-        <div className="col-span-1">
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-300">Weekly Share Price</CardTitle>
+        {/* Wallet Balances */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-white">Buy Wallet</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">{formatCurrency(currentSharePrice)}</div>
-              <p className="text-xs text-slate-400 mt-1">per share</p>
-              {!tradingAllowed && <div className="mt-2 text-xs text-red-400">Trading closed</div>}
+              <p className="text-2xl font-bold text-blue-400">{formatCurrency(buyWalletBalance)}</p>
+              <p className="text-sm text-gray-400">Available for buying shares</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-white">Post-Hold Shares</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-purple-400">{formatShares(holdWalletPostHold)}</p>
+              <p className="text-sm text-gray-400">Available for selling</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Wallet Cards */}
-        <div className="col-span-3 grid grid-cols-3 gap-4">
-          {/* Buy Wallet */}
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
-                <TrendingUp className="h-4 w-4 mr-2 text-blue-400" />
-                Buy Wallet
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-lg font-semibold text-slate-100">{formatCurrency(buyWalletBalance)}</div>
-              <div className="space-y-2">
-                <Input
-                  type="number"
-                  placeholder="Amount (N$)"
-                  value={buyAmount}
-                  onChange={(e) => setBuyAmount(e.target.value)}
-                  disabled={loading || !tradingAllowed}
-                  min="0"
-                  step="0.01"
-                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
-                />
+        {/* Trading Interface */}
+        <Tabs defaultValue="buy" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-slate-800">
+            <TabsTrigger value="buy" className="data-[state=active]:bg-green-600">
+              Buy Shares
+            </TabsTrigger>
+            <TabsTrigger value="sell" className="data-[state=active]:bg-red-600">
+              Sell Shares
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="buy" className="space-y-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center">
+                  <TrendingUp className="w-5 h-5 mr-2 text-green-400" />
+                  Place Buy Order
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Shares to Buy</label>
+                    <Input
+                      type="number"
+                      value={buyAmount}
+                      onChange={(e) => setBuyAmount(e.target.value)}
+                      placeholder="Enter amount"
+                      className="bg-slate-700 border-slate-600 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Price per Share (NAD)</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={buyPrice}
+                      onChange={(e) => setBuyPrice(e.target.value)}
+                      placeholder="Enter price"
+                      className="bg-slate-700 border-slate-600 text-white"
+                    />
+                  </div>
+                </div>
+                {buyAmount && buyPrice && (
+                  <div className="bg-slate-700 p-3 rounded-md">
+                    <p className="text-sm text-gray-300">
+                      Total Cost:{" "}
+                      <span className="font-bold text-white">
+                        {formatCurrency(Number(buyAmount) * Number(buyPrice))}
+                      </span>
+                    </p>
+                  </div>
+                )}
                 <Button
                   onClick={handleBuyOrder}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600"
-                  disabled={loading || !tradingAllowed || !buyAmount || Number.parseFloat(buyAmount) <= 0}
+                  disabled={isProcessing || !buyAmount || !buyPrice}
+                  className="w-full bg-green-600 hover:bg-green-700"
                 >
-                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Buy Shares"}
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Placing Order...
+                    </>
+                  ) : (
+                    "Place Buy Order"
+                  )}
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-          {/* Hold Wallet (Post-Hold) */}
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
-                <TrendingDown className="h-4 w-4 mr-2 text-green-400" />
-                Hold Wallet (Post-Hold)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-lg font-semibold text-slate-100">{holdWalletPostHold.toFixed(4)} shares</div>
-              <div className="space-y-2">
-                <Input
-                  type="number"
-                  placeholder="Shares to sell"
-                  value={sellShares}
-                  onChange={(e) => setSellShares(e.target.value)}
-                  disabled={loading || !tradingAllowed}
-                  min="0"
-                  step="0.0001"
-                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
-                />
+          <TabsContent value="sell" className="space-y-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center">
+                  <TrendingDown className="w-5 h-5 mr-2 text-red-400" />
+                  Place Sell Order
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Shares to Sell</label>
+                    <Input
+                      type="number"
+                      value={sellAmount}
+                      onChange={(e) => setSellAmount(e.target.value)}
+                      placeholder="Enter amount"
+                      className="bg-slate-700 border-slate-600 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Price per Share (NAD)</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={sellPrice}
+                      onChange={(e) => setSellPrice(e.target.value)}
+                      placeholder="Enter price"
+                      className="bg-slate-700 border-slate-600 text-white"
+                    />
+                  </div>
+                </div>
+                {sellAmount && sellPrice && (
+                  <div className="bg-slate-700 p-3 rounded-md">
+                    <p className="text-sm text-gray-300">
+                      Total Revenue:{" "}
+                      <span className="font-bold text-white">
+                        {formatCurrency(Number(sellAmount) * Number(sellPrice))}
+                      </span>
+                    </p>
+                  </div>
+                )}
                 <Button
                   onClick={handleSellOrder}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600"
-                  disabled={loading || !tradingAllowed || !sellShares || Number.parseFloat(sellShares) <= 0}
+                  disabled={isProcessing || !sellAmount || !sellPrice}
+                  className="w-full bg-red-600 hover:bg-red-700"
                 >
-                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Sell Shares"}
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Placing Order...
+                    </>
+                  ) : (
+                    "Place Sell Order"
+                  )}
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Order Books */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Buy Orders */}
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-white">Buy Orders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {buyOrders.length === 0 ? (
+                  <p className="text-gray-400 text-center py-4">No buy orders</p>
+                ) : (
+                  buyOrders.slice(0, 10).map((order) => (
+                    <div key={order.id} className="flex justify-between items-center p-2 bg-slate-700 rounded">
+                      <div>
+                        <span className="text-white">{formatShares(order.shares)} shares</span>
+                        <span className="text-green-400 ml-2">@ {formatCurrency(order.price)}</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{formatCurrency(order.shares * order.price)}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
 
-          {/* Cashout Wallet */}
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
-                <Wallet className="h-4 w-4 mr-2 text-orange-400" />
-                Cashout Wallet
-              </CardTitle>
+          {/* Sell Orders */}
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-white">Sell Orders</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-lg font-semibold text-slate-100">{formatCurrency(cashoutWalletBalance)}</div>
+            <CardContent>
               <div className="space-y-2">
-                <Input
-                  type="number"
-                  placeholder="Amount to cashout (N$)"
-                  value={cashoutAmount}
-                  onChange={(e) => setCashoutAmount(e.target.value)}
-                  disabled={loading}
-                  min="0"
-                  step="0.01"
-                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
-                />
-                <Button
-                  onClick={handleCashout}
-                  className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                  disabled={loading || !cashoutAmount || Number.parseFloat(cashoutAmount) <= 0}
-                >
-                  {loading ? "Processing..." : "Cashout"}
-                </Button>
+                {sellOrders.length === 0 ? (
+                  <p className="text-gray-400 text-center py-4">No sell orders</p>
+                ) : (
+                  sellOrders.slice(0, 10).map((order) => (
+                    <div key={order.id} className="flex justify-between items-center p-2 bg-slate-700 rounded">
+                      <div>
+                        <span className="text-white">{formatShares(order.shares)} shares</span>
+                        <span className="text-red-400 ml-2">@ {formatCurrency(order.price)}</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{formatCurrency(order.shares * order.price)}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      {/* Order Books */}
-      <div className="grid grid-cols-2 gap-6">
-        {/* Market Buy Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+        {/* User Orders */}
+        <Card className="bg-slate-800 border-slate-700">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Buy Orders ({(marketBuyOrders ?? []).length})
-            </CardTitle>
+            <CardTitle className="text-white">Your Orders</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(marketBuyOrders ?? []).length === 0 ? (
-                <p className="text-slate-400 text-center py-4">No active buy orders</p>
+              {userOrders.length === 0 ? (
+                <p className="text-gray-400 text-center py-4">No active orders</p>
               ) : (
-                marketBuyOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                      <span className="text-xs text-slate-400">({order.shares_requested.toFixed(4)} shares)</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {Math.round((order.shares_filled / order.shares_requested) * 100)}%
+                userOrders.map((order) => (
+                  <div key={order.id} className="flex justify-between items-center p-3 bg-slate-700 rounded">
+                    <div>
+                      <span className={`font-medium ${order.type === "buy" ? "text-green-400" : "text-red-400"}`}>
+                        {order.type.toUpperCase()}
                       </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Market Sell Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Sell Orders ({(marketSellOrders ?? []).length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {(marketSellOrders ?? []).length === 0 ? (
-                <p className="text-slate-400 text-center py-4">No active sell orders</p>
-              ) : (
-                marketSellOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
-                      <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {order.filled_shares.toFixed(4)}/{order.shares.toFixed(4)}
+                      <span className="text-white ml-2">
+                        {formatShares(order.shares)} shares @ {formatCurrency(order.price)}
                       </span>
+                      <span className="text-xs text-gray-400 ml-2">({order.status})</span>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* User Orders */}
-      <div className="grid grid-cols-2 gap-6">
-        {/* Your Buy Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Buy Orders ({(userBuyOrders ?? []).length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {(userBuyOrders ?? []).length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
-              ) : (
-                userBuyOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                        <span className="text-sm text-slate-400 ml-2">
-                          ({order.shares_requested.toFixed(4)} shares)
-                        </span>
-                      </div>
-                      {getStatusBadge(order, true)}
-                    </div>
-                    <Progress
-                      value={(order.shares_filled / order.shares_requested) * 100}
-                      className="h-2 [&>div]:bg-yellow-500"
-                    />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.shares_filled.toFixed(4)} / {order.shares_requested.toFixed(4)} shares
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Your Sell Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Sell Orders ({(userSellOrders ?? []).length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {(userSellOrders ?? []).length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
-              ) : (
-                userSellOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
-                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
-                      </div>
-                      {getStatusBadge(order, true)}
-                    </div>
-                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.filled_shares.toFixed(4)} / {order.shares.toFixed(4)} shares
-                    </div>
+                    <Button
+                      onClick={() => handleCancelOrder(order.id, order.type)}
+                      variant="outline"
+                      size="sm"
+                      className="text-red-400 border-red-400 hover:bg-red-400 hover:text-white"
+                    >
+                      Cancel
+                    </Button>
                   </div>
                 ))
               )}

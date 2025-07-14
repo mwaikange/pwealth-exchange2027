@@ -1,20 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { env, isSupabaseConfigured } from "@/lib/env"
+import { env } from "@/lib/env"
+
+// Create a Supabase client with the service role key for admin operations
+const adminSupabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY || "", {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if Supabase is configured
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        {
-          error:
-            "Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.",
-        },
-        { status: 500 },
-      )
-    }
-
     const { email } = await request.json()
 
     if (!email) {
@@ -22,18 +19,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Attempting to confirm email for: ${email}`)
-
-    // Create a Supabase client with the service role key for admin operations
-    const adminSupabase = createClient(
-      env.NEXT_PUBLIC_SUPABASE_URL,
-      env.SUPABASE_SERVICE_ROLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      },
-    )
 
     // First, get the user
     const { data: user, error: userError } = await adminSupabase.auth.admin.getUserByEmail(email)

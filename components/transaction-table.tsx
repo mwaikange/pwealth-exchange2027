@@ -30,6 +30,20 @@ export function TransactionTable({
   showReference = true,
   compact = false,
 }: TransactionTableProps) {
+  // Helper function to format shares to 4 decimal places
+  const formatShares = (value: number | string): string => {
+    const num = typeof value === "string" ? Number.parseFloat(value) : value
+    return Number(num)
+      .toFixed(4)
+      .replace(/\.?0+$/, "")
+  }
+
+  // Helper function to format currency
+  const formatCurrency = (value: number | string): string => {
+    const num = typeof value === "string" ? Number.parseFloat(value) : value
+    return `${Number(num).toFixed(2)} USD`
+  }
+
   // Helper function to safely check if a transaction type is in a list
   const isTypeInList = (type: string | undefined, list: string[]): boolean => {
     return type ? list.includes(type) : false
@@ -222,9 +236,9 @@ export function TransactionTable({
                   </td>
                 )}
                 <td className="py-[6px] px-4 text-[10px]">
-                  {transaction.amount} {isAftTransaction(transaction) ? "AFT" : "PWT"}
+                  {formatShares(transaction.amount)} {isAftTransaction(transaction) ? "AFT" : "PWT"}
                 </td>
-                <td className="py-[6px] px-4 text-[10px]">{transaction.amountUsd} USD</td>
+                <td className="py-[6px] px-4 text-[10px]">{formatCurrency(transaction.amountUsd)}</td>
               </tr>
             )
           })}

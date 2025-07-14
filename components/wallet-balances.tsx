@@ -3,12 +3,24 @@
 import { useState } from "react"
 import { useWallet } from "@/contexts/wallet-context"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
-import { Loader2 } from "lucide-react"
+import { Loader2, Wallet, TrendingUp, TrendingDown, DollarSign } from "lucide-react" // Import Lucide icons
 
 export function WalletBalances() {
   const { buyWalletBalance, holdWalletPreHold, holdWalletPostHold, cashoutWalletBalance, aftBalance, loading, error } =
     useWallet()
   const [isAftModalOpen, setIsAftModalOpen] = useState(false)
+
+  // Helper function to format shares to 4 decimal places
+  const formatShares = (value: number): string => {
+    return Number(value)
+      .toFixed(4)
+      .replace(/\.?0+$/, "")
+  }
+
+  // Helper function to format currency
+  const formatCurrency = (value: number): string => {
+    return `N$${Number(value).toFixed(2)}`
+  }
 
   if (loading) {
     return (
@@ -39,91 +51,49 @@ export function WalletBalances() {
       {/* Buy Wallet Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <TrendingUp className="w-3 h-3 mr-1 text-blue-400" /> {/* Lucide Icon */}
           Buy Wallet
         </div>
-        <div className="text-xl font-bold">N${buyWalletBalance.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatCurrency(buyWalletBalance)}</div>
       </div>
 
       {/* Hold Pre-Hold Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Wallet className="w-3 h-3 mr-1 text-green-400" /> {/* Lucide Icon */}
           Hold Pre
         </div>
-        <div className="text-xl font-bold">{holdWalletPreHold.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatShares(holdWalletPreHold)}</div>
         <div className="text-[8px] text-gray-400">shares</div>
       </div>
 
       {/* Hold Post-Hold Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <TrendingDown className="w-3 h-3 mr-1 text-purple-400" /> {/* Lucide Icon */}
           Hold Post
         </div>
-        <div className="text-xl font-bold">{holdWalletPostHold.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatShares(holdWalletPostHold)}</div>
         <div className="text-[8px] text-gray-400">shares</div>
       </div>
 
       {/* Cashout Wallet Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <DollarSign className="w-3 h-3 mr-1 text-orange-400" /> {/* Lucide Icon */}
           Cashout
         </div>
-        <div className="text-xl font-bold">N${cashoutWalletBalance.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatCurrency(cashoutWalletBalance)}</div>
       </div>
 
       {/* Activation Token Box (if still used) */}
       {aftBalance > 0 && (
         <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
           <div className="flex items-center text-[10px] text-gray-300">
-            <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <Wallet className="w-3 h-3 mr-1" /> {/* Lucide Icon */}
             Activation Token
           </div>
-          <div className="text-xl font-bold flex items-center">
-            {aftBalance.toFixed(0)} <span className="text-[10px] ml-1">USD</span>
-          </div>
+          <div className="text-xl font-bold flex items-center">{formatCurrency(aftBalance)}</div>
           <button
             onClick={() => setIsAftModalOpen(true)}
             className="mt-1 text-[10px] bg-yellow-500 text-black px-2 py-0.5 rounded-sm hover:bg-yellow-600"

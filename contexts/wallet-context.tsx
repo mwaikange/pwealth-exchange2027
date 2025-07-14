@@ -6,15 +6,20 @@ import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
 // Define valid wallet types based on the constraint
-type ValidWalletType = "buy_wallet" | "hold_pre" | "hold_post" | "cashout_wallet"
+type ValidWalletType = "buy_wallet" | "hold_wallet_pre_hold" | "hold_wallet_post_hold" | "cashout_wallet"
 
-const VALID_WALLET_TYPES = new Set<ValidWalletType>(["buy_wallet", "hold_pre", "hold_post", "cashout_wallet"])
+const VALID_WALLET_TYPES = new Set<ValidWalletType>([
+  "buy_wallet",
+  "hold_wallet_pre_hold",
+  "hold_wallet_post_hold",
+  "cashout_wallet",
+])
 
 // Define the shape of our wallet state (real data from Supabase)
 type WalletState = {
   buyWalletBalance: number // NAD in buy_wallet
-  holdWalletPreHold: number // Shares in hold_pre
-  holdWalletPostHold: number // Shares in hold_post
+  holdWalletPreHold: number // Shares in hold_wallet_pre_hold
+  holdWalletPostHold: number // Shares in hold_wallet_post_hold
   cashoutWalletBalance: number // NAD in cashout_wallet
   aftBalance: number // Activation fee balance (if still used)
 }
@@ -35,7 +40,8 @@ type WalletContextType = WalletState & {
   getTotalAccountValue: () => number
   getCurrentSharePrice: () => Promise<number>
 
-  refreshBalances: () => Promise<void>
+  refreshBalances: (silent?: boolean) => Promise<void>
+  refreshWalletBalances: (silent?: boolean) => Promise<void>
   loading: boolean
   error: string | null
 }
@@ -43,8 +49,21 @@ type WalletContextType = WalletState & {
 // Create the context with default values
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
 
-// Currency formatter for Namibian Dollars
-const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
+// Safe number formatting functions
+const safeNumber = (value: any): number => {
+  const num = Number(value)
+  return isNaN(num) ? 0 : num
+}
+
+const formatCurrency = (value: any): string => {
+  const num = safeNumber(value)
+  return `N$${num.toFixed(2)}`
+}
+
+const formatShares = (value: any): string => {
+  const num = safeNumber(value)
+  return num.toFixed(4).replace(/\.?0+$/, "")
+}
 
 // Provider component
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -56,26 +75,58 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     cashoutWalletBalance: 0,
     aftBalance: 0,
   })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(true) // Only true on initial load
   const [error, setError] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false) // Track if we've loaded data once
   const { user, session } = useAuth()
 
-  // Fetch wallet balances from Supabase
-  const refreshBalances = async () => {
+  // Fetch wallet balances from Supabase with retry logic
+  const refreshBalances = async (silent = false) => {
     if (!user || !session) {
-      setLoading(false)
+      if (!isInitialized) {
+        setLoading(false)
+      }
       return
     }
 
     try {
-      setLoading(true)
-      setError(null)
+      // Only show loading on initial load, not on background refreshes
+      if (!isInitialized && !silent) {
+        setLoading(true)
+      }
 
-      // Fetch user wallet balances
-      const { data: walletData, error: walletError } = await supabase
-        .from("user_shares")
-        .select("wallet_type, shares")
-        .eq("user_uuid", user.id)
+      if (!silent) {
+        setError(null)
+      }
+
+      // Add retry logic for rate limiting
+      let retryCount = 0
+      const maxRetries = 3
+      let walletData = null
+      let walletError = null
+
+      while (retryCount < maxRetries) {
+        const { data, error } = await supabase
+          .from("user_shares")
+          .select("wallet_type, shares")
+          .eq("user_uuid", user.id)
+
+        if (error) {
+          if (error.message?.includes("Too Many Requests") || error.message?.includes("rate limit")) {
+            retryCount++
+            if (retryCount < maxRetries) {
+              // Wait with exponential backoff
+              await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCount) * 1000))
+              continue
+            }
+          }
+          walletError = error
+          break
+        }
+
+        walletData = data
+        break
+      }
 
       if (walletError) {
         throw new Error(`Failed to fetch wallet data: ${walletError.message}`)
@@ -92,18 +143,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
 
       wallets.forEach((wallet) => {
+        const shares = safeNumber(wallet.shares)
         switch (wallet.wallet_type) {
           case "buy_wallet":
-            newState.buyWalletBalance = Number(wallet.shares) || 0
+            newState.buyWalletBalance = shares
             break
-          case "hold_pre":
-            newState.holdWalletPreHold = Number(wallet.shares) || 0
+          case "hold_wallet_pre_hold": // Corrected wallet type
+            newState.holdWalletPreHold = shares
             break
-          case "hold_post":
-            newState.holdWalletPostHold = Number(wallet.shares) || 0
+          case "hold_wallet_post_hold": // Corrected wallet type
+            newState.holdWalletPostHold = shares
             break
           case "cashout_wallet":
-            newState.cashoutWalletBalance = Number(wallet.shares) || 0
+            newState.cashoutWalletBalance = shares
             break
         }
       })
@@ -112,18 +164,47 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       newState.aftBalance = 0
 
       setWalletState(newState)
-      console.log("Wallet balances refreshed:", newState)
+
+      if (!silent) {
+        console.log("Wallet balances refreshed:", newState)
+      }
+
+      // Mark as initialized after first successful load
+      if (!isInitialized) {
+        setIsInitialized(true)
+      }
     } catch (err: any) {
-      console.error("Error fetching wallet balances:", err)
-      setError(err.message || "Failed to load wallet data")
+      if (!silent) {
+        console.error("Error fetching wallet balances:", err)
+        setError(err.message || "Failed to load wallet data")
+      }
     } finally {
-      setLoading(false)
+      // Only set loading to false if this was the initial load
+      if (!isInitialized) {
+        setLoading(false)
+      }
     }
   }
 
-  // Load balances when user changes
+  // Alias for refreshBalances to match the interface
+  const refreshWalletBalances = refreshBalances
+
+  // Load balances when user changes and set up background polling
   useEffect(() => {
-    refreshBalances()
+    if (!user || !session) return
+
+    // Initial load (with loading state)
+    refreshBalances(false)
+
+    // Set up background polling for wallet balances (silent updates)
+    // Reduced frequency to avoid rate limiting
+    const walletInterval = setInterval(() => {
+      refreshBalances(true) // Silent background refresh
+    }, 30000) // Every 30 seconds instead of 15
+
+    return () => {
+      clearInterval(walletInterval)
+    }
   }, [user, session])
 
   // Get current share price from Supabase
@@ -131,7 +212,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase.rpc("get_current_share_price")
       if (error) throw error
-      return Number(data) || 108.2 // Fallback to current price
+      return safeNumber(data) || 108.2 // Fallback to current price
     } catch (err) {
       console.error("Error fetching share price:", err)
       return 108.2 // Fallback price
@@ -163,7 +244,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw fetchError
       }
 
-      const currentBalance = currentData?.shares || 0
+      const currentBalance = safeNumber(currentData?.shares) || 0
       const newBalance = Math.max(0, currentBalance + changeAmount) // Don't allow negative balances
 
       if (currentData) {
@@ -192,7 +273,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (insertError) throw insertError
       }
 
-      await refreshBalances()
+      // Refresh balances silently after update
+      await refreshBalances(true)
     } catch (err: any) {
       console.error(`Error updating ${walletType}:`, err)
       setError(err.message)
@@ -207,7 +289,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Update hold wallet (pre or post)
   const updateHoldWallet = async (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => {
-    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_pre" : "hold_post"
+    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_wallet_pre_hold" : "hold_wallet_post_hold" // Corrected mapping
     await updateWalletBalance(dbWalletType, amount, operation)
   }
 
@@ -259,7 +341,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     getTotalAccountValue,
     getCurrentSharePrice,
     refreshBalances,
-    loading,
+    refreshWalletBalances,
+    loading, // Only true on initial load
     error,
   }
 
@@ -275,5 +358,5 @@ export function useWallet() {
   return context
 }
 
-// Export currency formatter for use in components
-export { formatCurrency }
+// Export safe formatting functions for use in components
+export { formatCurrency, formatShares, safeNumber }

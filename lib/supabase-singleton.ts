@@ -1,45 +1,57 @@
 import { createClient } from "@supabase/supabase-js"
-import { clientEnv } from "./env"
-import type { Database } from "@/types/supabase"
 
-// Create a singleton Supabase client for the browser
-function createSupabaseClient() {
-  if (!clientEnv.NEXT_PUBLIC_SUPABASE_URL || !clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    console.warn("⚠️ Supabase configuration missing")
-    // Return a mock client for development
-    return null
-  }
+// Use the actual environment variables that are available in the workspace
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_UR ||
+  process.env.SUPABASE_URL ||
+  "https://vqdfhgjhptklwogjadxy.supabase.co"
 
-  console.log("🔧 Creating Supabase client:", {
-    url: clientEnv.NEXT_PUBLIC_SUPABASE_URL,
-    hasAnonKey: !!clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  })
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  ""
 
-  return createClient<Database>(clientEnv.NEXT_PUBLIC_SUPABASE_URL, clientEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: "pkce",
-    },
-    global: {
-      headers: {
-        "X-Client-Info": "peer-wealth@1.0.0",
+// Add validation with better error messages
+if (!supabaseUrl || supabaseUrl === "") {
+  console.error(
+    "Supabase URL is missing. Available env vars:",
+    Object.keys(process.env).filter((key) => key.includes("SUPABASE")),
+  )
+  throw new Error("Supabase URL is required")
+}
+
+if (!supabaseAnonKey || supabaseAnonKey === "") {
+  console.error(
+    "Supabase Anon Key is missing. Available env vars:",
+    Object.keys(process.env).filter((key) => key.includes("SUPABASE")),
+  )
+  throw new Error("Supabase Anon Key is required")
+}
+
+console.log("Supabase config:", {
+  url: supabaseUrl,
+  keyLength: supabaseAnonKey.length,
+  keyPrefix: supabaseAnonKey.substring(0, 20) + "...",
+})
+
+// Create singleton client instance
+let supabaseInstance: ReturnType<typeof createClient> | null = null
+
+export const supabase = (() => {
+  if (!supabaseInstance) {
+    console.log("Supabase singleton initialized")
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        storageKey: "supabase-auth-token",
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
-    },
-  })
-}
-
-// Export the singleton instance
-export const supabase = createSupabaseClient()
-
-// Helper function that throws if not configured
-export function getSupabaseClient() {
-  if (!supabase) {
-    throw new Error("Supabase is not configured. Please check your environment variables.")
+    })
   }
-  return supabase
-}
+  return supabaseInstance
+})()
 
-// Export for backwards compatibility
 export default supabase
