@@ -12,13 +12,11 @@ export interface SellOrder {
   id: string
   user_uuid: string
   shares: number
-  shares_available: number
   price_per_share: number
   status: SellOrderStatus
   created_at: string
   filled_shares: number
   shares_remaining: number
-  sell_ref: string
 }
 
 export interface BuyOrder {
@@ -31,7 +29,6 @@ export interface BuyOrder {
   filled_amount: number
   shares_requested: number
   shares_filled: number
-  buy_ref: string
 }
 
 interface ExchangeContextType {
@@ -46,14 +43,13 @@ interface ExchangeContextType {
   /* actions */
   placeBuyOrder: (amount: number) => Promise<{ success: boolean; message: string }>
   placeSellOrder: (shares: number) => Promise<{ success: boolean; message: string }>
-  cancelSellOrder: (orderId: string) => Promise<{ success: boolean; message: string }>
 
   /* market data  */
   currentSharePrice: number
   lastPriceUpdate: string | null
 
   /* ui state */
-  loading: boolean
+  loading: boolean // Only true on initial load
   error: string | null
   refreshOrders: () => Promise<void>
 }
@@ -63,23 +59,27 @@ const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined
 
 /* ---------- Provider ---------- */
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
+  // GLOBAL market orders (all users)
   const [marketSellOrders, setMarketSellOrders] = useState<SellOrder[]>([])
   const [marketBuyOrders, setMarketBuyOrders] = useState<BuyOrder[]>([])
+
+  // USER-SPECIFIC orders (private)
   const [userSellOrders, setUserSellOrders] = useState<SellOrder[]>([])
   const [userBuyOrders, setUserBuyOrders] = useState<BuyOrder[]>([])
 
   const [currentSharePrice, setCurrentSharePrice] = useState(100)
   const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(true) // Only true on initial load
   const [error, setError] = useState<string | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false) // Track if we've loaded data once
 
   const { user, session } = useAuth()
-  const { buyWalletBalance, holdWalletPostHold, refreshWalletBalances } = useWallet()
+  const { buyWalletBalance, holdWalletPostHold, refreshWalletBalances, updateBuyWallet, updateHoldWallet } = useWallet()
 
   /* ---------- queries ---------- */
-  const fetchSharePrice = async (silent = true) => {
+  const fetchSharePrice = async (silent = false) => {
     try {
+      // ✅ Use current_pricing_info table instead of share_supply
       const { data, error } = await supabase
         .from("current_pricing_info")
         .select("current_price, week_start, latest_hodl_date")
@@ -87,7 +87,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         .limit(1)
 
       if (error) {
-        if (!silent) console.error("Error fetching price from current_pricing_info:", error)
+        console.error("Error fetching price from current_pricing_info:", error)
+        // Fallback to RPC function
         const rpcResult = await supabase.rpc("get_current_share_price")
         if (rpcResult.data) {
           setCurrentSharePrice(Number(rpcResult.data))
@@ -95,14 +96,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      // ✅ Handle array response (data is an array, not single object)
       if (data && data.length > 0) {
-        const latestPrice = data[0]
+        const latestPrice = data[0] // Get first (most recent) row
         setCurrentSharePrice(Number(latestPrice.current_price) || 100)
         setLastPriceUpdate(latestPrice.latest_hodl_date || latestPrice.week_start)
         if (!silent) {
           console.log("📈 Current share price:", latestPrice.current_price, "week:", latestPrice.week_start)
         }
       } else {
+        // No data found, use fallback
         if (!silent) {
           console.log("No price data found, using fallback")
         }
@@ -116,7 +119,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const refreshOrders = async (silent = true) => {
+  const refreshOrders = async (silent = false) => {
     if (!user || !session) {
       if (!isInitialized) {
         setLoading(false)
@@ -125,6 +128,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // Only show loading on initial load, not on background refreshes
       if (!isInitialized) {
         setLoading(true)
       }
@@ -133,17 +137,21 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         setError(null)
       }
 
-      // GLOBAL MARKET ORDERS - Show pending/partial buy orders and available/partial sell orders
+      if (!silent) {
+        console.log("🔄 Refreshing orders...")
+      }
+
+      // GLOBAL MARKET ORDERS - Show active and recent orders
       const [marketSellResult, marketBuyResult] = await Promise.all([
         supabase
           .from("sell_orders")
           .select("*")
-          .in("status", ["available", "partial"]) // Show available and partial sell orders
+          .in("status", ["available", "partial"]) // Only active orders for market view
           .order("created_at", { ascending: true }),
         supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial"]) // Show pending and partial buy orders
+          .in("status", ["pending", "partial"]) // Only active orders for market view
           .order("created_at", { ascending: true }),
       ])
 
@@ -153,90 +161,37 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         supabase.from("buy_orders").select("*").eq("user_uuid", user.id).order("created_at", { ascending: false }),
       ])
 
-      const safeNumber = (value: any): number => {
-        const num = Number(value)
-        return isNaN(num) ? 0 : num
+      // Format all numeric values to proper decimal places
+      const formatOrderData = (orders: any[], isUserOrder = false) => {
+        return orders.map((order: any) => ({
+          ...order,
+          // Fix numeric conversions with proper fallbacks
+          total_amount: Number(order.total_amount || 0),
+          price_per_share: Number(order.price_per_share || 0),
+          shares: Number(order.shares || order.shares_available || 0), // Add this line for sell orders
+          shares_available: Number(order.shares_available || order.shares || 0), // Add this line
+          shares_requested: Number(order.shares_requested || order.shares_available || order.shares || 0),
+          shares_filled: Number(order.shares_filled || order.filled_shares || 0),
+          shares_remaining: Number(order.shares_remaining || order.shares_available - order.shares_filled || 0),
+          filled_shares: Number(order.filled_shares || order.shares_filled || 0), // Add this line
+          amount_filled: Number(
+            order.amount_filled ||
+              (order.shares_filled || order.filled_shares || 0) * (order.price_per_share || 0) ||
+              0,
+          ),
+        }))
       }
 
-      const getCorrectStatus = (order: any, isBuyOrder = true) => {
-        let fillPercentage = 0
-
-        if (isBuyOrder) {
-          const totalAmount = safeNumber(order.total_amount)
-          const filledAmount = safeNumber(order.amount_filled)
-          fillPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
-        } else {
-          const totalShares = safeNumber(order.shares_available)
-          const remainingShares = safeNumber(order.shares_remaining)
-          const filledShares = totalShares - remainingShares
-          fillPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
-        }
-
-        // Use correct status mapping for fractional matching
-        if (fillPercentage === 0) {
-          return isBuyOrder ? "pending" : "available"
-        } else if (fillPercentage > 0 && fillPercentage < 100) {
-          return "partial"
-        } else if (fillPercentage >= 100) {
-          return "matched"
-        }
-
-        return order.status
-      }
-
-      const formatOrderData = (orders: any[], isUserOrder = false, isBuyOrder = true) => {
-        return orders.map((order: any) => {
-          const correctedStatus = getCorrectStatus(order, isBuyOrder)
-
-          // Calculate shares for buy orders
-          let sharesRequested = 0
-          let sharesFilled = 0
-
-          if (isBuyOrder) {
-            const totalAmount = safeNumber(order.total_amount)
-            const filledAmount = safeNumber(order.amount_filled)
-            const pricePerShare = safeNumber(order.price_per_share)
-
-            if (pricePerShare > 0) {
-              sharesRequested = totalAmount / pricePerShare
-              sharesFilled = filledAmount / pricePerShare
-            }
-          }
-
-          return {
-            ...order,
-            total_amount: safeNumber(order.total_amount),
-            price_per_share: safeNumber(order.price_per_share),
-            shares: safeNumber(order.shares_available),
-            shares_available: safeNumber(order.shares_available),
-            shares_requested: isBuyOrder ? sharesRequested : safeNumber(order.shares_requested),
-            shares_filled: isBuyOrder ? sharesFilled : safeNumber(order.shares_filled),
-            shares_remaining: safeNumber(order.shares_remaining),
-            filled_shares: safeNumber(order.shares_available) - safeNumber(order.shares_remaining),
-            amount_filled: safeNumber(order.amount_filled),
-            status: correctedStatus,
-          }
-        })
-      }
-
-      const formattedMarketSellOrders = formatOrderData(marketSellResult.data || [], false, false)
-      const formattedMarketBuyOrders = formatOrderData(marketBuyResult.data || [], false, true)
-      const formattedUserSellOrders = formatOrderData(userSellResult.data || [], true, false)
-      const formattedUserBuyOrders = formatOrderData(userBuyResult.data || [], true, true)
-
-      setMarketSellOrders(formattedMarketSellOrders)
-      setMarketBuyOrders(formattedMarketBuyOrders)
-      setUserSellOrders(formattedUserSellOrders)
-      setUserBuyOrders(formattedUserBuyOrders)
+      setMarketSellOrders(formatOrderData(marketSellResult.data || []))
+      setMarketBuyOrders(formatOrderData(marketBuyResult.data || []))
+      setUserSellOrders(formatOrderData(userSellResult.data || [], true))
+      setUserBuyOrders(formatOrderData(userBuyResult.data || [], true))
 
       if (!silent) {
         console.log("✅ Orders refreshed successfully")
-        console.log("Market Buy Orders:", formattedMarketBuyOrders.length)
-        console.log("Market Sell Orders:", formattedMarketSellOrders.length)
-        console.log("User Buy Orders:", formattedUserBuyOrders.length)
-        console.log("User Sell Orders:", formattedUserSellOrders.length)
       }
 
+      // Mark as initialized after first successful load
       if (!isInitialized) {
         setIsInitialized(true)
       }
@@ -246,13 +201,14 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         setError(err.message)
       }
     } finally {
+      // Only set loading to false if this was the initial load
       if (!isInitialized) {
         setLoading(false)
       }
     }
   }
 
-  /* ---------- actions ---------- */
+  /* ---------- actions with IMMEDIATE UI updates ---------- */
   const placeBuyOrder = useCallback(
     async (amount: number) => {
       if (!user) return { success: false, message: "Not authenticated" }
@@ -261,40 +217,43 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (amount > buyWalletBalance) return { success: false, message: "Insufficient Buy-wallet funds" }
 
       try {
+        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        console.log("💰 Immediately deducting N$", amount, "from buy wallet")
+        await updateBuyWallet(amount, "subtract")
+
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
-        const { data, error } = await supabase.rpc("place_buy_order", {
+        // ✅ Place order with 30-second delay before matching
+        const { data, error } = await supabase.rpc("place_buy_order_with_delay", {
           p_user_uuid: user.id,
-          p_total_amount: amount,
           p_price_per_share: currentSharePrice,
+          p_total_amount: amount,
+          p_delay_seconds: 30,
         })
 
         console.log("📥 Buy order result:", { data, error })
 
         if (error) {
+          // Rollback on error
+          console.log("❌ Error - rolling back wallet deduction")
+          await updateBuyWallet(amount, "add")
           throw error
         }
 
-        const result = typeof data === "string" ? JSON.parse(data) : data
+        // Refresh orders silently to show new order
+        await refreshOrders(true)
+        await refreshWalletBalances(true)
 
-        if (!result.success) {
-          throw new Error(result.message)
-        }
-
-        // Silent background refresh - user won't see loading states
-        await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
-
-        const expectedShares = (amount / currentSharePrice).toFixed(4)
         return {
           success: true,
-          message: result.message || `Buy order placed for ${expectedShares} shares.`,
+          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares. Will be matched in 30 seconds.`,
         }
       } catch (e: any) {
         console.error("❌ Buy order error", e)
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, buyWalletBalance, refreshWalletBalances],
+    [user, currentSharePrice, buyWalletBalance, updateBuyWallet, refreshWalletBalances],
   )
 
   const placeSellOrder = useCallback(
@@ -305,96 +264,70 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (shares > holdWalletPostHold) return { success: false, message: "Insufficient Post-hold shares" }
 
       try {
+        // 🚀 IMMEDIATE UI UPDATE (optimistic)
+        console.log("📈 Immediately deducting", shares, "shares from post-hold wallet")
+        await updateHoldWallet(shares, "subtract", "post")
+
         console.log("📤 Placing sell order:", { shares, currentSharePrice, user_id: user.id })
 
         const { data, error } = await supabase.rpc("place_sell_order", {
           p_user_uuid: user.id,
-          p_shares: shares,
           p_price_per_share: currentSharePrice,
+          p_shares: shares,
         })
 
         console.log("📥 Sell order result:", { data, error })
 
         if (error) {
+          // Rollback on error
+          console.log("❌ Error - rolling back share deduction")
+          await updateHoldWallet(shares, "add", "post")
           throw error
         }
 
-        const result = typeof data === "string" ? JSON.parse(data) : data
-
-        if (!result.success) {
-          throw new Error(result.message)
-        }
-
+        // Trigger immediate order matching for sell orders
         console.log("🔄 Triggering order matching...")
         const matchResult = await supabase.rpc("match_orders")
         console.log("🔄 Match result:", matchResult)
 
-        // Silent background refresh - user won't see loading states
-        await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
+        // Refresh orders silently to show new order and any matches
+        await refreshOrders(true)
+        await refreshWalletBalances(true)
 
         return {
           success: true,
-          message: result.message || `Sell order placed for ${shares.toFixed(4)} shares`,
+          message: `Sell order placed for ${shares} shares`,
         }
       } catch (e: any) {
         console.error("❌ Sell order error", e)
         return { success: false, message: e.message }
       }
     },
-    [user, currentSharePrice, holdWalletPostHold, refreshWalletBalances],
-  )
-
-  const cancelSellOrder = useCallback(
-    async (orderId: string) => {
-      if (!user) return { success: false, message: "Not authenticated" }
-
-      try {
-        console.log("🚫 Cancelling sell order:", orderId)
-
-        const { data, error } = await supabase.rpc("cancel_sell_order", {
-          p_order_id: orderId,
-          p_user_uuid: user.id,
-        })
-
-        console.log("📥 Cancel order result:", { data, error })
-
-        if (error) {
-          throw error
-        }
-
-        // Silent background refresh - user won't see loading states
-        await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
-
-        return {
-          success: true,
-          message: "Sell order cancelled successfully. Remaining shares returned to your wallet.",
-        }
-      } catch (e: any) {
-        console.error("❌ Cancel order error", e)
-        return { success: false, message: e.message }
-      }
-    },
-    [user, refreshWalletBalances],
+    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet, refreshWalletBalances],
   )
 
   /* ---------- Background polling setup ---------- */
   useEffect(() => {
     if (!user || !session) return
 
+    // Initial load (with loading state)
     const initialLoad = async () => {
-      await Promise.all([fetchSharePrice(false), refreshOrders(false)])
+      await Promise.all([
+        fetchSharePrice(false), // Not silent for initial load
+        refreshOrders(false), // Not silent for initial load
+      ])
     }
 
     initialLoad()
 
-    // More frequent background updates for better UX with fractional matching
+    // Set up background polling (silent updates)
     const ordersInterval = setInterval(() => {
-      refreshOrders(true) // Always silent
-    }, 5000) // Every 5 seconds
+      refreshOrders(true) // Silent background refresh
+    }, 10000) // Every 10 seconds
 
     const priceInterval = setInterval(() => {
-      fetchSharePrice(true) // Always silent
-    }, 30000) // Every 30 seconds
+      fetchSharePrice(true) // Silent background refresh
+    }, 300000) // Every 5 minutes
 
     return () => {
       clearInterval(ordersInterval)
@@ -404,16 +337,19 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- context value ---------- */
   const ctx: ExchangeContextType = {
+    // GLOBAL market orders (all users)
     marketSellOrders,
     marketBuyOrders,
+
+    // USER-SPECIFIC orders (private)
     userSellOrders,
     userBuyOrders,
+
     placeBuyOrder,
     placeSellOrder,
-    cancelSellOrder,
     currentSharePrice,
     lastPriceUpdate,
-    loading,
+    loading, // Only true on initial load
     error,
     refreshOrders,
   }

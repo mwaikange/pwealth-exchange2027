@@ -6,20 +6,15 @@ import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
 // Define valid wallet types based on the constraint
-type ValidWalletType = "buy_wallet" | "hold_wallet_pre_hold" | "hold_wallet_post_hold" | "cashout_wallet"
+type ValidWalletType = "buy_wallet" | "hold_pre" | "hold_post" | "cashout_wallet"
 
-const VALID_WALLET_TYPES = new Set<ValidWalletType>([
-  "buy_wallet",
-  "hold_wallet_pre_hold",
-  "hold_wallet_post_hold",
-  "cashout_wallet",
-])
+const VALID_WALLET_TYPES = new Set<ValidWalletType>(["buy_wallet", "hold_pre", "hold_post", "cashout_wallet"])
 
 // Define the shape of our wallet state (real data from Supabase)
 type WalletState = {
   buyWalletBalance: number // NAD in buy_wallet
-  holdWalletPreHold: number // Shares in hold_wallet_pre_hold
-  holdWalletPostHold: number // Shares in hold_wallet_post_hold
+  holdWalletPreHold: number // Shares in hold_pre
+  holdWalletPostHold: number // Shares in hold_post
   cashoutWalletBalance: number // NAD in cashout_wallet
   aftBalance: number // Activation fee balance (if still used)
 }
@@ -80,7 +75,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false) // Track if we've loaded data once
   const { user, session } = useAuth()
 
-  // Fetch wallet balances from Supabase with retry logic
+  // Fetch wallet balances from Supabase
   const refreshBalances = async (silent = false) => {
     if (!user || !session) {
       if (!isInitialized) {
@@ -99,34 +94,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setError(null)
       }
 
-      // Add retry logic for rate limiting
-      let retryCount = 0
-      const maxRetries = 3
-      let walletData = null
-      let walletError = null
-
-      while (retryCount < maxRetries) {
-        const { data, error } = await supabase
-          .from("user_shares")
-          .select("wallet_type, shares")
-          .eq("user_uuid", user.id)
-
-        if (error) {
-          if (error.message?.includes("Too Many Requests") || error.message?.includes("rate limit")) {
-            retryCount++
-            if (retryCount < maxRetries) {
-              // Wait with exponential backoff
-              await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCount) * 1000))
-              continue
-            }
-          }
-          walletError = error
-          break
-        }
-
-        walletData = data
-        break
-      }
+      // Fetch user wallet balances
+      const { data: walletData, error: walletError } = await supabase
+        .from("user_shares")
+        .select("wallet_type, shares")
+        .eq("user_uuid", user.id)
 
       if (walletError) {
         throw new Error(`Failed to fetch wallet data: ${walletError.message}`)
@@ -148,10 +120,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           case "buy_wallet":
             newState.buyWalletBalance = shares
             break
-          case "hold_wallet_pre_hold": // Corrected wallet type
+          case "hold_pre":
             newState.holdWalletPreHold = shares
             break
-          case "hold_wallet_post_hold": // Corrected wallet type
+          case "hold_post":
             newState.holdWalletPostHold = shares
             break
           case "cashout_wallet":
@@ -197,10 +169,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     refreshBalances(false)
 
     // Set up background polling for wallet balances (silent updates)
-    // Reduced frequency to avoid rate limiting
     const walletInterval = setInterval(() => {
       refreshBalances(true) // Silent background refresh
-    }, 30000) // Every 30 seconds instead of 15
+    }, 15000) // Every 15 seconds
 
     return () => {
       clearInterval(walletInterval)
@@ -289,7 +260,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Update hold wallet (pre or post)
   const updateHoldWallet = async (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => {
-    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_wallet_pre_hold" : "hold_wallet_post_hold" // Corrected mapping
+    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_pre" : "hold_post"
     await updateWalletBalance(dbWalletType, amount, operation)
   }
 

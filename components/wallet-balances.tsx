@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useWallet } from "@/contexts/wallet-context"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
-import { Loader2, Wallet, TrendingUp, TrendingDown, DollarSign } from "lucide-react" // Import Lucide icons
+import { Loader2 } from "lucide-react"
 
 export function WalletBalances() {
   const { buyWalletBalance, holdWalletPreHold, holdWalletPostHold, cashoutWalletBalance, aftBalance, loading, error } =
@@ -51,7 +51,15 @@ export function WalletBalances() {
       {/* Buy Wallet Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <TrendingUp className="w-3 h-3 mr-1 text-blue-400" /> {/* Lucide Icon */}
+          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           Buy Wallet
         </div>
         <div className="text-xl font-bold">{formatCurrency(buyWalletBalance)}</div>
@@ -60,7 +68,15 @@ export function WalletBalances() {
       {/* Hold Pre-Hold Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <Wallet className="w-3 h-3 mr-1 text-green-400" /> {/* Lucide Icon */}
+          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           Hold Pre
         </div>
         <div className="text-xl font-bold">{formatShares(holdWalletPreHold)}</div>
@@ -70,7 +86,15 @@ export function WalletBalances() {
       {/* Hold Post-Hold Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <TrendingDown className="w-3 h-3 mr-1 text-purple-400" /> {/* Lucide Icon */}
+          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           Hold Post
         </div>
         <div className="text-xl font-bold">{formatShares(holdWalletPostHold)}</div>
@@ -80,7 +104,15 @@ export function WalletBalances() {
       {/* Cashout Wallet Box */}
       <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
         <div className="flex items-center text-[10px] text-gray-300">
-          <DollarSign className="w-3 h-3 mr-1 text-orange-400" /> {/* Lucide Icon */}
+          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           Cashout
         </div>
         <div className="text-xl font-bold">{formatCurrency(cashoutWalletBalance)}</div>
@@ -90,7 +122,15 @@ export function WalletBalances() {
       {aftBalance > 0 && (
         <div className="bg-[#4a4d5a] rounded-md px-2 py-1 flex flex-col items-center min-w-[120px]">
           <div className="flex items-center text-[10px] text-gray-300">
-            <Wallet className="w-3 h-3 mr-1" /> {/* Lucide Icon */}
+            <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M3 6H21M5 6V20H19V6M8 6V4H16V6M10 10H14M10 14H14M10 18H14"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
             Activation Token
           </div>
           <div className="text-xl font-bold flex items-center">{formatCurrency(aftBalance)}</div>
