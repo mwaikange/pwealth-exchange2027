@@ -1,142 +1,194 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
-// Wallet types that match the database schema
-const VALID_WALLET_TYPES = new Set([
-  "buy_wallet",
-  "cashout_wallet",
-  "hold_wallet_pre_hold",
-  "hold_wallet_post_hold",
-  "vesting_locked",
-])
-
 interface WalletContextType {
   // Wallet balances
-  buyWallet: number
-  cashoutWallet: number
+  buyWalletBalance: number
   holdWalletPreHold: number
   holdWalletPostHold: number
-  vestingLocked: number
+  cashoutWalletBalance: number
+  aftBalance: number
 
-  // Actions
-  refreshBalances: () => Promise<void>
-
-  // Utilities
-  formatCurrency: (amount: number) => string
-  formatShares: (shares: number) => string
-
-  // State
+  // Loading states
   loading: boolean
   error: string | null
+
+  // Actions
+  refreshWalletBalances: (silent?: boolean) => Promise<void>
+  updateBuyWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+  updateHoldWallet: (shares: number, operation: "add" | "subtract", type: "pre" | "post") => Promise<void>
+  updateCashoutWallet: (amount: number, operation: "add" | "subtract") => Promise<void>
+  updateAftBalance: (amount: number, operation: "add" | "subtract") => Promise<void>
+
+  // Alias for backward compatibility
+  refreshBalances: (silent?: boolean) => Promise<void>
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
 
-// Utility function to format currency
-export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat("en-NA", {
-    style: "currency",
-    currency: "NAD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount)
-}
-
-// Utility function to format shares with exactly 4 decimal places
-export const formatShares = (shares: number): string => {
-  return shares.toFixed(4)
-}
-
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
 
-  const [buyWallet, setBuyWallet] = useState(0)
-  const [cashoutWallet, setCashoutWallet] = useState(0)
+  // Wallet balances
+  const [buyWalletBalance, setBuyWalletBalance] = useState(0)
   const [holdWalletPreHold, setHoldWalletPreHold] = useState(0)
   const [holdWalletPostHold, setHoldWalletPostHold] = useState(0)
-  const [vestingLocked, setVestingLocked] = useState(0)
+  const [cashoutWalletBalance, setCashoutWalletBalance] = useState(0)
+  const [aftBalance, setAftBalance] = useState(0)
+
+  // UI states
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refreshBalances = async () => {
-    if (!user) {
-      console.log("❌ No user found, skipping balance refresh")
-      return
-    }
+  const refreshWalletBalances = useCallback(
+    async (silent = false) => {
+      if (!user) return
 
-    try {
-      setLoading(true)
-      setError(null)
-
-      console.log("🔄 Refreshing wallet balances for user:", user.id)
-
-      const { data, error: fetchError } = await supabase
-        .from("user_shares")
-        .select("*")
-        .eq("user_uuid", user.id)
-        .single()
-
-      if (fetchError) {
-        if (fetchError.code === "PGRST116") {
-          // No row found - user doesn't have wallet entries yet
-          console.log("⚠️ No wallet data found for user, initializing with zeros")
-          setBuyWallet(0)
-          setCashoutWallet(0)
-          setHoldWalletPreHold(0)
-          setHoldWalletPostHold(0)
-          setVestingLocked(0)
-          return
+      try {
+        if (!silent) {
+          setLoading(true)
+          setError(null)
         }
-        throw fetchError
+
+        if (!silent) {
+          console.log("🔄 Refreshing wallet balances...")
+        }
+
+        // Fetch user shares data
+        const { data: sharesData, error: sharesError } = await supabase
+          .from("user_shares")
+          .select("wallet_type, shares")
+          .eq("user_uuid", user.id)
+
+        if (sharesError) {
+          console.error("Error fetching user shares:", sharesError)
+          throw sharesError
+        }
+
+        // Process shares data
+        let buyWallet = 0
+        let holdPreShares = 0
+        let holdPostShares = 0
+        let cashoutWallet = 0
+        let aft = 0
+
+        if (sharesData) {
+          sharesData.forEach((item: any) => {
+            const shares = Number(item.shares) || 0
+            switch (item.wallet_type) {
+              case "buy_wallet":
+                buyWallet += shares
+                break
+              case "hold_pre":
+                holdPreShares += shares
+                break
+              case "hold_post":
+                holdPostShares += shares
+                break
+              case "cashout_wallet":
+                cashoutWallet += shares
+                break
+              case "aft_balance":
+                aft += shares
+                break
+              default:
+                if (!silent) {
+                  console.warn("Unknown wallet type:", item.wallet_type)
+                }
+            }
+          })
+        }
+
+        // Update state
+        setBuyWalletBalance(buyWallet)
+        setHoldWalletPreHold(holdPreShares)
+        setHoldWalletPostHold(holdPostShares)
+        setCashoutWalletBalance(cashoutWallet)
+        setAftBalance(aft)
+
+        if (!silent) {
+          console.log("✅ Wallet balances updated:", {
+            buyWallet: buyWallet.toFixed(4),
+            holdPre: holdPreShares.toFixed(4),
+            holdPost: holdPostShares.toFixed(4),
+            cashout: cashoutWallet.toFixed(4),
+            aft: aft.toFixed(4),
+          })
+        }
+      } catch (err: any) {
+        if (!silent) {
+          console.error("❌ Error refreshing wallet balances:", err)
+          setError(err.message || "Failed to refresh wallet balances")
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false)
+        }
       }
+    },
+    [user],
+  )
 
-      console.log("📊 Raw wallet data from database:", data)
+  // Update buy wallet (optimistic UI update)
+  const updateBuyWallet = async (amount: number, operation: "add" | "subtract") => {
+    const newBalance = operation === "add" ? buyWalletBalance + amount : buyWalletBalance - amount
+    setBuyWalletBalance(Math.max(0, newBalance)) // Prevent negative balances
+    console.log(
+      `💰 ${operation === "add" ? "Added" : "Subtracted"} N$${amount} ${operation === "add" ? "to" : "from"} buy wallet. New balance: N$${newBalance.toFixed(2)}`,
+    )
+  }
 
-      // Update state with the fetched data, ensuring all values are numbers
-      setBuyWallet(Number(data?.buy_wallet) || 0)
-      setCashoutWallet(Number(data?.cashout_wallet) || 0)
-      setHoldWalletPreHold(Number(data?.hold_wallet_pre_hold) || 0)
-      setHoldWalletPostHold(Number(data?.hold_wallet_post_hold) || 0)
-      setVestingLocked(Number(data?.vesting_locked) || 0)
-
-      console.log("✅ Wallet balances updated:", {
-        buyWallet: Number(data?.buy_wallet) || 0,
-        cashoutWallet: Number(data?.cashout_wallet) || 0,
-        holdWalletPreHold: Number(data?.hold_wallet_pre_hold) || 0,
-        holdWalletPostHold: Number(data?.hold_wallet_post_hold) || 0,
-        vestingLocked: Number(data?.vesting_locked) || 0,
-      })
-    } catch (err: any) {
-      console.error("❌ Error fetching wallet balances:", err)
-      setError(err.message || "Failed to fetch wallet balances")
-    } finally {
-      setLoading(false)
+  // Update hold wallet (optimistic UI update)
+  const updateHoldWallet = async (shares: number, operation: "add" | "subtract", type: "pre" | "post") => {
+    if (type === "pre") {
+      const newBalance = operation === "add" ? holdWalletPreHold + shares : holdWalletPreHold - shares
+      setHoldWalletPreHold(Math.max(0, newBalance))
+      console.log(
+        `📈 ${operation === "add" ? "Added" : "Subtracted"} ${shares} shares ${operation === "add" ? "to" : "from"} pre-hold wallet. New balance: ${newBalance.toFixed(4)}`,
+      )
+    } else {
+      const newBalance = operation === "add" ? holdWalletPostHold + shares : holdWalletPostHold - shares
+      setHoldWalletPostHold(Math.max(0, newBalance))
+      console.log(
+        `📈 ${operation === "add" ? "Added" : "Subtracted"} ${shares} shares ${operation === "add" ? "to" : "from"} post-hold wallet. New balance: ${newBalance.toFixed(4)}`,
+      )
     }
   }
 
-  // Load balances when user changes
+  // Update cashout wallet (optimistic UI update)
+  const updateCashoutWallet = async (amount: number, operation: "add" | "subtract") => {
+    const newBalance = operation === "add" ? cashoutWalletBalance + amount : cashoutWalletBalance - amount
+    setCashoutWalletBalance(Math.max(0, newBalance))
+    console.log(
+      `💸 ${operation === "add" ? "Added" : "Subtracted"} N$${amount} ${operation === "add" ? "to" : "from"} cashout wallet. New balance: N$${newBalance.toFixed(2)}`,
+    )
+  }
+
+  // Update AFT balance (optimistic UI update)
+  const updateAftBalance = async (amount: number, operation: "add" | "subtract") => {
+    const newBalance = operation === "add" ? aftBalance + amount : aftBalance - amount
+    setAftBalance(Math.max(0, newBalance))
+    console.log(
+      `🎯 ${operation === "add" ? "Added" : "Subtracted"} ${amount} AFT ${operation === "add" ? "to" : "from"} AFT balance. New balance: ${newBalance.toFixed(4)}`,
+    )
+  }
+
+  // Load wallet balances when user changes
   useEffect(() => {
     if (user) {
-      refreshBalances()
-    } else {
-      // Reset balances when user logs out
-      setBuyWallet(0)
-      setCashoutWallet(0)
-      setHoldWalletPreHold(0)
-      setHoldWalletPostHold(0)
-      setVestingLocked(0)
+      refreshWalletBalances()
     }
-  }, [user])
+  }, [user, refreshWalletBalances])
 
-  // Set up real-time subscription for balance changes
+  // Set up real-time subscriptions for wallet changes
   useEffect(() => {
     if (!user) return
 
-    console.log("🔔 Setting up real-time subscription for wallet balances")
+    console.log("🔔 Setting up wallet real-time subscriptions")
 
     const subscription = supabase
       .channel("user_shares_changes")
@@ -149,29 +201,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           filter: `user_uuid=eq.${user.id}`,
         },
         (payload) => {
-          console.log("📡 Wallet balance change detected:", payload)
-          refreshBalances()
+          console.log("📡 Wallet change detected:", payload)
+          refreshWalletBalances(true) // Silent refresh
         },
       )
       .subscribe()
 
     return () => {
-      console.log("🔕 Cleaning up wallet subscription")
+      console.log("🔕 Cleaning up wallet subscriptions")
       subscription.unsubscribe()
     }
-  }, [user])
+  }, [user, refreshWalletBalances])
 
   const value = {
-    buyWallet,
-    cashoutWallet,
+    // Balances
+    buyWalletBalance,
     holdWalletPreHold,
     holdWalletPostHold,
-    vestingLocked,
-    refreshBalances,
-    formatCurrency,
-    formatShares,
+    cashoutWalletBalance,
+    aftBalance,
+
+    // States
     loading,
     error,
+
+    // Actions
+    refreshWalletBalances,
+    updateBuyWallet,
+    updateHoldWallet,
+    updateCashoutWallet,
+    updateAftBalance,
+
+    // Alias for backward compatibility
+    refreshBalances: refreshWalletBalances,
   }
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
