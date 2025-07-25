@@ -1,226 +1,175 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Lock, Unlock, CheckCircle, Loader2 } from "lucide-react"
-import { VestConfirmationModal } from "./vest-confirmation-modal"
+import { Clock, Lock, CheckCircle } from "lucide-react"
 
-interface VestingSlot {
-  id?: string
-  user_uuid: string
-  level: number
-  slot_number: number // 1-based indexing
-  shares: number
-  status: "locked" | "claimable" | "claimed"
-  created_at?: string
-  updated_at?: string
+// Safe number conversion with fallback
+const safeNumber = (value: any): number => {
+  const num = Number(value)
+  return isNaN(num) ? 0 : num
+}
+
+// Safe toFixed with fallback
+const safeToFixed = (value: any, decimals = 4): string => {
+  const num = safeNumber(value)
+  return num.toFixed(decimals)
 }
 
 interface VestingSlotProps {
-  slot: VestingSlot
-  slotIndex: number // 0-based UI index for display
-  level: number
-  onVest: (level: number, slotIndex: number, shares: number) => Promise<void>
-  onClaim: (level: number, slotIndex: number) => Promise<void>
-  availableShares: number
-  isProcessing?: boolean
+  slot: {
+    id: string
+    status: "empty" | "in_progress" | "claimable"
+    startDate?: number
+    amount: number
+    progress: number
+    level: number
+  }
+  slotIndex: number
+  onVest: (slotIndex: number) => void
+  onClaim: (slotIndex: number) => void
 }
 
-export function VestingSlot({
-  slot,
-  slotIndex,
-  level,
-  onVest,
-  onClaim,
-  availableShares,
-  isProcessing = false,
-}: VestingSlotProps) {
-  const [showVestModal, setShowVestModal] = useState(false)
-  const [isVesting, setIsVesting] = useState(false)
-  const [isClaiming, setIsClaiming] = useState(false)
+export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotProps) {
+  const [isHovered, setIsHovered] = useState(false)
 
-  const handleVest = async (shares: number) => {
-    try {
-      setIsVesting(true)
-      // Pass slotIndex (0-based) to onVest, which will convert to 1-based slot_number
-      await onVest(level, slotIndex, shares)
-      setShowVestModal(false)
-    } catch (error) {
-      console.error("Error vesting shares:", error)
-    } finally {
-      setIsVesting(false)
-    }
-  }
-
-  const handleClaim = async () => {
-    try {
-      setIsClaiming(true)
-      // Pass slotIndex (0-based) to onClaim, which will convert to 1-based slot_number
-      await onClaim(level, slotIndex)
-    } catch (error) {
-      console.error("Error claiming shares:", error)
-    } finally {
-      setIsClaiming(false)
-    }
-  }
-
-  const getStatusIcon = () => {
-    switch (slot.status) {
-      case "locked":
-        return <Lock className="w-4 h-4 text-yellow-500" />
-      case "claimable":
-        return <Unlock className="w-4 h-4 text-green-500" />
-      case "claimed":
-        return <CheckCircle className="w-4 h-4 text-blue-500" />
+  // Get level info with safe defaults
+  const getLevelInfo = (level: number) => {
+    switch (level) {
+      case 1:
+        return { name: "Retail", days: 5, range: "1-50" }
+      case 2:
+        return { name: "Small Business", days: 30, range: "51-500" }
+      case 3:
+        return { name: "Corporate", days: 90, range: "501+" }
       default:
-        return <Lock className="w-4 h-4 text-gray-500" />
+        return { name: "Retail", days: 5, range: "1-50" }
     }
   }
 
-  const getStatusBadge = () => {
-    const statusConfig = {
-      locked: { variant: "secondary" as const, className: "bg-yellow-600 text-yellow-100" },
-      claimable: { variant: "default" as const, className: "bg-green-600 text-green-100" },
-      claimed: { variant: "outline" as const, className: "bg-blue-600 text-blue-100" },
+  const levelInfo = getLevelInfo(safeNumber(slot.level))
+
+  // Calculate unlock date for locked slots with safe conversion
+  const getUnlockDate = () => {
+    if (slot.startDate && safeNumber(slot.startDate) > 0) {
+      const unlockTime = safeNumber(slot.startDate) + levelInfo.days * 24 * 60 * 60 * 1000
+      return new Date(unlockTime)
     }
-
-    const config = statusConfig[slot.status] || statusConfig.locked
-
-    return (
-      <Badge variant={config.variant} className={config.className}>
-        {slot.status.toUpperCase()}
-      </Badge>
-    )
+    return null
   }
 
-  const getProgressValue = () => {
-    if (slot.status === "claimed") return 100
-    if (slot.status === "claimable") return 75
-    if (slot.shares > 0) return 50
-    return 0
+  const unlockDate = getUnlockDate()
+
+  // Format date and time safely
+  const formatDateTime = (date: Date | null) => {
+    if (!date) return "Unknown"
+
+    try {
+      return date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } catch (error) {
+      return "Invalid Date"
+    }
   }
 
-  const getProgressColor = () => {
+  const renderSlotContent = () => {
+    const safeAmount = safeNumber(slot.amount)
+    const safeProgress = safeNumber(slot.progress)
+
     switch (slot.status) {
-      case "claimed":
-        return "bg-blue-500"
+      case "empty":
+        return (
+          <div className="text-center">
+            <div className="text-slate-400 text-sm mb-3">Click VEST to begin locking shares</div>
+            <div className="text-slate-500 text-xs mb-4">
+              Hold period: {levelInfo.name} ({levelInfo.days} days)
+            </div>
+            <button
+              onClick={() => onVest(slotIndex)}
+              onMouseEnter={() => setIsHovered(true)}
+              onMouseLeave={() => setIsHovered(false)}
+              className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
+                isHovered ? "bg-blue-600 text-white transform scale-105" : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
+            >
+              VEST
+            </button>
+          </div>
+        )
+
+      case "in_progress":
+        return (
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-2">
+              <Lock className="w-4 h-4 text-red-400 mr-2" />
+              <span className="text-red-400 font-medium text-sm">LOCKED</span>
+            </div>
+            <div className="text-slate-300 text-sm mb-2">{safeToFixed(safeAmount)} shares locked</div>
+            {unlockDate && <div className="text-slate-400 text-xs mb-3">Unlocks: {formatDateTime(unlockDate)}</div>}
+            <div className="w-full bg-slate-700 rounded-full h-2 mb-3">
+              <div
+                className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, safeProgress))}%` }}
+              />
+            </div>
+            <button
+              disabled
+              className="w-full py-2 px-4 rounded-lg font-medium bg-slate-600 text-slate-400 cursor-not-allowed"
+            >
+              <Lock className="w-4 h-4 inline mr-2" />
+              LOCKED
+            </button>
+          </div>
+        )
+
       case "claimable":
-        return "bg-green-500"
-      case "locked":
-        return slot.shares > 0 ? "bg-yellow-500" : "bg-gray-500"
+        return (
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-2">
+              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
+              <span className="text-green-400 font-medium text-sm">READY TO CLAIM</span>
+            </div>
+            <div className="text-slate-300 text-sm mb-2">{safeToFixed(safeAmount)} shares ready</div>
+            {unlockDate && <div className="text-slate-400 text-xs mb-3">Unlocked: {formatDateTime(unlockDate)}</div>}
+            <button
+              onClick={() => onClaim(slotIndex)}
+              onMouseEnter={() => setIsHovered(true)}
+              onMouseLeave={() => setIsHovered(false)}
+              className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
+                isHovered ? "bg-green-600 text-white transform scale-105" : "bg-green-500 text-white hover:bg-green-600"
+              }`}
+            >
+              CLAIM
+            </button>
+          </div>
+        )
+
       default:
-        return "bg-gray-500"
+        return (
+          <div className="text-center">
+            <div className="text-slate-400 text-sm">Unknown status</div>
+          </div>
+        )
     }
   }
 
   return (
-    <>
-      <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-slate-300 flex items-center justify-between">
-            <span className="flex items-center">
-              {getStatusIcon()}
-              <span className="ml-2">Slot {slotIndex + 1}</span> {/* Display 1-based for user */}
-            </span>
-            {getStatusBadge()}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Shares Display */}
-          <div className="text-center">
-            <div className="text-2xl font-bold text-slate-100">{slot.shares.toFixed(4)}</div>
-            <div className="text-xs text-slate-400">shares</div>
+    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors">
+      <div className="flex items-center justify-between mb-3">
+        {/* Display 1-based slot numbers (slotIndex is 0-based from UI, but we show 1-based) */}
+        <h4 className="text-slate-100 font-medium">Slot {safeNumber(slotIndex) + 1}</h4>
+        {slot.status === "in_progress" && (
+          <div className="flex items-center text-yellow-400 text-xs">
+            <Clock className="w-3 h-3 mr-1" />
+            {Math.round(safeNumber(slot.progress))}%
           </div>
-
-          {/* Progress Bar */}
-          <div className="space-y-2">
-            <Progress
-              value={getProgressValue()}
-              className="h-2"
-              style={
-                {
-                  "--progress-background": getProgressColor(),
-                } as React.CSSProperties
-              }
-            />
-            <div className="text-xs text-slate-400 text-center">
-              {slot.status === "claimed" && "Fully Claimed"}
-              {slot.status === "claimable" && "Ready to Claim"}
-              {slot.status === "locked" && slot.shares > 0 && "Vested & Locked"}
-              {slot.status === "locked" && slot.shares === 0 && "Empty Slot"}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2">
-            {slot.status === "locked" && (
-              <Button
-                onClick={() => setShowVestModal(true)}
-                disabled={isProcessing || availableShares <= 0}
-                className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
-                size="sm"
-              >
-                {isVesting ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                    Vesting...
-                  </>
-                ) : (
-                  "Vest Shares"
-                )}
-              </Button>
-            )}
-
-            {slot.status === "claimable" && (
-              <Button
-                onClick={handleClaim}
-                disabled={isProcessing || isClaiming}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
-                size="sm"
-              >
-                {isClaiming ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                    Claiming...
-                  </>
-                ) : (
-                  "Claim Shares"
-                )}
-              </Button>
-            )}
-
-            {slot.status === "claimed" && (
-              <Button disabled className="w-full bg-blue-600 text-white opacity-50" size="sm">
-                <CheckCircle className="w-3 h-3 mr-1" />
-                Claimed
-              </Button>
-            )}
-          </div>
-
-          {/* Slot Info */}
-          <div className="text-xs text-slate-500 space-y-1">
-            <div>Level: {level}</div>
-            <div>Slot: {slot.slot_number}</div> {/* Show actual 1-based slot_number */}
-            {slot.created_at && <div>Created: {new Date(slot.created_at).toLocaleDateString()}</div>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Vest Confirmation Modal */}
-      <VestConfirmationModal
-        isOpen={showVestModal}
-        onClose={() => setShowVestModal(false)}
-        onConfirm={handleVest}
-        availableShares={availableShares}
-        level={level}
-        slotNumber={slotIndex + 1} // Display 1-based slot number
-        isProcessing={isVesting}
-      />
-    </>
+        )}
+      </div>
+      {renderSlotContent()}
+    </div>
   )
 }
