@@ -174,6 +174,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           shares_filled: Number(order.shares_filled || order.filled_shares || 0),
           shares_remaining: Number(order.shares_remaining || order.shares_available - order.shares_filled || 0),
           filled_shares: Number(order.filled_shares || order.shares_filled || 0), // Add this line
+          filled_amount: Number(order.filled_amount || 0), // Ensure this is always a number
           amount_filled: Number(
             order.amount_filled ||
               (order.shares_filled || order.filled_shares || 0) * (order.price_per_share || 0) ||
@@ -189,6 +190,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (!silent) {
         console.log("✅ Orders refreshed successfully")
+        console.log("User buy orders:", userBuyResult.data?.length || 0)
+        console.log("Market buy orders:", marketBuyResult.data?.length || 0)
       }
 
       // Mark as initialized after first successful load
@@ -223,7 +226,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
         console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
 
-        // ✅ Place order with 30-second delay before matching
+        // ✅ Place order with 30-second delay before matching - REMOVED MINIMUM AMOUNT CHECK
         const { data, error } = await supabase.rpc("place_buy_order_with_delay", {
           p_user_uuid: user.id,
           p_price_per_share: currentSharePrice,
@@ -244,9 +247,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         await refreshOrders(true)
         await refreshWalletBalances(true)
 
+        const estimatedShares = (amount / currentSharePrice).toFixed(4)
         return {
           success: true,
-          message: `Buy order placed for ${(amount / currentSharePrice).toFixed(2)} shares. Will be matched in 30 seconds.`,
+          message: `Buy order placed for ${estimatedShares} shares. Will be matched in 30 seconds.`,
         }
       } catch (e: any) {
         console.error("❌ Buy order error", e)
