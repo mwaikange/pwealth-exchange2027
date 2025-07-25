@@ -41,7 +41,7 @@ interface VestingStats {
   totalUsers: number
 }
 
-export default function OverviewComponent() {
+export function OverviewComponent() {
   const { user } = useAuth()
   const {
     buyWalletBalance = 0,
