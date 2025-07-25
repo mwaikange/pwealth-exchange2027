@@ -1,32 +1,32 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
-import { X, AlertTriangle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { X, AlertTriangle, Info } from "lucide-react"
+import { useWallet } from "@/contexts/wallet-context"
+import { useNotification } from "@/hooks/use-notification"
 
 interface VestConfirmationModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (amount: number) => Promise<void>
-  availableShares: number
+  onConfirm: (amount: number) => void
+  level: number
   slotIndex: number
-  fixedLevel: number
+  maxAmount: number
 }
 
 export function VestConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
-  availableShares,
+  level,
   slotIndex,
-  fixedLevel,
+  maxAmount,
 }: VestConfirmationModalProps) {
   const [amount, setAmount] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState("")
+  const [isValid, setIsValid] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const { preHoldBalance } = useWallet()
+  const { showNotification } = useNotification()
 
   // Get level info
   const getLevelInfo = (level: number) => {
@@ -42,183 +42,149 @@ export function VestConfirmationModal({
     }
   }
 
-  const levelInfo = getLevelInfo(fixedLevel)
-
-  // Reset form when modal opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      setAmount("")
-      setError("")
-      setIsSubmitting(false)
-    }
-  }, [isOpen])
+  const levelInfo = getLevelInfo(level)
 
   // Validate amount
-  const validateAmount = (value: string): string => {
-    const numValue = Number.parseFloat(value)
+  useEffect(() => {
+    const numAmount = Number.parseFloat(amount)
 
-    if (!value || isNaN(numValue)) {
-      return "Please enter a valid amount"
-    }
-
-    if (numValue <= 0) {
-      return "Amount must be greater than 0"
-    }
-
-    if (numValue > availableShares) {
-      return `Insufficient balance. Available: ${availableShares.toFixed(4)} shares`
-    }
-
-    // Level-based validation
-    if (numValue < levelInfo.min) {
-      return `${levelInfo.name} level minimum: ${levelInfo.min} shares`
-    }
-
-    if (levelInfo.max !== Number.POSITIVE_INFINITY && numValue > levelInfo.max) {
-      return `${levelInfo.name} level maximum: ${levelInfo.max} shares`
-    }
-
-    return ""
-  }
-
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setAmount(value)
-
-    // Clear error when user starts typing
-    if (error) {
-      setError("")
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    const validationError = validateAmount(amount)
-    if (validationError) {
-      setError(validationError)
+    if (!amount || isNaN(numAmount)) {
+      setIsValid(false)
+      setErrorMessage("")
       return
     }
 
-    try {
-      setIsSubmitting(true)
-      setError("")
-      await onConfirm(Number.parseFloat(amount))
-      onClose()
-    } catch (err: any) {
-      setError(err.message || "Failed to vest shares")
-    } finally {
-      setIsSubmitting(false)
+    if (numAmount <= 0) {
+      setIsValid(false)
+      setErrorMessage("Amount must be greater than 0")
+      return
     }
+
+    if (numAmount > preHoldBalance) {
+      setIsValid(false)
+      setErrorMessage("Insufficient pre-hold balance")
+      return
+    }
+
+    if (numAmount < levelInfo.min) {
+      setIsValid(false)
+      setErrorMessage(`${levelInfo.name} level requires minimum ${levelInfo.min} shares`)
+      return
+    }
+
+    if (levelInfo.max !== Number.POSITIVE_INFINITY && numAmount > levelInfo.max) {
+      setIsValid(false)
+      setErrorMessage(`${levelInfo.name} level allows maximum ${levelInfo.max} shares`)
+      return
+    }
+
+    setIsValid(true)
+    setErrorMessage("")
+  }, [amount, preHoldBalance, levelInfo])
+
+  const handleConfirm = () => {
+    if (isValid) {
+      const numAmount = Number.parseFloat(amount)
+      onConfirm(numAmount)
+      showNotification("success", `Successfully vested ${numAmount.toFixed(4)} shares in Slot ${slotIndex + 1}`)
+      onClose()
+      setAmount("")
+    }
+  }
+
+  const handleClose = () => {
+    onClose()
+    setAmount("")
+    setErrorMessage("")
   }
 
   if (!isOpen) return null
 
-  const numAmount = Number.parseFloat(amount) || 0
-  const isValid = !validateAmount(amount) && numAmount > 0
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-lg p-6 w-full max-w-md border border-slate-700">
-        {/* Header */}
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-slate-800 rounded-lg p-6 w-full max-w-md mx-4 border border-slate-700">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-slate-100">Vest Shares - Slot {slotIndex + 1}</h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 transition-colors"
-            disabled={isSubmitting}
-          >
+          {/* Fix: Display 1-based indexing (slotIndex + 1) */}
+          <h3 className="text-lg font-semibold text-white">Vest Shares - Slot {slotIndex + 1}</h3>
+          <button onClick={handleClose} className="text-slate-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Available Balance */}
-        <div className="mb-4 p-3 bg-slate-700 rounded-lg">
-          <div className="text-slate-300 text-sm">Available Balance</div>
-          <div className="text-xl font-bold text-blue-400">{availableShares.toFixed(4)}</div>
-          <div className="text-slate-500 text-xs">shares</div>
+        <div className="mb-4">
+          <div className="text-sm text-slate-300 mb-2">Available Balance</div>
+          <div className="text-2xl font-bold text-blue-400">{preHoldBalance.toFixed(4)}</div>
         </div>
 
-        {/* Level Info */}
-        <div className="mb-4 p-3 bg-blue-900 bg-opacity-30 rounded-lg border border-blue-700">
-          <div className="text-blue-300 text-sm font-medium">Vesting Level (Fixed)</div>
-          <div className="text-blue-100 font-semibold">
-            Level {fixedLevel} - {levelInfo.name}
+        <div className="mb-4">
+          <div className="bg-slate-700 rounded-lg p-3 mb-3">
+            <div className="text-sm font-medium text-slate-200 mb-1">
+              Level {level} - {levelInfo.name}
+            </div>
+            <div className="text-xs text-slate-400">
+              {levelInfo.min === 501 ? "501+ shares" : `${levelInfo.min}-${levelInfo.max} shares`}
+            </div>
           </div>
-          <div className="text-blue-300 text-xs">
-            {levelInfo.min}-{levelInfo.max === Number.POSITIVE_INFINITY ? "∞" : levelInfo.max} shares
-          </div>
-        </div>
 
-        {/* Hold Period */}
-        <div className="mb-4 p-2 bg-yellow-900 bg-opacity-30 rounded border border-yellow-700">
-          <div className="text-yellow-300 text-xs font-medium">
-            ⚠️ {levelInfo.name} Hold Period: {levelInfo.days} days
+          <div className="bg-yellow-900/30 border border-yellow-600/30 rounded-lg p-3">
+            <div className="text-xs text-yellow-300 font-medium mb-1">
+              {levelInfo.name} Hold Period: {levelInfo.days} days
+            </div>
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-slate-300 text-sm font-medium mb-2">Number of Shares to Vest</label>
-            <Input
-              type="number"
-              step="0.0001"
-              min="0"
-              max={availableShares}
-              value={amount}
-              onChange={handleAmountChange}
-              placeholder={`Enter ${levelInfo.min}-${levelInfo.max === Number.POSITIVE_INFINITY ? "∞" : levelInfo.max} shares`}
-              className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
-              disabled={isSubmitting}
-            />
-            {error && (
-              <div className="mt-2 text-red-400 text-sm flex items-center">
-                <AlertTriangle className="w-4 h-4 mr-1" />
-                {error}
-              </div>
-            )}
-          </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Number of Shares to Vest</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder={`Enter ${levelInfo.min === 501 ? "501+" : `${levelInfo.min}-${levelInfo.max}`} shares`}
+            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            min={levelInfo.min}
+            max={levelInfo.max === Number.POSITIVE_INFINITY ? undefined : levelInfo.max}
+            step="0.0001"
+          />
+          {errorMessage && (
+            <div className="mt-2 text-sm text-red-400 flex items-center">
+              <AlertTriangle className="w-4 h-4 mr-1" />
+              {errorMessage}
+            </div>
+          )}
+        </div>
 
-          {/* Range Info */}
-          <div className="mb-4 text-slate-400 text-xs">
-            {levelInfo.name} level: {levelInfo.min}-{levelInfo.max === Number.POSITIVE_INFINITY ? "∞" : levelInfo.max}{" "}
-            shares
+        <div className="bg-orange-900/30 border border-orange-600/30 rounded-lg p-3 mb-6">
+          <div className="flex items-start">
+            <Info className="w-4 h-4 text-orange-400 mr-2 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-orange-300">
+              <div className="font-medium mb-1">Important Notice:</div>
+              <ul className="space-y-1">
+                <li>• Shares deducted from Pre-Hold balance</li>
+                <li>• Locked for {levelInfo.days} days</li>
+                <li>• Claim to Post-Hold after {levelInfo.days} days</li>
+                <li>• Action cannot be reversed</li>
+              </ul>
+            </div>
           </div>
+        </div>
 
-          {/* Important Notice */}
-          <div className="mb-6 p-3 bg-orange-900 bg-opacity-30 rounded border border-orange-700">
-            <div className="text-orange-300 text-xs font-medium mb-2">⚠️ Important Notice:</div>
-            <ul className="text-orange-200 text-xs space-y-1">
-              <li>• Shares deducted from Pre-Hold balance</li>
-              <li>• Locked for {levelInfo.days} days</li>
-              <li>• Claim to Post-Hold after {levelInfo.days} days</li>
-              <li>• Action cannot be reversed</li>
-            </ul>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex space-x-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700 bg-transparent"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={!isValid || isSubmitting}
-              className={`flex-1 ${
-                isValid ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-slate-600 text-slate-400 cursor-not-allowed"
-              }`}
-            >
-              {isSubmitting ? "Vesting..." : `Vest ${numAmount > 0 ? numAmount.toFixed(4) : ""}`}
-            </Button>
-          </div>
-        </form>
+        <div className="flex gap-3">
+          <button
+            onClick={handleClose}
+            className="flex-1 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-500 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!isValid}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              isValid ? "bg-blue-600 text-white hover:bg-blue-500" : "bg-slate-600 text-slate-400 cursor-not-allowed"
+            }`}
+          >
+            Vest {amount ? Number.parseFloat(amount).toFixed(4) : ""}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -20,7 +20,7 @@ interface VestingSlot {
   level: number | null
   slot_number: number | null
   amount: number
-  status: "locked" | "unlocked" | "claimed"
+  status: "vest" | "locked" | "claim" // Updated status values
   start_time: string | null
   end_time: string | null
   claimed_at: string | null
@@ -108,17 +108,17 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           slot_number: slot.slot_number || 0,
         }))
 
-        // Auto-update unlocked slots
+        // Auto-update claim status for matured slots
         const now = new Date()
         const slotsToUpdate = processedSlots.filter(
           (slot) => slot.status === "locked" && slot.end_time && new Date(slot.end_time) <= now,
         )
 
         if (slotsToUpdate.length > 0) {
-          console.log(`🔓 Auto-unlocking ${slotsToUpdate.length} matured slots`)
+          console.log(`🔓 Auto-updating ${slotsToUpdate.length} matured slots to claim status`)
 
           for (const slot of slotsToUpdate) {
-            await supabase.from("pivot_vesting").update({ status: "unlocked" }).eq("id", slot.id)
+            await supabase.from("pivot_vesting").update({ status: "claim" }).eq("id", slot.id)
           }
 
           // Refetch after updates
@@ -144,9 +144,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         if (!silent) {
           console.log("✅ Vesting data refreshed:", {
             totalSlots: processedSlots.length,
+            vest: processedSlots.filter((s) => s.status === "vest").length,
             locked: processedSlots.filter((s) => s.status === "locked").length,
-            unlocked: processedSlots.filter((s) => s.status === "unlocked").length,
-            claimed: processedSlots.filter((s) => s.status === "claimed").length,
+            claim: processedSlots.filter((s) => s.status === "claim").length,
           })
         }
       } catch (err: any) {
@@ -185,7 +185,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
             const now = Date.now()
             progress = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100))
           }
-        } else if (existingSlot.status === "unlocked") {
+        } else if (existingSlot.status === "claim") {
           status = "claimable"
           progress = 100
         }
@@ -227,15 +227,15 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         startTime.getTime() + VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].days * 24 * 60 * 60 * 1000,
       )
 
-      // Insert or update the vesting slot
+      // Insert or update the vesting slot with "locked" status
       const { data, error } = await supabase
         .from("pivot_vesting")
         .upsert({
           user_uuid: user.id,
           level,
-          slot_number: slotIndex,
+          slot_number: slotIndex, // This is 0-based from the UI
           amount: preciseAmount,
-          status: "locked",
+          status: "locked", // Status goes directly to "locked" when vesting
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           updated_at: new Date().toISOString(),
@@ -268,8 +268,8 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null)
 
-      // Find the slot to claim
-      const slot = vestingSlots.find((s) => s.level === level && s.slot_number === slotIndex && s.status === "unlocked")
+      // Find the slot to claim (using 0-based slotIndex)
+      const slot = vestingSlots.find((s) => s.level === level && s.slot_number === slotIndex && s.status === "claim")
 
       if (!slot) {
         throw new Error("No claimable slot found")
@@ -293,23 +293,16 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       console.log("💰 Claiming slot:", slotId)
 
       // Get the slot details
-      const slot = vestingSlots.find((s) => s.id === slotId && s.status === "unlocked")
+      const slot = vestingSlots.find((s) => s.id === slotId && s.status === "claim")
       if (!slot) {
         throw new Error("Slot not found or not claimable")
       }
 
-      // Update slot status to claimed
-      const { error: updateError } = await supabase
-        .from("pivot_vesting")
-        .update({
-          status: "claimed",
-          claimed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", slotId)
+      // Delete the slot (reset to vest state)
+      const { error: deleteError } = await supabase.from("pivot_vesting").delete().eq("id", slotId)
 
-      if (updateError) {
-        throw new Error(`Failed to claim slot: ${updateError.message}`)
+      if (deleteError) {
+        throw new Error(`Failed to claim slot: ${deleteError.message}`)
       }
 
       // Credit user's post-hold wallet
@@ -337,7 +330,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   const getTotalClaimableShares = (): number => {
-    return vestingSlots.filter((slot) => slot.status === "unlocked").reduce((sum, slot) => sum + slot.amount, 0)
+    return vestingSlots.filter((slot) => slot.status === "claim").reduce((sum, slot) => sum + slot.amount, 0)
   }
 
   const validateVestingAmount = (amount: number, level: number) => {
@@ -371,7 +364,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   const getClaimableSlots = (): VestingSlot[] => {
-    return vestingSlots.filter((slot) => slot.status === "unlocked")
+    return vestingSlots.filter((slot) => slot.status === "claim")
   }
 
   // Load vesting data when user changes
@@ -410,7 +403,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, refreshVestingData])
 
-  // Auto-check for unlocked slots every minute
+  // Auto-check for claimable slots every minute
   useEffect(() => {
     const interval = setInterval(() => {
       const lockedSlots = vestingSlots.filter((slot) => slot.status === "locked")

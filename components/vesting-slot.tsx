@@ -135,6 +135,7 @@ export function VestingSlot({ slot, slotIndex, onVest, onClaim }: VestingSlotPro
   return (
     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 hover:border-slate-600 transition-colors">
       <div className="flex items-center justify-between mb-3">
+        {/* Fix: Display 1-based indexing (slotIndex + 1) */}
         <h4 className="text-slate-100 font-medium">Slot {slotIndex + 1}</h4>
         {slot.status === "in_progress" && (
           <div className="flex items-center text-yellow-400 text-xs">
