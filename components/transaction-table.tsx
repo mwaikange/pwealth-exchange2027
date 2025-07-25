@@ -59,7 +59,7 @@ export function TransactionTable({
     if (type === "AFT Gift" || type === "OUT-AFT GIFT") return `${prefix}OUT-AFT GIFT`
     if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return `${prefix}OUT-PWT Transfer`
     if (type === "AFT-TopUP") return `${prefix}AFT-TopUP`
-    if (type === "IN-PWT RECEIPT") return `${prefix}IN-PWT RECEIPT`
+    // Removed IN-PWT RECEIPT as it's now just a share receipt
     if (type === "BUY-AFT RECEIPT") return `${prefix}BUY-AFT RECEIPT`
     if (type === "IN-AFT GIFT") return `${prefix}IN-AFT GIFT`
     // Handle CLAIM with level and schedule information
@@ -142,7 +142,7 @@ export function TransactionTable({
 
   // List of transaction types that should show a plus sign (incoming transactions)
   const positiveTypes = [
-    "IN-PWT RECEIPT",
+    "IN-PWT RECEIPT", // Keep this for now, but it will be treated as shares
     "REFERRAL CLAIM-LvL1",
     "REFERRAL CLAIM-LvL2",
     "REFERRAL CLAIM-LvL3",
@@ -204,7 +204,7 @@ export function TransactionTable({
             <th className="text-left py-2 px-4 text-[11px] font-medium">Date</th>
             {showReference && <th className="text-left py-2 px-4 text-[11px] font-medium">Reference</th>}
             {showRecipient && <th className="text-left py-2 px-4 text-[11px] font-medium">Peer-Email</th>}
-            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (PWT)</th>
+            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (Shares)</th> {/* Changed from (PWT) */}
             <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (USD)</th>
           </tr>
         </thead>
@@ -236,7 +236,8 @@ export function TransactionTable({
                   </td>
                 )}
                 <td className="py-[6px] px-4 text-[10px]">
-                  {formatShares(transaction.amount)} {isAftTransaction(transaction) ? "AFT" : "PWT"}
+                  {formatShares(transaction.amount)} {isAftTransaction(transaction) ? "AFT" : "Shares"}{" "}
+                  {/* Changed PWT to Shares */}
                 </td>
                 <td className="py-[6px] px-4 text-[10px]">{formatCurrency(transaction.amountUsd)}</td>
               </tr>

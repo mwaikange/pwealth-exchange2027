@@ -206,8 +206,6 @@ export default function ExchangePage() {
     )
   }
 
-  // Removed local formatShares as it's now imported from wallet-context
-
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
       {/* Alert Banner */}
@@ -396,7 +394,11 @@ export default function ExchangePage() {
               ) : (
                 marketBuyOrders.slice(0, 10).map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
-                  const filledPercentage = order.total_amount > 0 ? (order.filled_amount / order.total_amount) * 100 : 0
+                  // Ensure filled_amount is a number and total_amount is not zero to prevent NaN
+                  const filledAmount = Number(order.filled_amount) || 0
+                  const totalAmount = Number(order.total_amount) || 0
+                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+
                   return (
                     <div
                       key={order.id}
@@ -469,6 +471,11 @@ export default function ExchangePage() {
               ) : (
                 userBuyOrders.map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
+                  // Ensure filled_amount is a number and total_amount is not zero to prevent NaN
+                  const filledAmount = Number(order.filled_amount) || 0
+                  const totalAmount = Number(order.total_amount) || 0
+                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+
                   return (
                     <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                       <div className="flex justify-between items-start mb-2">
@@ -478,10 +485,7 @@ export default function ExchangePage() {
                         </div>
                         {getStatusBadge(order, true)}
                       </div>
-                      <Progress
-                        value={(order.filled_amount / order.total_amount) * 100}
-                        className="h-2 [&>div]:bg-yellow-500"
-                      />
+                      <Progress value={filledPercentage} className="h-2 [&>div]:bg-yellow-500" />
                       <div className="text-xs text-slate-400 mt-1">
                         Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
                       </div>
