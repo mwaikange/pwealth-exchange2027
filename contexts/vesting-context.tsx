@@ -20,7 +20,7 @@ interface VestingSlot {
   level: number | null
   slot_number: number | null
   amount: number
-  status: "vest" | "locked" | "claim" // Updated status values
+  status: "vest" | "locked" | "claim"
   start_time: string | null
   end_time: string | null
   claimed_at: string | null
@@ -94,7 +94,8 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           .from("pivot_vesting")
           .select("*")
           .eq("user_uuid", user.id)
-          .order("created_at", { ascending: true })
+          .order("level", { ascending: true })
+          .order("slot_number", { ascending: true })
 
         if (fetchError) {
           throw new Error(`Failed to fetch vesting data: ${fetchError.message}`)
@@ -105,7 +106,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           ...slot,
           amount: safeNumber(slot.amount),
           level: slot.level || 1,
-          slot_number: slot.slot_number || 0,
+          slot_number: slot.slot_number || 1, // Default to 1 for 1-based indexing
         }))
 
         // Auto-update claim status for matured slots
@@ -126,14 +127,15 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
             .from("pivot_vesting")
             .select("*")
             .eq("user_uuid", user.id)
-            .order("created_at", { ascending: true })
+            .order("level", { ascending: true })
+            .order("slot_number", { ascending: true })
 
           if (!refetchError && updatedSlots) {
             const reprocessedSlots = updatedSlots.map((slot) => ({
               ...slot,
               amount: safeNumber(slot.amount),
               level: slot.level || 1,
-              slot_number: slot.slot_number || 0,
+              slot_number: slot.slot_number || 1,
             }))
             setVestingSlots(reprocessedSlots)
           }
@@ -167,10 +169,11 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   const getVestingSlotsForLevel = (level: number): LegacyVestingSlot[] => {
     const levelSlots = vestingSlots.filter((slot) => slot.level === level)
 
-    // Create 6 slots for the level (some may be empty)
+    // Create 6 slots for the level (1-based indexing)
     const legacySlots: LegacyVestingSlot[] = []
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 1; i <= 6; i++) {
+      // Changed from 0-5 to 1-6
       const existingSlot = levelSlots.find((slot) => slot.slot_number === i)
 
       if (existingSlot) {
@@ -212,7 +215,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     return legacySlots
   }
 
-  // Legacy method: Vest shares (for existing UI)
+  // Legacy method: Vest shares (for existing UI) - Updated for 1-based indexing
   const vestShares = async (level: number, slotIndex: number, amount: number) => {
     if (!user) throw new Error("User not authenticated")
 
@@ -220,22 +223,25 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       setError(null)
       const preciseAmount = safeNumber(amount)
 
-      console.log("🔒 Vesting shares:", { level, slotIndex, amount: preciseAmount })
+      // Convert 0-based UI index to 1-based database slot number
+      const slotNumber = slotIndex + 1
+
+      console.log("🔒 Vesting shares:", { level, slotIndex, slotNumber, amount: preciseAmount })
 
       const startTime = new Date()
       const endTime = new Date(
         startTime.getTime() + VESTING_LEVELS[level as keyof typeof VESTING_LEVELS].days * 24 * 60 * 60 * 1000,
       )
 
-      // Insert or update the vesting slot with "locked" status
+      // Insert or update the vesting slot with "locked" status using 1-based slot number
       const { data, error } = await supabase
         .from("pivot_vesting")
         .upsert({
           user_uuid: user.id,
           level,
-          slot_number: slotIndex, // This is 0-based from the UI
+          slot_number: slotNumber, // Now using 1-based indexing
           amount: preciseAmount,
-          status: "locked", // Status goes directly to "locked" when vesting
+          status: "locked",
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           updated_at: new Date().toISOString(),
@@ -261,15 +267,18 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Legacy method: Claim shares (for existing UI)
+  // Legacy method: Claim shares (for existing UI) - Updated for 1-based indexing
   const claimShares = async (level: number, slotIndex: number) => {
     if (!user) throw new Error("User not authenticated")
 
     try {
       setError(null)
 
-      // Find the slot to claim (using 0-based slotIndex)
-      const slot = vestingSlots.find((s) => s.level === level && s.slot_number === slotIndex && s.status === "claim")
+      // Convert 0-based UI index to 1-based database slot number
+      const slotNumber = slotIndex + 1
+
+      // Find the slot to claim using 1-based slot number
+      const slot = vestingSlots.find((s) => s.level === level && s.slot_number === slotNumber && s.status === "claim")
 
       if (!slot) {
         throw new Error("No claimable slot found")
@@ -298,11 +307,21 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Slot not found or not claimable")
       }
 
-      // Delete the slot (reset to vest state)
-      const { error: deleteError } = await supabase.from("pivot_vesting").delete().eq("id", slotId)
+      // Reset the slot back to 'vest' status (clear the vesting data)
+      const { error: updateError } = await supabase
+        .from("pivot_vesting")
+        .update({
+          amount: 0,
+          status: "vest",
+          start_time: null,
+          end_time: null,
+          claimed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", slotId)
 
-      if (deleteError) {
-        throw new Error(`Failed to claim slot: ${deleteError.message}`)
+      if (updateError) {
+        throw new Error(`Failed to claim slot: ${updateError.message}`)
       }
 
       // Credit user's post-hold wallet
@@ -319,9 +338,10 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // New method: Vest in a specific slot
+  // New method: Vest in a specific slot using 1-based slot number
   const vestInSlot = async (level: number, slotNumber: number, amount: number) => {
-    await vestShares(level, slotNumber, amount)
+    // Convert 1-based slot number to 0-based index for legacy vestShares method
+    await vestShares(level, slotNumber - 1, amount)
   }
 
   // Helper methods for existing UI
