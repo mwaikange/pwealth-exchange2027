@@ -22,8 +22,8 @@ export function OverviewComponent() {
   const [referralBonus, setReferralBonus] = useState(0)
   const [totalLockedShares, setTotalLockedShares] = useState(0)
   const [currentSharePrice, setCurrentSharePrice] = useState(108.2)
-  const [loading, setLoading] = useState(true) // Only true on initial load
-  const [isInitialized, setIsInitialized] = useState(false) // Track if we've loaded data once
+  const [loading, setLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   // Helper function to format numbers to 4 decimal places max
   const formatShares = (value: number): string => {
@@ -42,10 +42,11 @@ export function OverviewComponent() {
     if (!user) return
 
     try {
-      // Only show loading on initial load, not on background refreshes
       if (!isInitialized && !silent) {
         setLoading(true)
       }
+
+      console.log("🔄 Refreshing overview data...")
 
       // Fetch total shares matched from matched_orders
       const { data: matchedData } = await supabase
@@ -66,11 +67,17 @@ export function OverviewComponent() {
       const totalReferral = referralData?.reduce((sum, tx) => sum + Number(tx.amount), 0) || 0
       setReferralBonus(totalReferral)
 
-      // Calculate total locked shares (pre-hold + post-hold)
-      const totalLocked = holdWalletPreHold + holdWalletPostHold
-      setTotalLockedShares(totalLocked)
+      // Calculate total locked shares from pivot_vesting (locked + claim status)
+      const { data: vestingData } = await supabase
+        .from("pivot_vesting")
+        .select("amount")
+        .eq("user_uuid", user.id)
+        .in("status", ["locked", "claim"])
 
-      // Fetch current share price
+      const totalVesting = vestingData?.reduce((sum, slot) => sum + Number(slot.amount), 0) || 0
+      setTotalLockedShares(totalVesting)
+
+      // Fetch current share price from current_pricing_info
       const { data: priceData } = await supabase
         .from("current_pricing_info")
         .select("current_price")
@@ -83,7 +90,6 @@ export function OverviewComponent() {
 
       setTotalCashouts(cashoutWalletBalance)
 
-      // Mark as initialized after first successful load
       if (!isInitialized) {
         setIsInitialized(true)
       }
@@ -96,7 +102,6 @@ export function OverviewComponent() {
         console.error("Error fetching overview data:", error)
       }
     } finally {
-      // Only set loading to false if this was the initial load
       if (!isInitialized) {
         setLoading(false)
       }
@@ -177,7 +182,7 @@ export function OverviewComponent() {
         </CardContent>
       </Card>
 
-      {/* Total Locked Shares */}
+      {/* Total Locked Shares - Updated to use pivot_vesting data */}
       <Card className="bg-purple-600 border-purple-500">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-white">Total Locked Shares</CardTitle>
