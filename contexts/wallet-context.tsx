@@ -62,7 +62,7 @@ const formatCurrency = (value: any): string => {
 
 const formatShares = (value: any): string => {
   const num = safeNumber(value)
-  return num.toFixed(4).replace(/\.?0+$/, "")
+  return num.toFixed(4) // Ensure 4 decimal places, no trailing zero removal
 }
 
 // Provider component

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { useWallet, formatCurrency } from "@/contexts/wallet-context"
+import { useWallet, formatCurrency, formatShares } from "@/contexts/wallet-context" // Import formatShares
 import { useExchange } from "@/contexts/exchange-context"
 import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -77,6 +77,12 @@ export default function ExchangePage() {
     const shares = Number.parseFloat(sellShares)
     if (isNaN(shares) || shares <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive number of shares" })
+      return
+    }
+
+    // Check if user has enough shares in holdWalletPostHold
+    if (shares > holdWalletPostHold) {
+      setMessage({ type: "error", text: "Insufficient shares in Hold Wallet (Post-Hold)" })
       return
     }
 
@@ -200,9 +206,7 @@ export default function ExchangePage() {
     )
   }
 
-  const formatShares = (shares: number) => {
-    return Number(shares).toFixed(4)
-  }
+  // Removed local formatShares as it's now imported from wallet-context
 
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
@@ -309,7 +313,13 @@ export default function ExchangePage() {
                 <Button
                   onClick={handleSellOrder}
                   className="w-full bg-green-600 hover:bg-green-700 text-white"
-                  disabled={loading || isProcessing.sell || !sellShares || Number.parseFloat(sellShares) <= 0}
+                  disabled={
+                    loading ||
+                    isProcessing.sell ||
+                    !sellShares ||
+                    Number.parseFloat(sellShares) <= 0 ||
+                    Number.parseFloat(sellShares) > holdWalletPostHold
+                  }
                 >
                   {isProcessing.sell ? (
                     <>
@@ -384,25 +394,25 @@ export default function ExchangePage() {
               {(marketBuyOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active buy orders</p>
               ) : (
-                marketBuyOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                      <span className="text-xs text-slate-400">
-                        ({Math.floor(order.total_amount / order.price_per_share)} shares)
-                      </span>
+                marketBuyOrders.slice(0, 10).map((order) => {
+                  const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
+                  const filledPercentage = order.total_amount > 0 ? (order.filled_amount / order.total_amount) * 100 : 0
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                        <span className="text-xs text-slate-400">({formatShares(estimatedShares)} shares)</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {getStatusBadge(order, false)}
+                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% filled</span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {Math.round((order.filled_amount / order.total_amount) * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
@@ -432,7 +442,7 @@ export default function ExchangePage() {
                     <div className="flex items-center space-x-2">
                       {getStatusBadge(order, false)}
                       <span className="text-xs text-slate-400">
-                        {order.filled_shares}/{order.shares}
+                        {formatShares(order.filled_shares)}/{formatShares(order.shares)}
                       </span>
                     </div>
                   </div>
@@ -457,26 +467,27 @@ export default function ExchangePage() {
               {(userBuyOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
               ) : (
-                userBuyOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                        <span className="text-sm text-slate-400 ml-2">
-                          ({Math.floor(order.total_amount / order.price_per_share)} shares)
-                        </span>
+                userBuyOrders.map((order) => {
+                  const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
+                  return (
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                          <span className="text-sm text-slate-400 ml-2">({formatShares(estimatedShares)} shares)</span>
+                        </div>
+                        {getStatusBadge(order, true)}
                       </div>
-                      {getStatusBadge(order, true)}
+                      <Progress
+                        value={(order.filled_amount / order.total_amount) * 100}
+                        className="h-2 [&>div]:bg-yellow-500"
+                      />
+                      <div className="text-xs text-slate-400 mt-1">
+                        Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
+                      </div>
                     </div>
-                    <Progress
-                      value={(order.filled_amount / order.total_amount) * 100}
-                      className="h-2 [&>div]:bg-yellow-500"
-                    />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {formatCurrency(order.filled_amount)} / {formatCurrency(order.total_amount)}
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
@@ -505,7 +516,7 @@ export default function ExchangePage() {
                     </div>
                     <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
                     <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.filled_shares} / {order.shares} shares
+                      Filled: {formatShares(order.filled_shares)} / {formatShares(order.shares)} shares
                     </div>
                   </div>
                 ))
