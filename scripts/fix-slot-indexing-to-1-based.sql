@@ -1,314 +1,179 @@
--- Fix slot number indexing from 0-based to 1-based in pivot_vesting table
--- This ensures consistency between database and frontend display
+-- ✅ Fix Slot Indexing: Convert from 0-based to 1-based indexing
+-- This script safely migrates existing slot_number values and ensures all future operations use 1-based indexing
 
--- Step 1: First, let's see what we're working with
+BEGIN;
+
+-- Step 1: Remove any existing constraints that might conflict
+ALTER TABLE pivot_vesting DROP CONSTRAINT IF EXISTS pivot_vesting_slot_number_check;
+ALTER TABLE pivot_vesting DROP CONSTRAINT IF EXISTS pivot_vesting_user_level_slot_unique;
+
+-- Step 2: Handle duplicate prevention - Remove any duplicates that might exist
+-- This creates a temporary table with unique records, keeping the most recent ones
+CREATE TEMP TABLE temp_unique_vesting AS
+SELECT DISTINCT ON (user_uuid, level, slot_number) 
+    id, user_uuid, level, slot_number, shares, status, created_at, updated_at
+FROM pivot_vesting
+ORDER BY user_uuid, level, slot_number, created_at DESC;
+
+-- Step 3: Clear the original table and restore unique records
+TRUNCATE TABLE pivot_vesting;
+INSERT INTO pivot_vesting (id, user_uuid, level, slot_number, shares, status, created_at, updated_at)
+SELECT id, user_uuid, level, slot_number, shares, status, created_at, updated_at
+FROM temp_unique_vesting;
+
+-- Step 4: Update existing slot_number values from 0-based to 1-based
+-- Only update if slot_number is between 0-5 (valid 0-based range)
+UPDATE pivot_vesting 
+SET slot_number = slot_number + 1 
+WHERE slot_number >= 0 AND slot_number <= 5;
+
+-- Step 5: Handle any NULL slot_number values by assigning proper 1-6 values
+-- This ensures each user has slots 1-6 for each level
+WITH user_levels AS (
+    SELECT DISTINCT user_uuid, level 
+    FROM pivot_vesting 
+    WHERE slot_number IS NULL
+),
+slot_assignments AS (
+    SELECT 
+        user_uuid, 
+        level,
+        ROW_NUMBER() OVER (PARTITION BY user_uuid, level ORDER BY created_at) as new_slot_number
+    FROM pivot_vesting 
+    WHERE slot_number IS NULL
+)
+UPDATE pivot_vesting 
+SET slot_number = sa.new_slot_number
+FROM slot_assignments sa
+WHERE pivot_vesting.user_uuid = sa.user_uuid 
+    AND pivot_vesting.level = sa.level 
+    AND pivot_vesting.slot_number IS NULL;
+
+-- Step 6: Ensure all users have complete slot sets (1-6 for each level 1-3)
+-- Insert missing slots with default values
+INSERT INTO pivot_vesting (user_uuid, level, slot_number, shares, status, created_at, updated_at)
 SELECT 
-    'Current slot distribution' as info,
-    level,
-    slot_number,
-    COUNT(*) as count
-FROM public.pivot_vesting 
-GROUP BY level, slot_number 
-ORDER BY level, slot_number;
-
--- Step 2: Update existing slot_number values from 0-based to 1-based
--- Only update slots that are currently 0-based (0-5 range)
-UPDATE public.pivot_vesting 
-SET slot_number = slot_number + 1,
-    updated_at = NOW()
-WHERE slot_number IS NOT NULL 
-    AND slot_number >= 0 
-    AND slot_number <= 5;
-
--- Step 3: Handle any NULL slot_number values by assigning proper 1-6 numbers
-DO $$
-DECLARE
-    user_record RECORD;
-    level_num INTEGER;
-    slot_counter INTEGER;
-    null_slot RECORD;
-BEGIN
-    -- Find users with NULL slot numbers and fix them
-    FOR user_record IN 
-        SELECT DISTINCT user_uuid 
-        FROM public.pivot_vesting 
-        WHERE slot_number IS NULL
-    LOOP
-        -- For each level, assign slot numbers 1-6 to NULL entries
-        FOR level_num IN 1..3 LOOP
-            slot_counter := 1;
-            
-            -- Get all NULL slots for this user/level and assign numbers
-            FOR null_slot IN 
-                SELECT id 
-                FROM public.pivot_vesting 
-                WHERE user_uuid = user_record.user_uuid 
-                    AND level = level_num 
-                    AND slot_number IS NULL
-                ORDER BY created_at
-            LOOP
-                -- Check if this slot number already exists for this user/level
-                WHILE EXISTS (
-                    SELECT 1 FROM public.pivot_vesting 
-                    WHERE user_uuid = user_record.user_uuid 
-                        AND level = level_num 
-                        AND slot_number = slot_counter
-                ) LOOP
-                    slot_counter := slot_counter + 1;
-                    IF slot_counter > 6 THEN
-                        EXIT;
-                    END IF;
-                END LOOP;
-                
-                -- Update the slot if we have a valid slot number
-                IF slot_counter <= 6 THEN
-                    UPDATE public.pivot_vesting 
-                    SET slot_number = slot_counter,
-                        updated_at = NOW()
-                    WHERE id = null_slot.id;
-                    
-                    slot_counter := slot_counter + 1;
-                END IF;
-                
-                -- Don't exceed 6 slots per level
-                IF slot_counter > 6 THEN
-                    EXIT;
-                END IF;
-            END LOOP;
-        END LOOP;
-    END LOOP;
-END $$;
-
--- Step 4: Remove any duplicate slots that might have been created
--- Keep the most recent one for each user/level/slot combination
-DELETE FROM public.pivot_vesting 
-WHERE id NOT IN (
-    SELECT DISTINCT ON (user_uuid, level, slot_number) id
-    FROM public.pivot_vesting
-    ORDER BY user_uuid, level, slot_number, updated_at DESC
+    u.user_uuid,
+    l.level,
+    s.slot_number,
+    0 as shares,
+    'locked' as status,
+    NOW() as created_at,
+    NOW() as updated_at
+FROM (
+    SELECT DISTINCT user_uuid FROM pivot_vesting
+) u
+CROSS JOIN (
+    SELECT generate_series(1, 3) as level
+) l
+CROSS JOIN (
+    SELECT generate_series(1, 6) as slot_number
+) s
+WHERE NOT EXISTS (
+    SELECT 1 FROM pivot_vesting pv 
+    WHERE pv.user_uuid = u.user_uuid 
+        AND pv.level = l.level 
+        AND pv.slot_number = s.slot_number
 );
 
--- Step 5: Update constraints to reflect 1-based indexing
--- Drop existing constraints if they exist
-ALTER TABLE public.pivot_vesting 
-DROP CONSTRAINT IF EXISTS pivot_vesting_user_uuid_level_slot_number_key;
-
-ALTER TABLE public.pivot_vesting 
-DROP CONSTRAINT IF EXISTS pivot_vesting_user_level_slot_unique;
-
-ALTER TABLE public.pivot_vesting 
-DROP CONSTRAINT IF EXISTS pivot_vesting_slot_number_check;
-
--- Add new constraints for 1-based indexing
-ALTER TABLE public.pivot_vesting 
-ADD CONSTRAINT pivot_vesting_user_level_slot_unique 
-UNIQUE (user_uuid, level, slot_number);
-
-ALTER TABLE public.pivot_vesting 
+-- Step 7: Add back constraints with 1-based indexing (1-6 range)
+ALTER TABLE pivot_vesting 
 ADD CONSTRAINT pivot_vesting_slot_number_check 
 CHECK (slot_number >= 1 AND slot_number <= 6);
 
--- Step 6: Ensure all users have complete slot sets (1-6 for each level)
-DO $$
-DECLARE
-    user_record RECORD;
-    level_num INTEGER;
-    slot_num INTEGER;
-    slot_exists BOOLEAN;
-BEGIN
-    -- Get all users who have vesting slots
-    FOR user_record IN 
-        SELECT DISTINCT user_uuid 
-        FROM public.pivot_vesting
-    LOOP
-        -- For each level, ensure we have slots 1-6
-        FOR level_num IN 1..3 LOOP
-            FOR slot_num IN 1..6 LOOP
-                -- Check if this slot exists
-                SELECT EXISTS(
-                    SELECT 1 FROM public.pivot_vesting
-                    WHERE user_uuid = user_record.user_uuid 
-                        AND level = level_num
-                        AND slot_number = slot_num
-                ) INTO slot_exists;
-                
-                -- Create slot if it doesn't exist
-                IF NOT slot_exists THEN
-                    INSERT INTO public.pivot_vesting (
-                        user_uuid, 
-                        level, 
-                        slot_number, 
-                        amount, 
-                        status, 
-                        created_at, 
-                        updated_at
-                    ) VALUES (
-                        user_record.user_uuid,
-                        level_num,
-                        slot_num,
-                        0,
-                        'vest',
-                        NOW(),
-                        NOW()
-                    );
-                END IF;
-            END LOOP;
-        END LOOP;
-    END LOOP;
-END $$;
+ALTER TABLE pivot_vesting 
+ADD CONSTRAINT pivot_vesting_user_level_slot_unique 
+UNIQUE (user_uuid, level, slot_number);
 
--- Step 7: Update the vest_shares_in_slot function to use 1-based indexing
-CREATE OR REPLACE FUNCTION public.vest_shares_in_slot(
+-- Step 8: Update all functions to use 1-based indexing
+-- Update the vest_shares function
+CREATE OR REPLACE FUNCTION vest_shares(
     p_user_uuid UUID,
     p_level INTEGER,
     p_slot_number INTEGER,
-    p_amount DECIMAL(20,4)
-)
-RETURNS JSON AS $$
-DECLARE
-    v_slot_id UUID;
-    v_end_time TIMESTAMPTZ;
-    v_days INTEGER;
+    p_shares DECIMAL(10,4)
+) RETURNS BOOLEAN AS $$
 BEGIN
-    -- Validate inputs
-    IF p_amount <= 0 THEN
-        RAISE EXCEPTION 'Amount must be greater than 0';
-    END IF;
-    
-    IF p_level < 1 OR p_level > 3 THEN
-        RAISE EXCEPTION 'Level must be between 1 and 3';
-    END IF;
-    
-    -- Updated to use 1-based slot numbers (1-6)
+    -- Validate slot_number is in 1-6 range (1-based)
     IF p_slot_number < 1 OR p_slot_number > 6 THEN
-        RAISE EXCEPTION 'Slot number must be between 1 and 6';
+        RAISE EXCEPTION 'Invalid slot_number: %. Must be between 1 and 6', p_slot_number;
     END IF;
-    
-    -- Get the slot ID and check if it's available
-    SELECT id INTO v_slot_id
-    FROM public.pivot_vesting
+
+    -- Update or insert the vesting record
+    INSERT INTO pivot_vesting (user_uuid, level, slot_number, shares, status, created_at, updated_at)
+    VALUES (p_user_uuid, p_level, p_slot_number, p_shares, 'locked', NOW(), NOW())
+    ON CONFLICT (user_uuid, level, slot_number)
+    DO UPDATE SET 
+        shares = EXCLUDED.shares,
+        status = 'locked',
+        updated_at = NOW();
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Update the claim_shares function
+CREATE OR REPLACE FUNCTION claim_shares(
+    p_user_uuid UUID,
+    p_level INTEGER,
+    p_slot_number INTEGER
+) RETURNS DECIMAL(10,4) AS $$
+DECLARE
+    v_shares DECIMAL(10,4);
+BEGIN
+    -- Validate slot_number is in 1-6 range (1-based)
+    IF p_slot_number < 1 OR p_slot_number > 6 THEN
+        RAISE EXCEPTION 'Invalid slot_number: %. Must be between 1 and 6', p_slot_number;
+    END IF;
+
+    -- Get and update the shares
+    UPDATE pivot_vesting 
+    SET status = 'claimed', updated_at = NOW()
     WHERE user_uuid = p_user_uuid 
         AND level = p_level 
         AND slot_number = p_slot_number
-        AND status = 'vest';
-    
-    IF v_slot_id IS NULL THEN
-        RAISE EXCEPTION 'Slot % at level % is not available for vesting', p_slot_number, p_level;
+        AND status = 'locked'
+    RETURNING shares INTO v_shares;
+
+    IF v_shares IS NULL THEN
+        RAISE EXCEPTION 'No locked shares found for user % level % slot %', p_user_uuid, p_level, p_slot_number;
     END IF;
-    
-    -- Calculate end time based on level
-    CASE p_level
-        WHEN 1 THEN v_days := 5;   -- Retail: 5 days
-        WHEN 2 THEN v_days := 30;  -- Small Business: 30 days
-        WHEN 3 THEN v_days := 90;  -- Corporate: 90 days
-    END CASE;
-    
-    v_end_time := NOW() + (v_days || ' days')::INTERVAL;
-    
-    -- Update the slot with vesting information
-    UPDATE public.pivot_vesting
-    SET 
-        amount = p_amount,
-        status = 'locked',
-        start_time = NOW(),
-        end_time = v_end_time,
-        updated_at = NOW()
-    WHERE id = v_slot_id;
-    
-    RETURN json_build_object(
-        'success', true,
-        'slot_id', v_slot_id,
-        'level', p_level,
-        'slot_number', p_slot_number,
-        'amount', p_amount,
-        'start_time', NOW(),
-        'end_time', v_end_time,
-        'days', v_days,
-        'message', format('Successfully vested %s shares in level %s slot %s', p_amount, p_level, p_slot_number)
-    );
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN json_build_object(
-        'success', false,
-        'error', SQLERRM,
-        'message', 'Failed to vest shares'
-    );
+
+    RETURN v_shares;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
--- Step 8: Update the initialize_user_vesting_slots function to use 1-based indexing
-CREATE OR REPLACE FUNCTION public.initialize_user_vesting_slots(p_user_uuid UUID)
-RETURNS JSON AS $$
-DECLARE
-    existing_count INTEGER;
-    inserted_count INTEGER := 0;
-BEGIN
-    -- Check if user already has slots
-    SELECT COUNT(*) INTO existing_count
-    FROM public.pivot_vesting
-    WHERE user_uuid = p_user_uuid;
-    
-    IF existing_count >= 18 THEN
-        RETURN json_build_object(
-            'success', true,
-            'message', 'User already has vesting slots initialized',
-            'existing_slots', existing_count
-        );
-    END IF;
-    
-    -- Create missing slots for the user with 1-based slot numbers
-    INSERT INTO public.pivot_vesting (user_uuid, level, slot_number, status, amount, created_at, updated_at)
-    SELECT 
-        p_user_uuid,
-        level_num,
-        slot_num,
-        'vest',
-        0,
-        NOW(),
-        NOW()
-    FROM 
-        generate_series(1, 3) AS level_num,
-        generate_series(1, 6) AS slot_num  -- 1-based indexing
-    WHERE NOT EXISTS (
-        SELECT 1 FROM public.pivot_vesting 
-        WHERE user_uuid = p_user_uuid 
-            AND level = level_num 
-            AND slot_number = slot_num
-    );
-    
-    GET DIAGNOSTICS inserted_count = ROW_COUNT;
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'Vesting slots initialized successfully',
-        'slots_created', inserted_count,
-        'existing_slots', existing_count
-    );
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN json_build_object(
-        'success', false,
-        'error', SQLERRM,
-        'message', 'Failed to initialize vesting slots'
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Step 9: Verification queries
+SELECT 'Migration Summary:' as info;
 
--- Step 9: Final verification query
 SELECT 
-    'Migration completed' as status,
-    COUNT(*) as total_slots,
-    COUNT(DISTINCT user_uuid) as total_users,
-    MIN(slot_number) as min_slot,
-    MAX(slot_number) as max_slot
-FROM public.pivot_vesting;
+    'Total vesting records:' as metric,
+    COUNT(*) as value
+FROM pivot_vesting;
 
--- Show slot distribution after migration
 SELECT 
-    'Final slot distribution' as info,
-    level,
+    'Users with complete slot sets:' as metric,
+    COUNT(*) as value
+FROM (
+    SELECT user_uuid 
+    FROM pivot_vesting 
+    GROUP BY user_uuid 
+    HAVING COUNT(*) = 18  -- 6 slots × 3 levels
+) complete_users;
+
+SELECT 
+    'Slot number distribution:' as metric,
     slot_number,
     COUNT(*) as count
-FROM public.pivot_vesting 
-GROUP BY level, slot_number 
-ORDER BY level, slot_number;
+FROM pivot_vesting 
+GROUP BY slot_number 
+ORDER BY slot_number;
+
+SELECT 
+    'Status distribution:' as metric,
+    status,
+    COUNT(*) as count
+FROM pivot_vesting 
+GROUP BY status;
+
+COMMIT;
