@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
 
-// Order interfaces
+// Order interfaces with proper fractional support
 interface BuyOrder {
   id: string
   user_uuid: string
@@ -40,8 +40,7 @@ interface MatchedOrder {
   shares_matched: number
   price_per_share: number
   total_amount: number
-  status: string
-  created_at: string
+  matched_at: string // Fixed: use matched_at instead of created_at
 }
 
 interface ExchangeContextType {
@@ -83,10 +82,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [placingOrder, setPlacingOrder] = useState(false)
 
-  // Helper function to safely convert to number
+  // Helper function to safely convert to number with 4 decimal precision
   const safeNumber = (value: any): number => {
     const num = Number(value)
-    return isNaN(num) ? 0 : num
+    return isNaN(num) ? 0 : Math.round(num * 10000) / 10000 // Ensure 4 decimal precision
   }
 
   // Refresh all orders data
@@ -152,19 +151,19 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           throw new Error(`Failed to fetch user sell orders: ${userSellError.message}`)
         }
 
-        // Fetch matched orders for user
+        // Fetch matched orders for user - FIXED: use matched_at instead of created_at
         const { data: matches, error: matchError } = await supabase
           .from("matched_orders")
           .select("*")
           .or(`buyer_uuid.eq.${user.id},seller_uuid.eq.${user.id}`)
-          .order("created_at", { ascending: false })
+          .order("matched_at", { ascending: false }) // Fixed column name
 
         if (matchError) {
           console.error("Error fetching matched orders:", matchError)
           throw new Error(`Failed to fetch matched orders: ${matchError.message}`)
         }
 
-        // Process and set data with safe number conversion
+        // Process and set data with safe number conversion and 4 decimal precision
         const processedBuyOrders = (allBuyOrders || []).map((order) => ({
           ...order,
           shares_requested: safeNumber(order.shares_requested),
@@ -233,7 +232,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     [user],
   )
 
-  // Place buy order
+  // Place buy order with fractional share support
   const placeBuyOrder = async (shares: number, pricePerShare: number) => {
     if (!user) throw new Error("User not authenticated")
 
@@ -241,12 +240,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setPlacingOrder(true)
       setError(null)
 
-      console.log("📝 Placing buy order:", { shares, pricePerShare })
+      // Ensure 4 decimal precision
+      const preciseShares = safeNumber(shares)
+      const precisePricePerShare = safeNumber(pricePerShare)
+
+      console.log("📝 Placing buy order:", { shares: preciseShares, pricePerShare: precisePricePerShare })
 
       const { data, error } = await supabase.rpc("place_buy_order", {
         p_user_uuid: user.id,
-        p_shares_requested: shares,
-        p_price_per_share: pricePerShare,
+        p_shares_requested: preciseShares,
+        p_price_per_share: precisePricePerShare,
       })
 
       if (error) {
@@ -267,7 +270,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place sell order
+  // Place sell order with fractional share support
   const placeSellOrder = async (shares: number, pricePerShare: number) => {
     if (!user) throw new Error("User not authenticated")
 
@@ -275,12 +278,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setPlacingOrder(true)
       setError(null)
 
-      console.log("📝 Placing sell order:", { shares, pricePerShare })
+      // Ensure 4 decimal precision
+      const preciseShares = safeNumber(shares)
+      const precisePricePerShare = safeNumber(pricePerShare)
+
+      console.log("📝 Placing sell order:", { shares: preciseShares, pricePerShare: precisePricePerShare })
 
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
-        p_shares_offered: shares,
-        p_price_per_share: pricePerShare,
+        p_shares_offered: preciseShares,
+        p_price_per_share: precisePricePerShare,
       })
 
       if (error) {

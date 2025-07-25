@@ -8,44 +8,88 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useExchange } from "@/contexts/exchange-context"
 import { useWallet, formatCurrency, formatShares } from "@/contexts/wallet-context"
-import { usePrice } from "@/contexts/price-context"
+import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
+import { AlertCircle, TrendingUp, TrendingDown, Loader2 } from "lucide-react"
 
 export default function ExchangePage() {
   const { toast } = useToast()
+  const { user } = useAuth()
+
   const {
-    marketBuyOrders,
-    marketSellOrders,
+    buyOrders,
+    sellOrders,
     userBuyOrders,
     userSellOrders,
+    matchedOrders,
     placeBuyOrder,
     placeSellOrder,
+    cancelBuyOrder,
+    cancelSellOrder,
     refreshOrders,
     loading: exchangeLoading,
     error: exchangeError,
+    placingOrder,
   } = useExchange()
 
-  const { buyWallet, holdWalletPostHold, refreshBalances, loading: walletLoading } = useWallet()
-
-  const { currentPrice, loading: priceLoading } = usePrice()
+  const {
+    buyWalletBalance,
+    holdWalletPostHold,
+    refreshWalletBalances,
+    loading: walletLoading,
+    error: walletError,
+  } = useWallet()
 
   const [buyAmount, setBuyAmount] = useState("")
   const [sellShares, setSellShares] = useState("")
   const [sellPrice, setSellPrice] = useState("")
-  const [isPlacingOrder, setIsPlacingOrder] = useState(false)
+  const [currentSharePrice] = useState(108.2) // This should come from price context
 
   // Auto-refresh orders every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      refreshOrders()
-      refreshBalances()
+      refreshOrders(true)
+      refreshWalletBalances(true)
     }, 30000)
 
     return () => clearInterval(interval)
-  }, [refreshOrders, refreshBalances])
+  }, [refreshOrders, refreshWalletBalances])
 
+  // Helper function to safely format numbers
+  const safeNumber = (value: any): number => {
+    const num = Number(value)
+    return isNaN(num) ? 0 : num
+  }
+
+  // Helper function to calculate fill percentage
+  const calculateFillPercentage = (filled: number, total: number): number => {
+    if (total === 0) return 0
+    return Math.min(100, (filled / total) * 100)
+  }
+
+  // Helper function to get status badge
+  const getStatusBadge = (status: string) => {
+    const statusColors: Record<string, string> = {
+      pending: "bg-yellow-500",
+      partial: "bg-blue-500",
+      available: "bg-green-500",
+      filled: "bg-green-600",
+      matched: "bg-green-600",
+      cancelled: "bg-gray-500",
+      expired: "bg-red-500",
+    }
+
+    return (
+      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500"} text-white text-xs`}>
+        {status.toUpperCase()}
+      </Badge>
+    )
+  }
+
+  // Handle buy order placement
   const handleBuyOrder = async () => {
     if (!buyAmount || isNaN(Number(buyAmount)) || Number(buyAmount) <= 0) {
       toast({
@@ -57,7 +101,7 @@ export default function ExchangePage() {
     }
 
     const amount = Number(buyAmount)
-    if (amount > buyWallet) {
+    if (amount > buyWalletBalance) {
       toast({
         title: "Insufficient Funds",
         description: "You don't have enough funds in your buy wallet",
@@ -67,12 +111,12 @@ export default function ExchangePage() {
     }
 
     try {
-      setIsPlacingOrder(true)
-      await placeBuyOrder(amount)
+      const estimatedShares = amount / currentSharePrice
+      await placeBuyOrder(estimatedShares, currentSharePrice)
       setBuyAmount("")
       toast({
         title: "Buy Order Placed",
-        description: `Buy order for ${formatCurrency(amount)} placed successfully. Will be matched in 30 seconds.`,
+        description: `Buy order for ${formatShares(estimatedShares)} shares placed successfully`,
       })
     } catch (error: any) {
       toast({
@@ -80,11 +124,10 @@ export default function ExchangePage() {
         description: error.message || "Failed to place buy order",
         variant: "destructive",
       })
-    } finally {
-      setIsPlacingOrder(false)
     }
   }
 
+  // Handle sell order placement
   const handleSellOrder = async () => {
     if (!sellShares || isNaN(Number(sellShares)) || Number(sellShares) <= 0) {
       toast({
@@ -117,7 +160,6 @@ export default function ExchangePage() {
     }
 
     try {
-      setIsPlacingOrder(true)
       await placeSellOrder(shares, pricePerShare)
       setSellShares("")
       setSellPrice("")
@@ -131,29 +173,15 @@ export default function ExchangePage() {
         description: error.message || "Failed to place sell order",
         variant: "destructive",
       })
-    } finally {
-      setIsPlacingOrder(false)
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const statusColors: Record<string, string> = {
-      PENDING: "bg-yellow-500",
-      PARTIAL: "bg-blue-500",
-      FILLED: "bg-green-500",
-      MATCHED: "bg-green-500",
-      CANCELLED: "bg-gray-500",
-      EXPIRED: "bg-red-500",
-    }
-
-    return <Badge className={`${statusColors[status] || "bg-gray-500"} text-white`}>{status}</Badge>
-  }
-
-  if (priceLoading || walletLoading) {
+  if (walletLoading || exchangeLoading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
             <div className="text-lg">Loading exchange data...</div>
           </div>
         </div>
@@ -163,37 +191,52 @@ export default function ExchangePage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Exchange</h1>
+        <h1 className="text-3xl font-bold">Share Exchange</h1>
         <div className="text-right">
           <div className="text-sm text-muted-foreground">Current Share Price</div>
-          <div className="text-2xl font-bold">{formatCurrency(currentPrice)}</div>
+          <div className="text-2xl font-bold text-green-600">{formatCurrency(currentSharePrice)}</div>
         </div>
       </div>
 
-      {exchangeError && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <div className="text-red-600">Error: {exchangeError}</div>
-          </CardContent>
-        </Card>
+      {/* Alert Banner */}
+      <Alert className="bg-green-50 border-green-200">
+        <AlertCircle className="h-4 w-4 text-green-600" />
+        <AlertDescription className="text-green-800">
+          Share Exchange is now live! Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
+        </AlertDescription>
+      </Alert>
+
+      {/* Error Display */}
+      {(exchangeError || walletError) && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Error: {exchangeError || walletError}</AlertDescription>
+        </Alert>
       )}
 
       {/* Wallet Balances */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Buy Wallet</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center text-lg">
+              <TrendingUp className="h-5 w-5 mr-2 text-blue-500" />
+              Buy Wallet
+            </CardTitle>
             <CardDescription>Available funds for purchasing shares</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(buyWallet)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(buyWalletBalance)}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Hold Wallet (Post-Hold)</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center text-lg">
+              <TrendingDown className="h-5 w-5 mr-2 text-green-500" />
+              Hold Wallet (Post-Hold)
+            </CardTitle>
             <CardDescription>Shares available for selling</CardDescription>
           </CardHeader>
           <CardContent>
@@ -224,16 +267,19 @@ export default function ExchangePage() {
               />
               {buyAmount && !isNaN(Number(buyAmount)) && Number(buyAmount) > 0 && (
                 <div className="text-sm text-muted-foreground mt-1">
-                  Estimated shares: {formatShares(Number(buyAmount) / currentPrice)}
+                  Estimated shares: {formatShares(Number(buyAmount) / currentSharePrice)}
                 </div>
               )}
             </div>
-            <Button
-              onClick={handleBuyOrder}
-              disabled={isPlacingOrder || exchangeLoading || !buyAmount}
-              className="w-full"
-            >
-              {isPlacingOrder ? "Placing Order..." : "Place Buy Order"}
+            <Button onClick={handleBuyOrder} disabled={placingOrder || !buyAmount} className="w-full">
+              {placingOrder ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Placing Order...
+                </>
+              ) : (
+                "Place Buy Order"
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -262,7 +308,7 @@ export default function ExchangePage() {
               <Input
                 id="sellPrice"
                 type="number"
-                placeholder="Enter price per share"
+                placeholder={`Current: ${formatCurrency(currentSharePrice)}`}
                 value={sellPrice}
                 onChange={(e) => setSellPrice(e.target.value)}
                 min="0"
@@ -274,12 +320,15 @@ export default function ExchangePage() {
                 Total value: {formatCurrency(Number(sellShares) * Number(sellPrice))}
               </div>
             )}
-            <Button
-              onClick={handleSellOrder}
-              disabled={isPlacingOrder || exchangeLoading || !sellShares || !sellPrice}
-              className="w-full"
-            >
-              {isPlacingOrder ? "Placing Order..." : "Place Sell Order"}
+            <Button onClick={handleSellOrder} disabled={placingOrder || !sellShares || !sellPrice} className="w-full">
+              {placingOrder ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Placing Order...
+                </>
+              ) : (
+                "Place Sell Order"
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -292,40 +341,44 @@ export default function ExchangePage() {
         {/* Market Buy Orders */}
         <Card>
           <CardHeader>
-            <CardTitle>Market Buy Orders ({marketBuyOrders.length})</CardTitle>
+            <CardTitle>Market Buy Orders ({(buyOrders || []).length})</CardTitle>
             <CardDescription>Active buy orders from all users</CardDescription>
           </CardHeader>
           <CardContent>
-            {marketBuyOrders.length === 0 ? (
+            {!buyOrders || buyOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No active buy orders</div>
             ) : (
               <div className="space-y-3">
-                {marketBuyOrders.map((order) => {
-                  const estimatedShares = order.total_amount / order.price_per_share
-                  const filledAmount = Number(order.filled_amount) || 0
-                  const totalAmount = Number(order.total_amount) || 0
-                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+                {buyOrders.slice(0, 10).map((order) => {
+                  const totalAmount = safeNumber(order.total_amount)
+                  const filledAmount = safeNumber(order.shares_filled) * safeNumber(order.price_per_share)
+                  const estimatedShares = totalAmount / safeNumber(order.price_per_share)
+                  const filledShares = safeNumber(order.shares_filled)
+                  const filledPercentage = calculateFillPercentage(filledShares, estimatedShares)
 
                   return (
-                    <div key={order.id} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={order.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
                         <div className="font-medium">
-                          {formatCurrency(order.total_amount)}
-                          <span className="text-sm text-muted-foreground ml-1">
+                          {formatCurrency(totalAmount)}
+                          <span className="text-sm text-muted-foreground ml-2">
                             ({formatShares(estimatedShares)} shares)
                           </span>
                         </div>
                         {getStatusBadge(order.status)}
                       </div>
-                      {order.status === "PARTIAL" && (
+
+                      {order.status === "partial" && (
                         <div className="space-y-1">
-                          <div className="text-sm text-muted-foreground">{filledPercentage.toFixed(1)}% filled</div>
+                          <div className="text-sm text-muted-foreground">
+                            Filled: {formatCurrency(filledAmount)} / {formatCurrency(totalAmount)} (
+                            {filledPercentage.toFixed(1)}%)
+                          </div>
                           <Progress value={filledPercentage} className="h-2" />
                         </div>
                       )}
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(order.created_at).toLocaleString()}
-                      </div>
+
+                      <div className="text-xs text-muted-foreground">{new Date(order.created_at).toLocaleString()}</div>
                     </div>
                   )
                 })}
@@ -337,38 +390,40 @@ export default function ExchangePage() {
         {/* Market Sell Orders */}
         <Card>
           <CardHeader>
-            <CardTitle>Market Sell Orders ({marketSellOrders.length})</CardTitle>
+            <CardTitle>Market Sell Orders ({(sellOrders || []).length})</CardTitle>
             <CardDescription>Active sell orders from all users</CardDescription>
           </CardHeader>
           <CardContent>
-            {marketSellOrders.length === 0 ? (
+            {!sellOrders || sellOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No active sell orders</div>
             ) : (
               <div className="space-y-3">
-                {marketSellOrders.map((order) => {
-                  const filledShares = Number(order.filled_shares) || 0
-                  const totalShares = Number(order.shares) || 0
-                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+                {sellOrders.slice(0, 10).map((order) => {
+                  const totalShares = safeNumber(order.shares_offered)
+                  const filledShares = safeNumber(order.shares_filled)
+                  const pricePerShare = safeNumber(order.price_per_share)
+                  const filledPercentage = calculateFillPercentage(filledShares, totalShares)
 
                   return (
-                    <div key={order.id} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={order.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
                         <div className="font-medium">
-                          {formatShares(order.shares)} shares @ {formatCurrency(order.price_per_share)}
+                          {formatShares(totalShares)} shares @ {formatCurrency(pricePerShare)}
                         </div>
                         {getStatusBadge(order.status)}
                       </div>
-                      {order.status === "PARTIAL" && (
+
+                      {order.status === "partial" && (
                         <div className="space-y-1">
                           <div className="text-sm text-muted-foreground">
-                            Filled: {formatShares(filledShares)}/{formatShares(totalShares)} shares
+                            Filled: {formatShares(filledShares)} / {formatShares(totalShares)} shares (
+                            {filledPercentage.toFixed(1)}%)
                           </div>
                           <Progress value={filledPercentage} className="h-2" />
                         </div>
                       )}
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(order.created_at).toLocaleString()}
-                      </div>
+
+                      <div className="text-xs text-muted-foreground">{new Date(order.created_at).toLocaleString()}</div>
                     </div>
                   )
                 })}
@@ -383,40 +438,54 @@ export default function ExchangePage() {
         {/* Your Buy Orders */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Buy Orders ({userBuyOrders.length})</CardTitle>
+            <CardTitle>Your Buy Orders ({(userBuyOrders || []).length})</CardTitle>
             <CardDescription>Your buy order history</CardDescription>
           </CardHeader>
           <CardContent>
-            {userBuyOrders.length === 0 ? (
+            {!userBuyOrders || userBuyOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No buy orders found</div>
             ) : (
               <div className="space-y-3">
                 {userBuyOrders.map((order) => {
-                  const estimatedShares = order.total_amount / order.price_per_share
-                  const filledAmount = Number(order.filled_amount) || 0
-                  const totalAmount = Number(order.total_amount) || 0
-                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+                  const totalAmount = safeNumber(order.total_amount)
+                  const filledAmount = safeNumber(order.shares_filled) * safeNumber(order.price_per_share)
+                  const estimatedShares = totalAmount / safeNumber(order.price_per_share)
+                  const filledShares = safeNumber(order.shares_filled)
+                  const filledPercentage = calculateFillPercentage(filledShares, estimatedShares)
 
                   return (
-                    <div key={order.id} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={order.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
                         <div className="font-medium">
-                          {formatCurrency(order.total_amount)}
-                          <span className="text-sm text-muted-foreground ml-1">
+                          {formatCurrency(totalAmount)}
+                          <span className="text-sm text-muted-foreground ml-2">
                             ({formatShares(estimatedShares)} shares)
                           </span>
                         </div>
-                        {getStatusBadge(order.status)}
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(order.status)}
+                          {order.status === "pending" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => cancelBuyOrder(order.id)}
+                              className="text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
                       </div>
+
                       <div className="space-y-1">
                         <div className="text-sm text-muted-foreground">
-                          Filled: {formatCurrency(filledAmount)} / {formatCurrency(totalAmount)}
+                          Filled: {formatCurrency(filledAmount)} / {formatCurrency(totalAmount)} (
+                          {filledPercentage.toFixed(1)}%)
                         </div>
                         <Progress value={filledPercentage} className="h-2" />
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(order.created_at).toLocaleString()}
-                      </div>
+
+                      <div className="text-xs text-muted-foreground">{new Date(order.created_at).toLocaleString()}</div>
                     </div>
                   )
                 })}
@@ -428,36 +497,50 @@ export default function ExchangePage() {
         {/* Your Sell Orders */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Sell Orders ({userSellOrders.length})</CardTitle>
+            <CardTitle>Your Sell Orders ({(userSellOrders || []).length})</CardTitle>
             <CardDescription>Your sell order history</CardDescription>
           </CardHeader>
           <CardContent>
-            {userSellOrders.length === 0 ? (
+            {!userSellOrders || userSellOrders.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No sell orders found</div>
             ) : (
               <div className="space-y-3">
                 {userSellOrders.map((order) => {
-                  const filledShares = Number(order.filled_shares) || 0
-                  const totalShares = Number(order.shares) || 0
-                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+                  const totalShares = safeNumber(order.shares_offered)
+                  const filledShares = safeNumber(order.shares_filled)
+                  const pricePerShare = safeNumber(order.price_per_share)
+                  const filledPercentage = calculateFillPercentage(filledShares, totalShares)
 
                   return (
-                    <div key={order.id} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={order.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
                         <div className="font-medium">
-                          {formatShares(order.shares)} shares @ {formatCurrency(order.price_per_share)}
+                          {formatShares(totalShares)} shares @ {formatCurrency(pricePerShare)}
                         </div>
-                        {getStatusBadge(order.status)}
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(order.status)}
+                          {order.status === "available" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => cancelSellOrder(order.id)}
+                              className="text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
                       </div>
+
                       <div className="space-y-1">
                         <div className="text-sm text-muted-foreground">
-                          Filled: {formatShares(filledShares)} / {formatShares(totalShares)} shares
+                          Filled: {formatShares(filledShares)} / {formatShares(totalShares)} shares (
+                          {filledPercentage.toFixed(1)}%)
                         </div>
                         <Progress value={filledPercentage} className="h-2" />
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(order.created_at).toLocaleString()}
-                      </div>
+
+                      <div className="text-xs text-muted-foreground">{new Date(order.created_at).toLocaleString()}</div>
                     </div>
                   )
                 })}
@@ -466,6 +549,33 @@ export default function ExchangePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Recent Matches */}
+      {matchedOrders && matchedOrders.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Matches ({matchedOrders.length})</CardTitle>
+            <CardDescription>Your recent order matches</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {matchedOrders.slice(0, 5).map((match) => (
+                <div key={match.id} className="border rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium">
+                      {formatShares(match.shares_matched)} shares @ {formatCurrency(match.price_per_share)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Total: {formatCurrency(match.total_amount)}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {new Date(match.matched_at).toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

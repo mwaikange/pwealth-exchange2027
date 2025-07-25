@@ -5,17 +5,24 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
+// Vesting levels configuration
+export const VESTING_LEVELS = {
+  1: { name: "Retail", days: 5 },
+  2: { name: "Small Business", days: 30 },
+  3: { name: "Corporate", days: 90 },
+} as const
+
+// Vesting slot interface with proper structure
 interface VestingSlot {
   id: string
   user_uuid: string
   level: number
   slot_number: number
-  shares_locked: number
-  shares_vested: number
-  shares_claimed: number
-  lock_date: string
-  vest_date: string
-  status: "locked" | "vesting" | "vested" | "claimed"
+  amount: number // Fractional shares with 4 decimal precision
+  status: "available" | "vesting" | "ready_to_claim" | "claimed"
+  start_time: string | null
+  end_time: string | null
+  claimed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -23,15 +30,20 @@ interface VestingSlot {
 interface VestingContextType {
   // Data
   vestingSlots: VestingSlot[]
-  totalLocked: number
-  totalVested: number
+  availableSlots: VestingSlot[]
+  vestingSlots_active: VestingSlot[]
+  readyToClaim: VestingSlot[]
+  claimedSlots: VestingSlot[]
+
+  // Totals
+  totalVesting: number
+  totalReadyToClaim: number
   totalClaimed: number
-  availableToClaim: number
 
   // Actions
-  lockShares: (level: number, shares: number) => Promise<void>
-  claimVestedShares: (slotId: string) => Promise<void>
-  claimAllVested: () => Promise<void>
+  vestShares: (level: number, slotNumber: number, amount: number) => Promise<void>
+  claimShares: (slotId: string) => Promise<void>
+  claimAllReady: () => Promise<void>
 
   // Data refresh
   refreshVestingData: (silent?: boolean) => Promise<void>
@@ -39,7 +51,7 @@ interface VestingContextType {
   // State
   loading: boolean
   error: string | null
-  claiming: boolean
+  processing: boolean
 }
 
 const VestingContext = createContext<VestingContextType | undefined>(undefined)
@@ -49,61 +61,36 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   // State
   const [vestingSlots, setVestingSlots] = useState<VestingSlot[]>([])
-  const [totalLocked, setTotalLocked] = useState(0)
-  const [totalVested, setTotalVested] = useState(0)
-  const [totalClaimed, setTotalClaimed] = useState(0)
-  const [availableToClaim, setAvailableToClaim] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [claiming, setClaiming] = useState(false)
+  const [processing, setProcessing] = useState(false)
 
-  // Helper function to safely convert to number
+  // Helper function to safely convert to number with 4 decimal precision
   const safeNumber = (value: any): number => {
     const num = Number(value)
-    return isNaN(num) ? 0 : num
+    return isNaN(num) ? 0 : Math.round(num * 10000) / 10000
   }
 
-  // Check if pivot_vesting table exists and initialize if needed
-  const initializePivotVesting = async () => {
-    if (!user) return false
+  // Initialize vesting slots for user if they don't exist
+  const initializeVestingSlots = async () => {
+    if (!user) return
 
     try {
-      // Check if user has pivot vesting data
-      const { data: existingData, error: checkError } = await supabase
-        .from("pivot_vesting")
-        .select("id")
-        .eq("user_uuid", user.id)
-        .limit(1)
+      console.log("🔧 Initializing vesting slots for user:", user.id)
 
-      if (checkError) {
-        if (checkError.code === "42P01") {
-          // Table doesn't exist, fall back to legacy system
-          console.log("⚠️ pivot_vesting table doesn't exist, using legacy vesting_schedules")
-          return false
-        }
-        throw checkError
+      const { data, error } = await supabase.rpc("initialize_user_vesting_slots", {
+        p_user_uuid: user.id,
+      })
+
+      if (error) {
+        console.error("Error initializing vesting slots:", error)
+        throw error
       }
 
-      if (!existingData || existingData.length === 0) {
-        // Initialize pivot vesting for user
-        console.log("🔧 Initializing pivot vesting for user:", user.id)
-
-        const { error: initError } = await supabase.rpc("initialize_user_vesting", {
-          p_user_uuid: user.id,
-        })
-
-        if (initError) {
-          console.error("Error initializing pivot vesting:", initError)
-          return false
-        }
-
-        console.log("✅ Pivot vesting initialized successfully")
-      }
-
-      return true
-    } catch (err) {
-      console.error("Error checking/initializing pivot vesting:", err)
-      return false
+      console.log("✅ Vesting slots initialized:", data)
+    } catch (err: any) {
+      console.error("Failed to initialize vesting slots:", err)
+      setError(err.message)
     }
   }
 
@@ -120,107 +107,68 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
         console.log("🔄 Refreshing vesting data...")
 
-        // Try to use pivot_vesting first
-        const usePivotSystem = await initializePivotVesting()
+        // Check if pivot_vesting table exists and has data for user
+        const { data: existingSlots, error: checkError } = await supabase
+          .from("pivot_vesting")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .limit(1)
 
-        if (usePivotSystem) {
-          // Use new pivot system
-          const { data: pivotData, error: pivotError } = await supabase
-            .from("pivot_vesting")
-            .select("*")
-            .eq("user_uuid", user.id)
-            .order("level", { ascending: true })
-            .order("slot_number", { ascending: true })
-
-          if (pivotError) {
-            throw new Error(`Failed to fetch pivot vesting data: ${pivotError.message}`)
+        if (checkError) {
+          if (checkError.code === "42P01") {
+            // Table doesn't exist, create it first
+            console.log("⚠️ pivot_vesting table doesn't exist, creating...")
+            throw new Error("Vesting system not initialized. Please contact support.")
           }
+          throw checkError
+        }
 
-          const processedSlots = (pivotData || []).map((slot) => ({
-            ...slot,
-            shares_locked: safeNumber(slot.shares_locked),
-            shares_vested: safeNumber(slot.shares_vested),
-            shares_claimed: safeNumber(slot.shares_claimed),
-          }))
+        // If no slots exist, initialize them
+        if (!existingSlots || existingSlots.length === 0) {
+          await initializeVestingSlots()
+        }
 
-          setVestingSlots(processedSlots)
+        // Fetch all vesting slots for user
+        const { data: slots, error: fetchError } = await supabase
+          .from("pivot_vesting")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("level", { ascending: true })
+          .order("slot_number", { ascending: true })
 
-          // Calculate totals
-          const locked = processedSlots.reduce((sum, slot) => sum + slot.shares_locked, 0)
-          const vested = processedSlots.reduce((sum, slot) => sum + slot.shares_vested, 0)
-          const claimed = processedSlots.reduce((sum, slot) => sum + slot.shares_claimed, 0)
-          const availableForClaim = processedSlots
-            .filter((slot) => slot.status === "vested")
-            .reduce((sum, slot) => sum + (slot.shares_vested - slot.shares_claimed), 0)
+        if (fetchError) {
+          throw new Error(`Failed to fetch vesting data: ${fetchError.message}`)
+        }
 
-          setTotalLocked(locked)
-          setTotalVested(vested)
-          setTotalClaimed(claimed)
-          setAvailableToClaim(availableForClaim)
+        // Process slots with proper number formatting
+        const processedSlots: VestingSlot[] = (slots || []).map((slot) => ({
+          ...slot,
+          amount: safeNumber(slot.amount),
+        }))
 
-          if (!silent) {
-            console.log("✅ Pivot vesting data refreshed:", {
-              slots: processedSlots.length,
-              totalLocked: locked,
-              totalVested: vested,
-              totalClaimed: claimed,
-              availableToClaim: availableForClaim,
-            })
+        // Update slot statuses based on time
+        const now = new Date()
+        const updatedSlots = processedSlots.map((slot) => {
+          if (slot.status === "vesting" && slot.end_time) {
+            const endTime = new Date(slot.end_time)
+            if (now >= endTime) {
+              // Auto-transition to ready_to_claim
+              return { ...slot, status: "ready_to_claim" as const }
+            }
           }
-        } else {
-          // Fall back to legacy vesting_schedules system
-          console.log("📊 Using legacy vesting_schedules system")
+          return slot
+        })
 
-          const { data: legacyData, error: legacyError } = await supabase
-            .from("vesting_schedules")
-            .select("*")
-            .eq("user_uuid", user.id)
-            .order("created_at", { ascending: true })
+        setVestingSlots(updatedSlots)
 
-          if (legacyError) {
-            throw new Error(`Failed to fetch legacy vesting data: ${legacyError.message}`)
-          }
-
-          // Convert legacy data to pivot format
-          const convertedSlots: VestingSlot[] = (legacyData || []).map((schedule, index) => ({
-            id: schedule.id,
-            user_uuid: schedule.user_uuid,
-            level: 1, // Default to level 1 for legacy data
-            slot_number: index + 1,
-            shares_locked: safeNumber(schedule.shares_locked),
-            shares_vested: safeNumber(schedule.shares_vested),
-            shares_claimed: safeNumber(schedule.shares_claimed),
-            lock_date: schedule.lock_date,
-            vest_date: schedule.vest_date,
-            status: schedule.status as "locked" | "vesting" | "vested" | "claimed",
-            created_at: schedule.created_at,
-            updated_at: schedule.updated_at,
-          }))
-
-          setVestingSlots(convertedSlots)
-
-          // Calculate totals from legacy data
-          const locked = convertedSlots.reduce((sum, slot) => sum + slot.shares_locked, 0)
-          const vested = convertedSlots.reduce((sum, slot) => sum + slot.shares_vested, 0)
-          const claimed = convertedSlots.reduce((sum, slot) => sum + slot.shares_claimed, 0)
-          const availableForClaim = convertedSlots
-            .filter((slot) => slot.status === "vested")
-            .reduce((sum, slot) => sum + (slot.shares_vested - slot.shares_claimed), 0)
-
-          setTotalLocked(locked)
-          setTotalVested(vested)
-          setTotalClaimed(claimed)
-          setAvailableToClaim(availableForClaim)
-
-          if (!silent) {
-            console.log("✅ Legacy vesting data refreshed:", {
-              slots: convertedSlots.length,
-              totalLocked: locked,
-              totalVested: vested,
-              totalClaimed: claimed,
-              availableToClaim: availableForClaim,
-            })
-          }
+        if (!silent) {
+          console.log("✅ Vesting data refreshed:", {
+            totalSlots: updatedSlots.length,
+            available: updatedSlots.filter((s) => s.status === "available").length,
+            vesting: updatedSlots.filter((s) => s.status === "vesting").length,
+            readyToClaim: updatedSlots.filter((s) => s.status === "ready_to_claim").length,
+            claimed: updatedSlots.filter((s) => s.status === "claimed").length,
+          })
         }
       } catch (err: any) {
         if (!silent) {
@@ -236,49 +184,53 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     [user],
   )
 
-  // Lock shares in vesting
-  const lockShares = async (level: number, shares: number) => {
+  // Vest shares in a specific slot
+  const vestShares = async (level: number, slotNumber: number, amount: number) => {
     if (!user) throw new Error("User not authenticated")
 
     try {
-      setClaiming(true)
+      setProcessing(true)
       setError(null)
 
-      console.log("🔒 Locking shares in vesting:", { level, shares })
+      // Ensure 4 decimal precision
+      const preciseAmount = safeNumber(amount)
 
-      const { data, error } = await supabase.rpc("add_shares_to_vesting", {
+      console.log("🔒 Vesting shares:", { level, slotNumber, amount: preciseAmount })
+
+      const { data, error } = await supabase.rpc("vest_shares_in_slot", {
         p_user_uuid: user.id,
         p_level: level,
-        p_shares: shares,
+        p_slot_number: slotNumber,
+        p_amount: preciseAmount,
       })
 
       if (error) {
-        console.error("Error locking shares:", error)
-        throw new Error(`Failed to lock shares: ${error.message}`)
+        console.error("Error vesting shares:", error)
+        throw new Error(`Failed to vest shares: ${error.message}`)
       }
 
-      console.log("✅ Shares locked successfully:", data)
+      console.log("✅ Shares vested successfully:", data)
 
       // Refresh vesting data
       await refreshVestingData(true)
     } catch (err: any) {
-      console.error("❌ Error locking shares:", err)
-      setError(err.message || "Failed to lock shares")
+      console.error("❌ Error vesting shares:", err)
+      setError(err.message || "Failed to vest shares")
       throw err
     } finally {
-      setClaiming(false)
+      setProcessing(false)
     }
   }
 
-  // Claim vested shares from a specific slot
-  const claimVestedShares = async (slotId: string) => {
+  // Claim shares from a specific slot
+  const claimShares = async (slotId: string) => {
     if (!user) throw new Error("User not authenticated")
 
     try {
-      setClaiming(true)
+      setProcessing(true)
       setError(null)
 
-      console.log("💰 Claiming vested shares from slot:", slotId)
+      console.log("💰 Claiming shares from slot:", slotId)
 
       const { data, error } = await supabase.rpc("claim_vested_shares", {
         p_slot_id: slotId,
@@ -299,37 +251,45 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       setError(err.message || "Failed to claim shares")
       throw err
     } finally {
-      setClaiming(false)
+      setProcessing(false)
     }
   }
 
-  // Claim all vested shares
-  const claimAllVested = async () => {
+  // Claim all ready shares
+  const claimAllReady = async () => {
     if (!user) throw new Error("User not authenticated")
 
     try {
-      setClaiming(true)
+      setProcessing(true)
       setError(null)
 
-      console.log("💰 Claiming all vested shares")
+      const readySlots = vestingSlots.filter((slot) => slot.status === "ready_to_claim")
 
-      const vestedSlots = vestingSlots.filter(
-        (slot) => slot.status === "vested" && slot.shares_vested - slot.shares_claimed > 0,
-      )
+      console.log("💰 Claiming all ready shares:", readySlots.length, "slots")
 
-      for (const slot of vestedSlots) {
-        await claimVestedShares(slot.id)
+      for (const slot of readySlots) {
+        await claimShares(slot.id)
       }
 
-      console.log("✅ All vested shares claimed successfully")
+      console.log("✅ All ready shares claimed successfully")
     } catch (err: any) {
       console.error("❌ Error claiming all shares:", err)
       setError(err.message || "Failed to claim all shares")
       throw err
     } finally {
-      setClaiming(false)
+      setProcessing(false)
     }
   }
+
+  // Computed values
+  const availableSlots = vestingSlots.filter((slot) => slot.status === "available")
+  const vestingSlots_active = vestingSlots.filter((slot) => slot.status === "vesting")
+  const readyToClaim = vestingSlots.filter((slot) => slot.status === "ready_to_claim")
+  const claimedSlots = vestingSlots.filter((slot) => slot.status === "claimed")
+
+  const totalVesting = vestingSlots_active.reduce((sum, slot) => sum + slot.amount, 0)
+  const totalReadyToClaim = readyToClaim.reduce((sum, slot) => sum + slot.amount, 0)
+  const totalClaimed = claimedSlots.reduce((sum, slot) => sum + slot.amount, 0)
 
   // Load vesting data when user changes
   useEffect(() => {
@@ -344,8 +304,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
     console.log("🔔 Setting up vesting real-time subscriptions")
 
-    // Subscribe to pivot_vesting changes
-    const pivotSubscription = supabase
+    const subscription = supabase
       .channel("pivot_vesting_changes")
       .on(
         "postgres_changes",
@@ -356,25 +315,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
           filter: `user_uuid=eq.${user.id}`,
         },
         (payload) => {
-          console.log("📡 Pivot vesting change detected:", payload)
-          refreshVestingData(true)
-        },
-      )
-      .subscribe()
-
-    // Subscribe to legacy vesting_schedules changes (fallback)
-    const legacySubscription = supabase
-      .channel("vesting_schedules_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "vesting_schedules",
-          filter: `user_uuid=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log("📡 Legacy vesting change detected:", payload)
+          console.log("📡 Vesting change detected:", payload)
           refreshVestingData(true)
         },
       )
@@ -382,23 +323,38 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       console.log("🔕 Cleaning up vesting subscriptions")
-      pivotSubscription.unsubscribe()
-      legacySubscription.unsubscribe()
+      subscription.unsubscribe()
     }
   }, [user, refreshVestingData])
+
+  // Auto-update vesting statuses every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (vestingSlots_active.length > 0) {
+        refreshVestingData(true)
+      }
+    }, 60000) // Every minute
+
+    return () => clearInterval(interval)
+  }, [vestingSlots_active.length, refreshVestingData])
 
   const value = {
     // Data
     vestingSlots,
-    totalLocked,
-    totalVested,
+    availableSlots,
+    vestingSlots_active,
+    readyToClaim,
+    claimedSlots,
+
+    // Totals
+    totalVesting,
+    totalReadyToClaim,
     totalClaimed,
-    availableToClaim,
 
     // Actions
-    lockShares,
-    claimVestedShares,
-    claimAllVested,
+    vestShares,
+    claimShares,
+    claimAllReady,
 
     // Data refresh
     refreshVestingData,
@@ -406,7 +362,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     // State
     loading,
     error,
-    claiming,
+    processing,
   }
 
   return <VestingContext.Provider value={value}>{children}</VestingContext.Provider>
