@@ -5,16 +5,21 @@ import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 
-// Define valid wallet types based on the constraint
-type ValidWalletType = "buy_wallet" | "hold_pre" | "hold_post" | "cashout_wallet"
+// Define valid wallet types based on the actual database constraint
+type ValidWalletType = "buy_wallet" | "hold_wallet_pre_hold" | "hold_wallet_post_hold" | "cashout_wallet"
 
-const VALID_WALLET_TYPES = new Set<ValidWalletType>(["buy_wallet", "hold_pre", "hold_post", "cashout_wallet"])
+const VALID_WALLET_TYPES = new Set<ValidWalletType>([
+  "buy_wallet",
+  "hold_wallet_pre_hold",
+  "hold_wallet_post_hold",
+  "cashout_wallet",
+])
 
 // Define the shape of our wallet state (real data from Supabase)
 type WalletState = {
   buyWalletBalance: number // NAD in buy_wallet
-  holdWalletPreHold: number // Shares in hold_pre
-  holdWalletPostHold: number // Shares in hold_post
+  holdWalletPreHold: number // Shares in hold_wallet_pre_hold
+  holdWalletPostHold: number // Shares in hold_wallet_post_hold
   cashoutWalletBalance: number // NAD in cashout_wallet
   aftBalance: number // Activation fee balance (if still used)
 }
@@ -94,14 +99,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setError(null)
       }
 
-      // Fetch user wallet balances
+      // Fetch user wallet balances from user_shares table
       const { data: walletData, error: walletError } = await supabase
         .from("user_shares")
         .select("wallet_type, shares")
         .eq("user_uuid", user.id)
 
       if (walletError) {
+        console.error("Wallet fetch error:", walletError)
         throw new Error(`Failed to fetch wallet data: ${walletError.message}`)
+      }
+
+      if (!silent) {
+        console.log("Raw wallet data from user_shares:", walletData)
       }
 
       // Process wallet data
@@ -116,19 +126,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       wallets.forEach((wallet) => {
         const shares = safeNumber(wallet.shares)
+        if (!silent) {
+          console.log(`Processing wallet: ${wallet.wallet_type} = ${shares}`)
+        }
+
         switch (wallet.wallet_type) {
           case "buy_wallet":
             newState.buyWalletBalance = shares
             break
-          case "hold_pre":
+          case "hold_wallet_pre_hold":
             newState.holdWalletPreHold = shares
             break
-          case "hold_post":
+          case "hold_wallet_post_hold":
             newState.holdWalletPostHold = shares
             break
           case "cashout_wallet":
             newState.cashoutWalletBalance = shares
             break
+          default:
+            if (!silent) {
+              console.warn(`Unknown wallet type: ${wallet.wallet_type}`)
+            }
         }
       })
 
@@ -138,7 +156,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setWalletState(newState)
 
       if (!silent) {
-        console.log("Wallet balances refreshed:", newState)
+        console.log("Final wallet state:", newState)
       }
 
       // Mark as initialized after first successful load
@@ -260,7 +278,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Update hold wallet (pre or post)
   const updateHoldWallet = async (amount: number, operation: "add" | "subtract", walletType: "pre" | "post") => {
-    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_pre" : "hold_post"
+    const dbWalletType: ValidWalletType = walletType === "pre" ? "hold_wallet_pre_hold" : "hold_wallet_post_hold"
     await updateWalletBalance(dbWalletType, amount, operation)
   }
 
