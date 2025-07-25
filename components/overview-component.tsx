@@ -1,98 +1,114 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { Progress } from "@/components/ui/progress"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
 import { useVesting } from "@/contexts/vesting-context"
 import { usePrice } from "@/contexts/price-context"
 import { supabase } from "@/lib/supabase-singleton"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { DollarSign, TrendingUp, Lock, Clock, CheckCircle, Wallet, PiggyBank, ArrowUpRight } from "lucide-react"
+import { TrendingUp, DollarSign, Wallet, Clock, Target, ArrowUpRight, ArrowDownRight, Lock, Unlock } from "lucide-react"
+
+interface OverviewStats {
+  totalShares: number
+  totalValue: number
+  preHoldShares: number
+  postHoldShares: number
+  totalLockedShares: number
+  totalClaimableShares: number
+  weeklyGrowth: number
+  monthlyGrowth: number
+}
 
 export function OverviewComponent() {
   const { user } = useAuth()
-  const { cashBalance, holdWalletPreHold, holdWalletPostHold, loading: walletLoading } = useWallet()
-  const { getTotalVestingInProgress, getTotalClaimableShares, loading: vestingLoading } = useVesting()
-  const { sharePrice, loading: priceLoading } = usePrice()
+  const { walletData, loading: walletLoading } = useWallet()
+  const { getTotalVestingInProgress, getTotalClaimableShares } = useVesting()
+  const { currentPrice, weeklyGrowth, loading: priceLoading } = usePrice()
 
-  // State for total locked shares from pivot_vesting
-  const [totalLockedShares, setTotalLockedShares] = useState(0)
-  const [loadingLocked, setLoadingLocked] = useState(true)
+  const [stats, setStats] = useState<OverviewStats>({
+    totalShares: 0,
+    totalValue: 0,
+    preHoldShares: 0,
+    postHoldShares: 0,
+    totalLockedShares: 0,
+    totalClaimableShares: 0,
+    weeklyGrowth: 0,
+    monthlyGrowth: 0,
+  })
+  const [loading, setLoading] = useState(true)
 
-  // Fetch total locked shares from pivot_vesting table
+  // Calculate overview statistics
   useEffect(() => {
-    const fetchTotalLockedShares = async () => {
-      if (!user) return
+    if (!walletData || walletLoading || priceLoading) return
 
+    const calculateStats = async () => {
       try {
-        setLoadingLocked(true)
+        setLoading(true)
 
-        // Get shares with status 'locked' and 'claim' from pivot_vesting
-        const { data, error } = await supabase
-          .from("pivot_vesting")
-          .select("amount")
-          .eq("user_uuid", user.id)
-          .in("status", ["locked", "claim"])
+        // Get vesting data from pivot_vesting table
+        let totalLockedShares = 0
+        let totalClaimableShares = 0
 
-        if (error) {
-          console.error("Error fetching locked shares:", error)
-          return
+        if (user) {
+          const { data: vestingData, error } = await supabase
+            .from("pivot_vesting")
+            .select("amount, status")
+            .eq("user_uuid", user.id)
+
+          if (!error && vestingData) {
+            totalLockedShares = vestingData
+              .filter((slot) => slot.status === "locked")
+              .reduce((sum, slot) => sum + Number(slot.amount || 0), 0)
+
+            totalClaimableShares = vestingData
+              .filter((slot) => slot.status === "claim")
+              .reduce((sum, slot) => sum + Number(slot.amount || 0), 0)
+          }
         }
 
-        // Sum up all the amounts
-        const total = (data || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
-        setTotalLockedShares(total)
+        const preHoldShares = Number(walletData.pre_hold_shares || 0)
+        const postHoldShares = Number(walletData.post_hold_shares || 0)
+        const totalShares = preHoldShares + postHoldShares + totalLockedShares + totalClaimableShares
+        const totalValue = totalShares * currentPrice
+
+        setStats({
+          totalShares,
+          totalValue,
+          preHoldShares,
+          postHoldShares,
+          totalLockedShares,
+          totalClaimableShares,
+          weeklyGrowth: weeklyGrowth || 0,
+          monthlyGrowth: 0, // We can add this later if needed
+        })
       } catch (error) {
-        console.error("Error calculating total locked shares:", error)
+        console.error("Error calculating overview stats:", error)
       } finally {
-        setLoadingLocked(false)
+        setLoading(false)
       }
     }
 
-    fetchTotalLockedShares()
+    calculateStats()
+  }, [walletData, walletLoading, priceLoading, currentPrice, weeklyGrowth, user])
 
-    // Set up real-time subscription for pivot_vesting changes
-    const subscription = supabase
-      .channel("pivot_vesting_overview")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "pivot_vesting",
-          filter: `user_uuid=eq.${user?.id}`,
-        },
-        () => {
-          fetchTotalLockedShares()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [user])
-
-  // Calculate derived values
-  const totalVesting = getTotalVestingInProgress()
-  const totalClaimable = getTotalClaimableShares()
-  const totalSharesValue = (holdWalletPreHold + holdWalletPostHold + totalLockedShares) * sharePrice
-  const totalPortfolioValue = cashBalance + totalSharesValue
-
-  // Loading state
-  if (walletLoading || vestingLoading || priceLoading || loadingLocked) {
+  if (loading || walletLoading || priceLoading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <Card key={i} className="bg-slate-800 border-slate-700">
-              <CardContent className="p-6">
-                <div className="animate-pulse">
-                  <div className="h-4 bg-slate-600 rounded w-3/4 mb-2"></div>
-                  <div className="h-8 bg-slate-600 rounded w-1/2"></div>
-                </div>
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 w-20 bg-muted animate-pulse rounded" />
+                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 w-24 bg-muted animate-pulse rounded mb-2" />
+                <div className="h-3 w-16 bg-muted animate-pulse rounded" />
               </CardContent>
             </Card>
           ))}
@@ -101,294 +117,229 @@ export function OverviewComponent() {
     )
   }
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency: "ZAR",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount)
+  }
+
+  const formatShares = (shares: number) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    }).format(shares)
+  }
+
   return (
     <div className="space-y-6">
-      {/* Portfolio Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Main Stats Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Total Portfolio Value */}
-        <Card className="bg-gradient-to-br from-blue-900/50 to-blue-800/30 border-blue-700/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-blue-200 flex items-center text-sm font-medium">
-              <PiggyBank className="w-4 h-4 mr-2" />
-              Total Portfolio Value
-            </CardTitle>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Portfolio Value</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-100">N${totalPortfolioValue.toFixed(2)}</div>
-            <p className="text-xs text-blue-300 mt-1">Cash + Shares Value</p>
-          </CardContent>
-        </Card>
-
-        {/* Cash Balance */}
-        <Card className="bg-gradient-to-br from-green-900/50 to-green-800/30 border-green-700/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-green-200 flex items-center text-sm font-medium">
-              <DollarSign className="w-4 h-4 mr-2" />
-              Cash Balance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-100">N${cashBalance.toFixed(2)}</div>
-            <p className="text-xs text-green-300 mt-1">Available for trading</p>
-          </CardContent>
-        </Card>
-
-        {/* Total Shares Value */}
-        <Card className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 border-purple-700/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-purple-200 flex items-center text-sm font-medium">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Total Shares Value
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-100">N${totalSharesValue.toFixed(2)}</div>
-            <p className="text-xs text-purple-300 mt-1">
-              {(holdWalletPreHold + holdWalletPostHold + totalLockedShares).toFixed(4)} shares @ N$
-              {sharePrice.toFixed(2)}
+            <div className="text-2xl font-bold">{formatCurrency(stats.totalValue)}</div>
+            <p className="text-xs text-muted-foreground">
+              {formatShares(stats.totalShares)} shares @ {formatCurrency(currentPrice)}
             </p>
           </CardContent>
         </Card>
 
-        {/* Current Share Price */}
-        <Card className="bg-gradient-to-br from-yellow-900/50 to-yellow-800/30 border-yellow-700/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-yellow-200 flex items-center text-sm font-medium">
-              <ArrowUpRight className="w-4 h-4 mr-2" />
-              Share Price
-            </CardTitle>
+        {/* Available Shares */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Available Shares</CardTitle>
+            <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-100">N${sharePrice.toFixed(2)}</div>
-            <p className="text-xs text-yellow-300 mt-1">Current market price</p>
+            <div className="text-2xl font-bold">{formatShares(stats.preHoldShares)}</div>
+            <p className="text-xs text-muted-foreground">Ready for trading or vesting</p>
+          </CardContent>
+        </Card>
+
+        {/* Locked Shares */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Locked Shares</CardTitle>
+            <Lock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatShares(stats.totalLockedShares)}</div>
+            <p className="text-xs text-muted-foreground">Currently vesting</p>
+          </CardContent>
+        </Card>
+
+        {/* Claimable Shares */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Claimable Shares</CardTitle>
+            <Unlock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{formatShares(stats.totalClaimableShares)}</div>
+            <p className="text-xs text-muted-foreground">Ready to claim</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Detailed Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Share Holdings */}
-        <Card className="bg-slate-800 border-slate-700">
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Share Distribution */}
+        <Card>
           <CardHeader>
-            <CardTitle className="text-slate-200 flex items-center">
-              <Wallet className="w-5 h-5 mr-2 text-blue-400" />
-              Share Holdings
-            </CardTitle>
+            <CardTitle>Share Distribution</CardTitle>
+            <CardDescription>Breakdown of your share holdings across different categories</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Pre-Hold Wallet */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-blue-400 rounded-full mr-3"></div>
-                <div>
-                  <p className="text-slate-200 font-medium">Pre-Hold Wallet</p>
-                  <p className="text-xs text-slate-400">Available for vesting</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                  <span className="text-sm">Available (Pre-Hold)</span>
                 </div>
+                <span className="text-sm font-medium">{formatShares(stats.preHoldShares)}</span>
               </div>
-              <div className="text-right">
-                <p className="text-slate-200 font-bold">{holdWalletPreHold.toFixed(4)}</p>
-                <p className="text-xs text-slate-400">shares</p>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full" />
+                  <span className="text-sm">Matured (Post-Hold)</span>
+                </div>
+                <span className="text-sm font-medium">{formatShares(stats.postHoldShares)}</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-orange-500 rounded-full" />
+                  <span className="text-sm">Locked (Vesting)</span>
+                </div>
+                <span className="text-sm font-medium">{formatShares(stats.totalLockedShares)}</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-purple-500 rounded-full" />
+                  <span className="text-sm">Claimable</span>
+                </div>
+                <span className="text-sm font-medium">{formatShares(stats.totalClaimableShares)}</span>
               </div>
             </div>
 
-            {/* Total Locked Shares */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-yellow-400 rounded-full mr-3"></div>
-                <div>
-                  <p className="text-slate-200 font-medium">Total Locked Shares</p>
-                  <p className="text-xs text-slate-400">Vesting + Ready to claim</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-slate-200 font-bold">{totalLockedShares.toFixed(4)}</p>
-                <p className="text-xs text-slate-400">shares</p>
-              </div>
-            </div>
+            <Separator />
 
-            {/* Post-Hold Wallet */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-400 rounded-full mr-3"></div>
-                <div>
-                  <p className="text-slate-200 font-medium">Post-Hold Wallet</p>
-                  <p className="text-xs text-slate-400">Available for trading</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-slate-200 font-bold">{holdWalletPostHold.toFixed(4)}</p>
-                <p className="text-xs text-slate-400">shares</p>
-              </div>
-            </div>
-
-            <Separator className="bg-slate-600" />
-
-            {/* Total Shares */}
-            <div className="flex items-center justify-between p-3 bg-slate-600/50 rounded-lg">
-              <div className="flex items-center">
-                <TrendingUp className="w-4 h-4 text-purple-400 mr-3" />
-                <div>
-                  <p className="text-slate-200 font-bold">Total Shares</p>
-                  <p className="text-xs text-slate-400">All wallets combined</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-purple-400 font-bold text-lg">
-                  {(holdWalletPreHold + holdWalletPostHold + totalLockedShares).toFixed(4)}
-                </p>
-                <p className="text-xs text-slate-400">shares</p>
-              </div>
+            <div className="flex items-center justify-between font-medium">
+              <span>Total Shares</span>
+              <span>{formatShares(stats.totalShares)}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Vesting Status */}
-        <Card className="bg-slate-800 border-slate-700">
+        {/* Performance & Growth */}
+        <Card>
           <CardHeader>
-            <CardTitle className="text-slate-200 flex items-center">
-              <Clock className="w-5 h-5 mr-2 text-yellow-400" />
-              Vesting Status
-            </CardTitle>
+            <CardTitle>Performance Overview</CardTitle>
+            <CardDescription>Share price performance and portfolio growth</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Currently Vesting */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center">
-                <Lock className="w-4 h-4 text-yellow-400 mr-3" />
-                <div>
-                  <p className="text-slate-200 font-medium">Currently Vesting</p>
-                  <p className="text-xs text-slate-400">Locked in vesting slots</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Current Share Price</span>
+                <span className="text-sm font-medium">{formatCurrency(currentPrice)}</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Weekly Growth</span>
+                <div className="flex items-center space-x-1">
+                  {stats.weeklyGrowth >= 0 ? (
+                    <ArrowUpRight className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3 text-red-500" />
+                  )}
+                  <span
+                    className={`text-sm font-medium ${stats.weeklyGrowth >= 0 ? "text-green-600" : "text-red-600"}`}
+                  >
+                    {stats.weeklyGrowth >= 0 ? "+" : ""}
+                    {stats.weeklyGrowth.toFixed(2)}%
+                  </span>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-yellow-400 font-bold">{totalVesting.toFixed(4)}</p>
-                <p className="text-xs text-slate-400">shares</p>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Portfolio Allocation</span>
+                <Badge variant="outline">Diversified</Badge>
               </div>
             </div>
 
-            {/* Ready to Claim */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircle className="w-4 h-4 text-green-400 mr-3" />
-                <div>
-                  <p className="text-slate-200 font-medium">Ready to Claim</p>
-                  <p className="text-xs text-slate-400">Vesting completed</p>
-                </div>
+            <Separator />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>Liquid Assets</span>
+                <span>{(((stats.preHoldShares + stats.postHoldShares) / stats.totalShares) * 100).toFixed(1)}%</span>
               </div>
-              <div className="text-right">
-                <p className="text-green-400 font-bold">{totalClaimable.toFixed(4)}</p>
-                <p className="text-xs text-slate-400">shares</p>
-              </div>
+              <Progress
+                value={((stats.preHoldShares + stats.postHoldShares) / stats.totalShares) * 100}
+                className="h-2"
+              />
             </div>
 
-            {/* Vesting Progress */}
-            <div className="p-3 bg-slate-700/50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-slate-200 font-medium">Vesting Progress</p>
-                <Badge variant="outline" className="text-xs">
-                  {totalVesting > 0 ? "Active" : "Inactive"}
-                </Badge>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>Vesting Assets</span>
+                <span>
+                  {(((stats.totalLockedShares + stats.totalClaimableShares) / stats.totalShares) * 100).toFixed(1)}%
+                </span>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Locked: {totalVesting.toFixed(4)}</span>
-                  <span>Claimable: {totalClaimable.toFixed(4)}</span>
-                </div>
-                <div className="w-full bg-slate-600 rounded-full h-2">
-                  <div
-                    className="bg-gradient-to-r from-yellow-400 to-green-400 h-2 rounded-full transition-all duration-300"
-                    style={{
-                      width:
-                        totalVesting + totalClaimable > 0
-                          ? `${(totalClaimable / (totalVesting + totalClaimable)) * 100}%`
-                          : "0%",
-                    }}
-                  ></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-2">
-              <button className="p-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-600/30 rounded-lg text-blue-400 text-xs font-medium transition-colors">
-                View Vesting
-              </button>
-              <button className="p-2 bg-green-600/20 hover:bg-green-600/30 border border-green-600/30 rounded-lg text-green-400 text-xs font-medium transition-colors">
-                Claim Ready
-              </button>
+              <Progress
+                value={((stats.totalLockedShares + stats.totalClaimableShares) / stats.totalShares) * 100}
+                className="h-2"
+              />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Portfolio Summary */}
-      <Card className="bg-slate-800 border-slate-700">
+      {/* Quick Actions */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-slate-200 flex items-center">
-            <PiggyBank className="w-5 h-5 mr-2 text-blue-400" />
-            Portfolio Summary
-          </CardTitle>
+          <CardTitle>Quick Actions</CardTitle>
+          <CardDescription>Common actions you can take with your portfolio</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Asset Allocation */}
-            <div>
-              <h4 className="text-slate-300 font-medium mb-3">Asset Allocation</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Cash</span>
-                  <span className="text-green-400">
-                    {totalPortfolioValue > 0 ? ((cashBalance / totalPortfolioValue) * 100).toFixed(1) : 0}%
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Shares</span>
-                  <span className="text-blue-400">
-                    {totalPortfolioValue > 0 ? ((totalSharesValue / totalPortfolioValue) * 100).toFixed(1) : 0}%
-                  </span>
-                </div>
-              </div>
-            </div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <Button variant="outline" className="justify-start bg-transparent" asChild>
+              <a href="/dashboard/exchange">
+                <TrendingUp className="mr-2 h-4 w-4" />
+                Trade Shares
+              </a>
+            </Button>
 
-            {/* Share Distribution */}
-            <div>
-              <h4 className="text-slate-300 font-medium mb-3">Share Distribution</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Available</span>
-                  <span className="text-blue-400">{holdWalletPreHold.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Locked</span>
-                  <span className="text-yellow-400">{totalLockedShares.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Tradeable</span>
-                  <span className="text-green-400">{holdWalletPostHold.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
+            <Button variant="outline" className="justify-start bg-transparent" asChild>
+              <a href="/dashboard/vesting">
+                <Clock className="mr-2 h-4 w-4" />
+                Vest Shares
+              </a>
+            </Button>
 
-            {/* Key Metrics */}
-            <div>
-              <h4 className="text-slate-300 font-medium mb-3">Key Metrics</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Share Price</span>
-                  <span className="text-yellow-400">N${sharePrice.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Total Shares</span>
-                  <span className="text-purple-400">
-                    {(holdWalletPreHold + holdWalletPostHold + totalLockedShares).toFixed(4)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Portfolio Value</span>
-                  <span className="text-blue-400">N${totalPortfolioValue.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
+            <Button variant="outline" className="justify-start bg-transparent" asChild>
+              <a href="/dashboard/transactions">
+                <Target className="mr-2 h-4 w-4" />
+                View History
+              </a>
+            </Button>
+
+            <Button variant="outline" className="justify-start bg-transparent" asChild>
+              <a href="/dashboard/referrals">
+                <DollarSign className="mr-2 h-4 w-4" />
+                Referrals
+              </a>
+            </Button>
           </div>
         </CardContent>
       </Card>
