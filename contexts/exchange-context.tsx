@@ -1,368 +1,465 @@
 "use client"
 
 import type React from "react"
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
-import type { BuyOrderStatus, SellOrderStatus } from "@/types/order-enums"
 
-/* ---------- Types ---------- */
-export interface SellOrder {
+// Order interfaces
+interface BuyOrder {
   id: string
   user_uuid: string
-  shares: number
+  shares_requested: number
   price_per_share: number
-  status: SellOrderStatus
+  total_amount: number
+  shares_filled: number
+  status: string
   created_at: string
-  filled_shares: number
-  shares_remaining: number
+  expires_at: string
 }
 
-export interface BuyOrder {
+interface SellOrder {
   id: string
   user_uuid: string
-  total_amount: number
+  shares_offered: number
   price_per_share: number
-  status: BuyOrderStatus
-  created_at: string
-  filled_amount: number
-  shares_requested: number
+  total_amount: number
   shares_filled: number
+  status: string
+  created_at: string
+  expires_at: string
+}
+
+interface MatchedOrder {
+  id: string
+  buy_order_id: string
+  sell_order_id: string
+  buyer_uuid: string
+  seller_uuid: string
+  shares_matched: number
+  price_per_share: number
+  total_amount: number
+  status: string
+  created_at: string
 }
 
 interface ExchangeContextType {
-  /* GLOBAL MARKET ORDERS (all users) */
-  marketSellOrders: SellOrder[]
-  marketBuyOrders: BuyOrder[]
-
-  /* USER-SPECIFIC ORDERS (private) */
-  userSellOrders: SellOrder[]
+  // Orders
+  buyOrders: BuyOrder[]
+  sellOrders: SellOrder[]
   userBuyOrders: BuyOrder[]
+  userSellOrders: SellOrder[]
+  matchedOrders: MatchedOrder[]
 
-  /* actions */
-  placeBuyOrder: (amount: number) => Promise<{ success: boolean; message: string }>
-  placeSellOrder: (shares: number) => Promise<{ success: boolean; message: string }>
+  // Actions
+  placeBuyOrder: (shares: number, pricePerShare: number) => Promise<void>
+  placeSellOrder: (shares: number, pricePerShare: number) => Promise<void>
+  cancelBuyOrder: (orderId: string) => Promise<void>
+  cancelSellOrder: (orderId: string) => Promise<void>
 
-  /* market data  */
-  currentSharePrice: number
-  lastPriceUpdate: string | null
+  // Data refresh
+  refreshOrders: (silent?: boolean) => Promise<void>
 
-  /* ui state */
-  loading: boolean // Only true on initial load
+  // State
+  loading: boolean
   error: string | null
-  refreshOrders: () => Promise<void>
+  placingOrder: boolean
 }
 
-/* ---------- Context ---------- */
 const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined)
 
-/* ---------- Provider ---------- */
 export function ExchangeProvider({ children }: { children: React.ReactNode }) {
-  // GLOBAL market orders (all users)
-  const [marketSellOrders, setMarketSellOrders] = useState<SellOrder[]>([])
-  const [marketBuyOrders, setMarketBuyOrders] = useState<BuyOrder[]>([])
+  const { user } = useAuth()
+  const { refreshWalletBalances } = useWallet()
 
-  // USER-SPECIFIC orders (private)
-  const [userSellOrders, setUserSellOrders] = useState<SellOrder[]>([])
+  // State
+  const [buyOrders, setBuyOrders] = useState<BuyOrder[]>([])
+  const [sellOrders, setSellOrders] = useState<SellOrder[]>([])
   const [userBuyOrders, setUserBuyOrders] = useState<BuyOrder[]>([])
-
-  const [currentSharePrice, setCurrentSharePrice] = useState(100)
-  const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true) // Only true on initial load
+  const [userSellOrders, setUserSellOrders] = useState<SellOrder[]>([])
+  const [matchedOrders, setMatchedOrders] = useState<MatchedOrder[]>([])
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false) // Track if we've loaded data once
+  const [placingOrder, setPlacingOrder] = useState(false)
 
-  const { user, session } = useAuth()
-  const { buyWalletBalance, holdWalletPostHold, refreshWalletBalances, updateBuyWallet, updateHoldWallet } = useWallet()
-
-  /* ---------- queries ---------- */
-  const fetchSharePrice = async (silent = false) => {
-    try {
-      // ✅ Use current_pricing_info table instead of share_supply
-      const { data, error } = await supabase
-        .from("current_pricing_info")
-        .select("current_price, week_start, latest_hodl_date")
-        .order("week_start", { ascending: false })
-        .limit(1)
-
-      if (error) {
-        console.error("Error fetching price from current_pricing_info:", error)
-        // Fallback to RPC function
-        const rpcResult = await supabase.rpc("get_current_share_price")
-        if (rpcResult.data) {
-          setCurrentSharePrice(Number(rpcResult.data))
-        }
-        return
-      }
-
-      // ✅ Handle array response (data is an array, not single object)
-      if (data && data.length > 0) {
-        const latestPrice = data[0] // Get first (most recent) row
-        setCurrentSharePrice(Number(latestPrice.current_price) || 100)
-        setLastPriceUpdate(latestPrice.latest_hodl_date || latestPrice.week_start)
-        if (!silent) {
-          console.log("📈 Current share price:", latestPrice.current_price, "week:", latestPrice.week_start)
-        }
-      } else {
-        // No data found, use fallback
-        if (!silent) {
-          console.log("No price data found, using fallback")
-        }
-        setCurrentSharePrice(100)
-      }
-    } catch (err) {
-      if (!silent) {
-        console.error("Error fetching price", err)
-      }
-      setCurrentSharePrice(100)
-    }
+  // Helper function to safely convert to number
+  const safeNumber = (value: any): number => {
+    const num = Number(value)
+    return isNaN(num) ? 0 : num
   }
 
-  const refreshOrders = async (silent = false) => {
-    if (!user || !session) {
-      if (!isInitialized) {
-        setLoading(false)
-      }
-      return
-    }
+  // Refresh all orders data
+  const refreshOrders = useCallback(
+    async (silent = false) => {
+      if (!user) return
 
-    try {
-      // Only show loading on initial load, not on background refreshes
-      if (!isInitialized) {
-        setLoading(true)
-      }
+      try {
+        if (!silent) {
+          setLoading(true)
+          setError(null)
+        }
 
-      if (!silent) {
-        setError(null)
-      }
+        console.log("🔄 Refreshing exchange orders...")
 
-      if (!silent) {
-        console.log("🔄 Refreshing orders...")
-      }
-
-      // GLOBAL MARKET ORDERS - Show active and recent orders (using lowercase enum values)
-      const [marketSellResult, marketBuyResult] = await Promise.all([
-        supabase
-          .from("sell_orders")
-          .select("*")
-          .in("status", ["available", "partial"]) // ✅ lowercase enum values
-          .order("created_at", { ascending: true }),
-        supabase
+        // Fetch all buy orders (available and partial only for market display)
+        const { data: allBuyOrders, error: buyOrdersError } = await supabase
           .from("buy_orders")
           .select("*")
-          .in("status", ["pending", "partial"]) // ✅ lowercase enum values
-          .order("created_at", { ascending: true }),
-      ])
+          .in("status", ["available", "partial"]) // Use lowercase enum values
+          .order("price_per_share", { ascending: false })
+          .order("created_at", { ascending: true })
 
-      // USER-SPECIFIC orders - Show ALL orders including completed ones (using lowercase enum values)
-      const [userSellResult, userBuyResult] = await Promise.all([
-        supabase.from("sell_orders").select("*").eq("user_uuid", user.id).order("created_at", { ascending: false }),
-        supabase.from("buy_orders").select("*").eq("user_uuid", user.id).order("created_at", { ascending: false }),
-      ])
+        if (buyOrdersError) {
+          console.error("Error fetching buy orders:", buyOrdersError)
+          throw new Error(`Failed to fetch buy orders: ${buyOrdersError.message}`)
+        }
 
-      // Format all numeric values to proper decimal places
-      const formatOrderData = (orders: any[], isUserOrder = false) => {
-        return orders.map((order: any) => ({
+        // Fetch all sell orders (available and partial only for market display)
+        const { data: allSellOrders, error: sellOrdersError } = await supabase
+          .from("sell_orders")
+          .select("*")
+          .in("status", ["available", "partial"]) // Use lowercase enum values
+          .order("price_per_share", { ascending: true })
+          .order("created_at", { ascending: true })
+
+        if (sellOrdersError) {
+          console.error("Error fetching sell orders:", sellOrdersError)
+          throw new Error(`Failed to fetch sell orders: ${sellOrdersError.message}`)
+        }
+
+        // Fetch user's buy orders (all statuses for user's view)
+        const { data: userBuys, error: userBuyError } = await supabase
+          .from("buy_orders")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false })
+
+        if (userBuyError) {
+          console.error("Error fetching user buy orders:", userBuyError)
+          throw new Error(`Failed to fetch user buy orders: ${userBuyError.message}`)
+        }
+
+        // Fetch user's sell orders (all statuses for user's view)
+        const { data: userSells, error: userSellError } = await supabase
+          .from("sell_orders")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false })
+
+        if (userSellError) {
+          console.error("Error fetching user sell orders:", userSellError)
+          throw new Error(`Failed to fetch user sell orders: ${userSellError.message}`)
+        }
+
+        // Fetch matched orders for user
+        const { data: matches, error: matchError } = await supabase
+          .from("matched_orders")
+          .select("*")
+          .or(`buyer_uuid.eq.${user.id},seller_uuid.eq.${user.id}`)
+          .order("created_at", { ascending: false })
+
+        if (matchError) {
+          console.error("Error fetching matched orders:", matchError)
+          throw new Error(`Failed to fetch matched orders: ${matchError.message}`)
+        }
+
+        // Process and set data with safe number conversion
+        const processedBuyOrders = (allBuyOrders || []).map((order) => ({
           ...order,
-          // Fix numeric conversions with proper fallbacks
-          total_amount: Number(order.total_amount || 0),
-          price_per_share: Number(order.price_per_share || 0),
-          shares: Number(order.shares || order.shares_available || 0), // Add this line for sell orders
-          shares_available: Number(order.shares_available || order.shares || 0), // Add this line
-          shares_requested: Number(order.shares_requested || order.shares_available || order.shares || 0),
-          shares_filled: Number(order.shares_filled || order.filled_shares || 0), // Add this line
-          shares_remaining: Number(order.shares_remaining || order.shares_available - order.shares_filled || 0),
-          filled_shares: Number(order.filled_shares || order.shares_filled || 0), // Add this line
-          filled_amount: Number(order.filled_amount || 0), // Ensure this is always a number
-          amount_filled: Number(
-            order.amount_filled ||
-              (order.shares_filled || order.filled_shares || 0) * (order.price_per_share || 0) ||
-              0,
-          ),
+          shares_requested: safeNumber(order.shares_requested),
+          price_per_share: safeNumber(order.price_per_share),
+          total_amount: safeNumber(order.total_amount),
+          shares_filled: safeNumber(order.shares_filled),
         }))
+
+        const processedSellOrders = (allSellOrders || []).map((order) => ({
+          ...order,
+          shares_offered: safeNumber(order.shares_offered),
+          price_per_share: safeNumber(order.price_per_share),
+          total_amount: safeNumber(order.total_amount),
+          shares_filled: safeNumber(order.shares_filled),
+        }))
+
+        const processedUserBuyOrders = (userBuys || []).map((order) => ({
+          ...order,
+          shares_requested: safeNumber(order.shares_requested),
+          price_per_share: safeNumber(order.price_per_share),
+          total_amount: safeNumber(order.total_amount),
+          shares_filled: safeNumber(order.shares_filled),
+        }))
+
+        const processedUserSellOrders = (userSells || []).map((order) => ({
+          ...order,
+          shares_offered: safeNumber(order.shares_offered),
+          price_per_share: safeNumber(order.price_per_share),
+          total_amount: safeNumber(order.total_amount),
+          shares_filled: safeNumber(order.shares_filled),
+        }))
+
+        const processedMatchedOrders = (matches || []).map((order) => ({
+          ...order,
+          shares_matched: safeNumber(order.shares_matched),
+          price_per_share: safeNumber(order.price_per_share),
+          total_amount: safeNumber(order.total_amount),
+        }))
+
+        setBuyOrders(processedBuyOrders)
+        setSellOrders(processedSellOrders)
+        setUserBuyOrders(processedUserBuyOrders)
+        setUserSellOrders(processedUserSellOrders)
+        setMatchedOrders(processedMatchedOrders)
+
+        if (!silent) {
+          console.log("✅ Exchange orders refreshed:", {
+            buyOrders: processedBuyOrders.length,
+            sellOrders: processedSellOrders.length,
+            userBuyOrders: processedUserBuyOrders.length,
+            userSellOrders: processedUserSellOrders.length,
+            matchedOrders: processedMatchedOrders.length,
+          })
+        }
+      } catch (err: any) {
+        if (!silent) {
+          console.error("❌ Error refreshing orders:", err)
+          setError(err.message || "Failed to refresh orders")
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false)
+        }
+      }
+    },
+    [user],
+  )
+
+  // Place buy order
+  const placeBuyOrder = async (shares: number, pricePerShare: number) => {
+    if (!user) throw new Error("User not authenticated")
+
+    try {
+      setPlacingOrder(true)
+      setError(null)
+
+      console.log("📝 Placing buy order:", { shares, pricePerShare })
+
+      const { data, error } = await supabase.rpc("place_buy_order", {
+        p_user_uuid: user.id,
+        p_shares_requested: shares,
+        p_price_per_share: pricePerShare,
+      })
+
+      if (error) {
+        console.error("Error placing buy order:", error)
+        throw new Error(`Failed to place buy order: ${error.message}`)
       }
 
-      setMarketSellOrders(formatOrderData(marketSellResult.data || []))
-      setMarketBuyOrders(formatOrderData(marketBuyResult.data || []))
-      setUserSellOrders(formatOrderData(userSellResult.data || [], true))
-      setUserBuyOrders(formatOrderData(userBuyResult.data || [], true))
+      console.log("✅ Buy order placed successfully:", data)
 
-      if (!silent) {
-        console.log("✅ Orders refreshed successfully")
-        console.log("User buy orders:", userBuyResult.data?.length || 0)
-        console.log("Market buy orders:", marketBuyResult.data?.length || 0)
-      }
-
-      // Mark as initialized after first successful load
-      if (!isInitialized) {
-        setIsInitialized(true)
-      }
+      // Refresh orders and wallet balances
+      await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
     } catch (err: any) {
-      if (!silent) {
-        console.error("❌ Refresh orders error", err)
-        setError(err.message)
-      }
+      console.error("❌ Error placing buy order:", err)
+      setError(err.message || "Failed to place buy order")
+      throw err
     } finally {
-      // Only set loading to false if this was the initial load
-      if (!isInitialized) {
-        setLoading(false)
-      }
+      setPlacingOrder(false)
     }
   }
 
-  /* ---------- actions with IMMEDIATE UI updates ---------- */
-  const placeBuyOrder = useCallback(
-    async (amount: number) => {
-      if (!user) return { success: false, message: "Not authenticated" }
-      if (amount <= 0) return { success: false, message: "Invalid amount" }
-      if (amount < 50) return { success: false, message: "Minimum purchase is N$50" }
-      if (amount > buyWalletBalance) return { success: false, message: "Insufficient Buy-wallet funds" }
+  // Place sell order
+  const placeSellOrder = async (shares: number, pricePerShare: number) => {
+    if (!user) throw new Error("User not authenticated")
 
-      try {
-        // 🚀 IMMEDIATE UI UPDATE (optimistic)
-        console.log("💰 Immediately deducting N$", amount, "from buy wallet")
-        await updateBuyWallet(amount, "subtract")
+    try {
+      setPlacingOrder(true)
+      setError(null)
 
-        console.log("📤 Placing buy order:", { amount, currentSharePrice, user_id: user.id })
+      console.log("📝 Placing sell order:", { shares, pricePerShare })
 
-        // ✅ Place order with current share price
-        const { data, error } = await supabase.rpc("place_buy_order", {
-          p_user_uuid: user.id,
-          p_price_per_share: currentSharePrice,
-          p_total_amount: amount,
-        })
+      const { data, error } = await supabase.rpc("place_sell_order", {
+        p_user_uuid: user.id,
+        p_shares_offered: shares,
+        p_price_per_share: pricePerShare,
+      })
 
-        console.log("📥 Buy order result:", { data, error })
-
-        if (error) {
-          // Rollback on error
-          console.log("❌ Error - rolling back wallet deduction")
-          await updateBuyWallet(amount, "add")
-          throw error
-        }
-
-        // Refresh orders silently to show new order
-        await refreshOrders(true)
-        await refreshWalletBalances(true)
-
-        const estimatedShares = (amount / currentSharePrice).toFixed(4)
-        return {
-          success: true,
-          message: `Buy order placed for ${estimatedShares} shares at N$${currentSharePrice.toFixed(2)} each.`,
-        }
-      } catch (e: any) {
-        console.error("❌ Buy order error", e)
-        return { success: false, message: e.message }
+      if (error) {
+        console.error("Error placing sell order:", error)
+        throw new Error(`Failed to place sell order: ${error.message}`)
       }
-    },
-    [user, currentSharePrice, buyWalletBalance, updateBuyWallet, refreshWalletBalances],
-  )
 
-  const placeSellOrder = useCallback(
-    async (shares: number) => {
-      if (!user) return { success: false, message: "Not authenticated" }
-      if (shares <= 0) return { success: false, message: "Invalid amount" }
-      if (shares < 0.5) return { success: false, message: "Minimum sell is 0.5 shares" }
-      if (shares > holdWalletPostHold) return { success: false, message: "Insufficient Post-hold shares" }
+      console.log("✅ Sell order placed successfully:", data)
 
-      try {
-        // 🚀 IMMEDIATE UI UPDATE (optimistic)
-        console.log("📈 Immediately deducting", shares, "shares from post-hold wallet")
-        await updateHoldWallet(shares, "subtract", "post")
-
-        console.log("📤 Placing sell order:", { shares, currentSharePrice, user_id: user.id })
-
-        const { data, error } = await supabase.rpc("place_sell_order", {
-          p_user_uuid: user.id,
-          p_price_per_share: currentSharePrice,
-          p_shares: shares,
-        })
-
-        console.log("📥 Sell order result:", { data, error })
-
-        if (error) {
-          // Rollback on error
-          console.log("❌ Error - rolling back share deduction")
-          await updateHoldWallet(shares, "add", "post")
-          throw error
-        }
-
-        // Trigger immediate order matching for sell orders
-        console.log("🔄 Triggering order matching...")
-        const matchResult = await supabase.rpc("match_orders")
-        console.log("🔄 Match result:", matchResult)
-
-        // Refresh orders silently to show new order and any matches
-        await refreshOrders(true)
-        await refreshWalletBalances(true)
-
-        return {
-          success: true,
-          message: `Sell order placed for ${shares} shares at N$${currentSharePrice.toFixed(2)} each`,
-        }
-      } catch (e: any) {
-        console.error("❌ Sell order error", e)
-        return { success: false, message: e.message }
-      }
-    },
-    [user, currentSharePrice, holdWalletPostHold, updateHoldWallet, refreshWalletBalances],
-  )
-
-  /* ---------- Background polling setup ---------- */
-  useEffect(() => {
-    if (!user || !session) return
-
-    // Initial load (with loading state)
-    const initialLoad = async () => {
-      await Promise.all([
-        fetchSharePrice(false), // Not silent for initial load
-        refreshOrders(false), // Not silent for initial load
-      ])
+      // Refresh orders and wallet balances
+      await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
+    } catch (err: any) {
+      console.error("❌ Error placing sell order:", err)
+      setError(err.message || "Failed to place sell order")
+      throw err
+    } finally {
+      setPlacingOrder(false)
     }
+  }
 
-    initialLoad()
+  // Cancel buy order
+  const cancelBuyOrder = async (orderId: string) => {
+    if (!user) throw new Error("User not authenticated")
 
-    // Set up background polling (silent updates)
-    const ordersInterval = setInterval(() => {
-      refreshOrders(true) // Silent background refresh
-    }, 10000) // Every 10 seconds
+    try {
+      setError(null)
 
-    const priceInterval = setInterval(() => {
-      fetchSharePrice(true) // Silent background refresh
-    }, 300000) // Every 5 minutes
+      console.log("❌ Cancelling buy order:", orderId)
+
+      const { data, error } = await supabase.rpc("cancel_buy_order", {
+        p_order_id: orderId,
+        p_user_uuid: user.id,
+      })
+
+      if (error) {
+        console.error("Error cancelling buy order:", error)
+        throw new Error(`Failed to cancel buy order: ${error.message}`)
+      }
+
+      console.log("✅ Buy order cancelled successfully:", data)
+
+      // Refresh orders and wallet balances
+      await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
+    } catch (err: any) {
+      console.error("❌ Error cancelling buy order:", err)
+      setError(err.message || "Failed to cancel buy order")
+      throw err
+    }
+  }
+
+  // Cancel sell order
+  const cancelSellOrder = async (orderId: string) => {
+    if (!user) throw new Error("User not authenticated")
+
+    try {
+      setError(null)
+
+      console.log("❌ Cancelling sell order:", orderId)
+
+      const { data, error } = await supabase.rpc("cancel_sell_order", {
+        p_order_id: orderId,
+        p_user_uuid: user.id,
+      })
+
+      if (error) {
+        console.error("Error cancelling sell order:", error)
+        throw new Error(`Failed to cancel sell order: ${error.message}`)
+      }
+
+      console.log("✅ Sell order cancelled successfully:", data)
+
+      // Refresh orders and wallet balances
+      await Promise.all([refreshOrders(true), refreshWalletBalances(true)])
+    } catch (err: any) {
+      console.error("❌ Error cancelling sell order:", err)
+      setError(err.message || "Failed to cancel sell order")
+      throw err
+    }
+  }
+
+  // Load orders when user changes
+  useEffect(() => {
+    if (user) {
+      refreshOrders()
+    }
+  }, [user, refreshOrders])
+
+  // Set up real-time subscriptions
+  useEffect(() => {
+    if (!user) return
+
+    console.log("🔔 Setting up exchange real-time subscriptions")
+
+    const buyOrdersSubscription = supabase
+      .channel("buy_orders_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "buy_orders",
+        },
+        (payload) => {
+          console.log("📡 Buy orders change detected:", payload)
+          refreshOrders(true)
+        },
+      )
+      .subscribe()
+
+    const sellOrdersSubscription = supabase
+      .channel("sell_orders_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sell_orders",
+        },
+        (payload) => {
+          console.log("📡 Sell orders change detected:", payload)
+          refreshOrders(true)
+        },
+      )
+      .subscribe()
+
+    const matchedOrdersSubscription = supabase
+      .channel("matched_orders_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "matched_orders",
+        },
+        (payload) => {
+          console.log("📡 Matched orders change detected:", payload)
+          refreshOrders(true)
+        },
+      )
+      .subscribe()
 
     return () => {
-      clearInterval(ordersInterval)
-      clearInterval(priceInterval)
+      console.log("🔕 Cleaning up exchange subscriptions")
+      buyOrdersSubscription.unsubscribe()
+      sellOrdersSubscription.unsubscribe()
+      matchedOrdersSubscription.unsubscribe()
     }
-  }, [user, session])
+  }, [user, refreshOrders])
 
-  /* ---------- context value ---------- */
-  const ctx: ExchangeContextType = {
-    // GLOBAL market orders (all users)
-    marketSellOrders,
-    marketBuyOrders,
-
-    // USER-SPECIFIC orders (private)
-    userSellOrders,
+  const value = {
+    // Orders
+    buyOrders,
+    sellOrders,
     userBuyOrders,
+    userSellOrders,
+    matchedOrders,
 
+    // Actions
     placeBuyOrder,
     placeSellOrder,
-    currentSharePrice,
-    lastPriceUpdate,
-    loading, // Only true on initial load
-    error,
+    cancelBuyOrder,
+    cancelSellOrder,
+
+    // Data refresh
     refreshOrders,
+
+    // State
+    loading,
+    error,
+    placingOrder,
   }
 
-  return <ExchangeContext.Provider value={ctx}>{children}</ExchangeContext.Provider>
+  return <ExchangeContext.Provider value={value}>{children}</ExchangeContext.Provider>
 }
 
-/* ---------- hook ---------- */
 export function useExchange() {
-  const ctx = useContext(ExchangeContext)
-  if (!ctx) throw new Error("useExchange must be inside ExchangeProvider")
-  return ctx
+  const context = useContext(ExchangeContext)
+  if (context === undefined) {
+    throw new Error("useExchange must be used within an ExchangeProvider")
+  }
+  return context
 }

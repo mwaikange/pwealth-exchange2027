@@ -1,389 +1,264 @@
--- Create the new pivot vesting system
--- This replaces the old vesting_schedules with a more structured approach
-
--- Drop existing table if it exists
-DROP TABLE IF EXISTS pivot_vesting CASCADE;
-
--- Create the pivot_vesting table
-CREATE TABLE pivot_vesting (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- Create the pivot_vesting table with 18 slots per user (6 slots × 3 levels)
+CREATE TABLE IF NOT EXISTS public.pivot_vesting (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_uuid UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    slot_number INTEGER NOT NULL CHECK (slot_number BETWEEN 1 AND 6),
-    level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 3),
-    shares NUMERIC(10,4) NOT NULL DEFAULT 0,
-    vested_at TIMESTAMPTZ NULL,
-    claimed_at TIMESTAMPTZ NULL,
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    level INTEGER NOT NULL CHECK (level >= 1 AND level <= 3),
+    slot_number INTEGER NOT NULL CHECK (slot_number >= 1 AND slot_number <= 6),
+    shares_locked DECIMAL(20,4) DEFAULT 0 NOT NULL,
+    shares_vested DECIMAL(20,4) DEFAULT 0 NOT NULL,
+    shares_claimed DECIMAL(20,4) DEFAULT 0 NOT NULL,
+    lock_date TIMESTAMPTZ,
+    vest_date TIMESTAMPTZ,
+    status TEXT DEFAULT 'empty' CHECK (status IN ('empty', 'locked', 'vesting', 'vested', 'claimed')),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     
-    -- Ensure unique slot per user per level
-    UNIQUE(user_uuid, slot_number, level)
+    -- Ensure unique combination of user, level, and slot
+    UNIQUE(user_uuid, level, slot_number)
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_pivot_vesting_user_uuid ON pivot_vesting(user_uuid);
-CREATE INDEX idx_pivot_vesting_user_level ON pivot_vesting(user_uuid, level);
-CREATE INDEX idx_pivot_vesting_vested_at ON pivot_vesting(vested_at) WHERE vested_at IS NOT NULL;
-CREATE INDEX idx_pivot_vesting_claimed_at ON pivot_vesting(claimed_at) WHERE claimed_at IS NOT NULL;
-CREATE INDEX idx_pivot_vesting_expires_at ON pivot_vesting(expires_at);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_user_uuid ON public.pivot_vesting(user_uuid);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_status ON public.pivot_vesting(status);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_vest_date ON public.pivot_vesting(vest_date);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_user_level ON public.pivot_vesting(user_uuid, level);
 
 -- Enable RLS
-ALTER TABLE pivot_vesting ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pivot_vesting ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
-CREATE POLICY "Users can view their own vesting slots" ON pivot_vesting
+-- Create RLS policies
+CREATE POLICY "Users can view their own vesting slots" ON public.pivot_vesting
     FOR SELECT USING (auth.uid() = user_uuid);
 
-CREATE POLICY "Users can update their own vesting slots" ON pivot_vesting
+CREATE POLICY "Users can update their own vesting slots" ON public.pivot_vesting
     FOR UPDATE USING (auth.uid() = user_uuid);
 
 -- Function to initialize vesting slots for a user
-CREATE OR REPLACE FUNCTION initialize_user_vesting_slots(p_user_uuid UUID)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    slot_num INTEGER;
-    level_num INTEGER;
-    existing_count INTEGER;
+CREATE OR REPLACE FUNCTION public.initialize_user_vesting(p_user_uuid UUID)
+RETURNS VOID AS $$
 BEGIN
-    -- Check if user already has slots
-    SELECT COUNT(*) INTO existing_count
-    FROM pivot_vesting
-    WHERE user_uuid = p_user_uuid;
+    -- Create 18 empty slots (6 slots × 3 levels) for the user if they don't exist
+    INSERT INTO public.pivot_vesting (user_uuid, level, slot_number, status)
+    SELECT 
+        p_user_uuid,
+        level_num,
+        slot_num,
+        'empty'
+    FROM 
+        generate_series(1, 3) AS level_num,
+        generate_series(1, 6) AS slot_num
+    ON CONFLICT (user_uuid, level, slot_number) DO NOTHING;
     
-    IF existing_count > 0 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'User already has vesting slots initialized',
-            'existing_slots', existing_count
-        );
+    RAISE NOTICE 'Initialized vesting slots for user %', p_user_uuid;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to add shares to vesting (finds next available slot)
+CREATE OR REPLACE FUNCTION public.add_shares_to_vesting(
+    p_user_uuid UUID,
+    p_level INTEGER,
+    p_shares DECIMAL(20,4)
+)
+RETURNS JSON AS $$
+DECLARE
+    v_slot_id UUID;
+    v_vest_date TIMESTAMPTZ;
+    v_result JSON;
+BEGIN
+    -- Validate inputs
+    IF p_shares <= 0 THEN
+        RAISE EXCEPTION 'Shares must be greater than 0';
     END IF;
     
-    -- Create 18 slots (6 slots × 3 levels)
-    FOR level_num IN 1..3 LOOP
-        FOR slot_num IN 1..6 LOOP
-            INSERT INTO pivot_vesting (
-                user_uuid,
-                slot_number,
-                level,
-                shares,
-                expires_at
-            ) VALUES (
-                p_user_uuid,
-                slot_num,
-                level_num,
-                0, -- Start with 0 shares
-                NOW() + INTERVAL '30 days'
-            );
-        END LOOP;
+    IF p_level < 1 OR p_level > 3 THEN
+        RAISE EXCEPTION 'Level must be between 1 and 3';
+    END IF;
+    
+    -- Calculate vest date based on level (30, 60, or 90 days)
+    v_vest_date := NOW() + INTERVAL '30 days' * p_level;
+    
+    -- Find the next available slot for this level
+    SELECT id INTO v_slot_id
+    FROM public.pivot_vesting
+    WHERE user_uuid = p_user_uuid 
+        AND level = p_level 
+        AND status = 'empty'
+    ORDER BY slot_number
+    LIMIT 1;
+    
+    -- Check if slot was found
+    IF v_slot_id IS NULL THEN
+        RAISE EXCEPTION 'No available vesting slots for level %', p_level;
+    END IF;
+    
+    -- Update the slot with the locked shares
+    UPDATE public.pivot_vesting
+    SET 
+        shares_locked = p_shares,
+        lock_date = NOW(),
+        vest_date = v_vest_date,
+        status = 'locked',
+        updated_at = NOW()
+    WHERE id = v_slot_id;
+    
+    -- Return success result
+    v_result := json_build_object(
+        'success', true,
+        'slot_id', v_slot_id,
+        'level', p_level,
+        'shares_locked', p_shares,
+        'vest_date', v_vest_date,
+        'message', format('Successfully locked %s shares in level %s vesting', p_shares, p_level)
+    );
+    
+    RETURN v_result;
+    
+EXCEPTION WHEN OTHERS THEN
+    RETURN json_build_object(
+        'success', false,
+        'error', SQLERRM,
+        'message', 'Failed to add shares to vesting'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to process vesting (moves locked shares to vested when time is up)
+CREATE OR REPLACE FUNCTION public.process_vesting()
+RETURNS JSON AS $$
+DECLARE
+    v_processed_count INTEGER := 0;
+    v_slot RECORD;
+BEGIN
+    -- Find all locked slots that are ready to vest
+    FOR v_slot IN 
+        SELECT id, user_uuid, level, slot_number, shares_locked
+        FROM public.pivot_vesting
+        WHERE status = 'locked' 
+            AND vest_date <= NOW()
+    LOOP
+        -- Move shares from locked to vested
+        UPDATE public.pivot_vesting
+        SET 
+            shares_vested = shares_locked,
+            status = 'vested',
+            updated_at = NOW()
+        WHERE id = v_slot.id;
+        
+        v_processed_count := v_processed_count + 1;
+        
+        RAISE NOTICE 'Vested % shares for user % (level %, slot %)', 
+            v_slot.shares_locked, v_slot.user_uuid, v_slot.level, v_slot.slot_number;
     END LOOP;
     
     RETURN json_build_object(
         'success', true,
-        'message', 'Vesting slots initialized successfully',
-        'slots_created', 18
+        'processed_count', v_processed_count,
+        'message', format('Processed %s vesting slots', v_processed_count)
     );
     
 EXCEPTION WHEN OTHERS THEN
     RETURN json_build_object(
         'success', false,
-        'message', 'Failed to initialize vesting slots: ' || SQLERRM,
-        'error_code', 'INITIALIZATION_ERROR'
+        'error', SQLERRM,
+        'message', 'Failed to process vesting'
     );
 END;
-$$;
-
--- Function to add shares to a vesting slot
-CREATE OR REPLACE FUNCTION add_shares_to_vesting_slot(
-    p_user_uuid UUID,
-    p_slot_number INTEGER,
-    p_level INTEGER,
-    p_shares NUMERIC
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-BEGIN
-    -- Validate inputs
-    IF p_shares <= 0 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Shares must be greater than 0',
-            'error_code', 'INVALID_SHARES'
-        );
-    END IF;
-    
-    IF p_slot_number < 1 OR p_slot_number > 6 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Slot number must be between 1 and 6',
-            'error_code', 'INVALID_SLOT'
-        );
-    END IF;
-    
-    IF p_level < 1 OR p_level > 3 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Level must be between 1 and 3',
-            'error_code', 'INVALID_LEVEL'
-        );
-    END IF;
-    
-    -- Update the slot with additional shares
-    UPDATE pivot_vesting
-    SET 
-        shares = shares + p_shares,
-        updated_at = NOW(),
-        expires_at = NOW() + INTERVAL '30 days' -- Reset expiry when adding shares
-    WHERE user_uuid = p_user_uuid
-    AND slot_number = p_slot_number
-    AND level = p_level;
-    
-    IF NOT FOUND THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Vesting slot not found',
-            'error_code', 'SLOT_NOT_FOUND'
-        );
-    END IF;
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'Shares added to vesting slot successfully',
-        'shares_added', p_shares
-    );
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN json_build_object(
-        'success', false,
-        'message', 'Failed to add shares to vesting slot: ' || SQLERRM,
-        'error_code', 'PROCESSING_ERROR'
-    );
-END;
-$$;
-
--- Function to vest shares (mark as ready for claiming)
-CREATE OR REPLACE FUNCTION vest_shares_in_slot(
-    p_user_uuid UUID,
-    p_slot_id UUID
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    slot_shares NUMERIC;
-BEGIN
-    -- Check if slot exists and has shares
-    SELECT shares INTO slot_shares
-    FROM pivot_vesting
-    WHERE id = p_slot_id
-    AND user_uuid = p_user_uuid
-    AND vested_at IS NULL
-    AND claimed_at IS NULL;
-    
-    IF NOT FOUND THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Vesting slot not found or already processed',
-            'error_code', 'SLOT_NOT_FOUND'
-        );
-    END IF;
-    
-    IF slot_shares <= 0 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'No shares to vest in this slot',
-            'error_code', 'NO_SHARES'
-        );
-    END IF;
-    
-    -- Mark as vested
-    UPDATE pivot_vesting
-    SET 
-        vested_at = NOW(),
-        updated_at = NOW()
-    WHERE id = p_slot_id
-    AND user_uuid = p_user_uuid;
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'Shares vested successfully',
-        'shares_vested', slot_shares
-    );
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN json_build_object(
-        'success', false,
-        'message', 'Failed to vest shares: ' || SQLERRM,
-        'error_code', 'PROCESSING_ERROR'
-    );
-END;
-$$;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Function to claim vested shares
-CREATE OR REPLACE FUNCTION claim_vested_shares_pivot(
-    p_user_uuid UUID,
-    p_slot_id UUID
+CREATE OR REPLACE FUNCTION public.claim_vested_shares(
+    p_slot_id UUID,
+    p_user_uuid UUID
 )
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
+RETURNS JSON AS $$
 DECLARE
-    slot_shares NUMERIC;
-    slot_record RECORD;
+    v_slot RECORD;
+    v_claimable_shares DECIMAL(20,4);
+    v_result JSON;
 BEGIN
-    -- Get slot details
-    SELECT * INTO slot_record
-    FROM pivot_vesting
-    WHERE id = p_slot_id
-    AND user_uuid = p_user_uuid
-    AND vested_at IS NOT NULL
-    AND claimed_at IS NULL;
+    -- Get the slot details
+    SELECT * INTO v_slot
+    FROM public.pivot_vesting
+    WHERE id = p_slot_id 
+        AND user_uuid = p_user_uuid
+        AND status = 'vested';
     
+    -- Check if slot exists and is vested
     IF NOT FOUND THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Vesting slot not found, not vested, or already claimed',
-            'error_code', 'SLOT_NOT_AVAILABLE'
-        );
+        RAISE EXCEPTION 'Vesting slot not found or not ready for claiming';
     END IF;
     
-    slot_shares := slot_record.shares;
+    -- Calculate claimable shares
+    v_claimable_shares := v_slot.shares_vested - v_slot.shares_claimed;
     
-    IF slot_shares <= 0 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'No shares to claim in this slot',
-            'error_code', 'NO_SHARES'
-        );
+    IF v_claimable_shares <= 0 THEN
+        RAISE EXCEPTION 'No shares available to claim from this slot';
     END IF;
     
-    -- Mark as claimed
-    UPDATE pivot_vesting
+    -- Update the slot to mark as claimed
+    UPDATE public.pivot_vesting
     SET 
-        claimed_at = NOW(),
+        shares_claimed = shares_vested,
+        status = 'claimed',
         updated_at = NOW()
-    WHERE id = p_slot_id
-    AND user_uuid = p_user_uuid;
+    WHERE id = p_slot_id;
     
-    -- Add shares to user's hold_post wallet
-    INSERT INTO user_shares (user_uuid, wallet_type, shares, created_at)
-    VALUES (p_user_uuid, 'hold_post', slot_shares, NOW())
-    ON CONFLICT (user_uuid, wallet_type)
+    -- Add shares to user's hold wallet (post-hold)
+    INSERT INTO public.user_shares (user_uuid, wallet_type, shares, source, created_at, updated_at)
+    VALUES (p_user_uuid, 'hold_wallet_post_hold', v_claimable_shares, 'vesting_claim', NOW(), NOW())
+    ON CONFLICT (user_uuid, wallet_type) 
     DO UPDATE SET 
-        shares = user_shares.shares + EXCLUDED.shares,
+        shares = user_shares.shares + v_claimable_shares,
         updated_at = NOW();
     
-    -- Log the transaction
-    INSERT INTO share_transactions (
-        user_uuid,
-        transaction_type,
-        shares,
-        total_amount,
-        status,
+    -- Record the transaction
+    INSERT INTO public.share_transactions (
+        user_uuid, 
+        transaction_type, 
+        shares, 
+        total_amount, 
+        from_wallet, 
+        to_wallet, 
+        status, 
         description,
         created_at
     ) VALUES (
         p_user_uuid,
         'vesting_claim',
-        slot_shares,
-        0, -- No monetary value for vesting claims
+        v_claimable_shares,
+        v_claimable_shares * 108.2, -- Current share price
+        'vesting_slot',
+        'hold_wallet_post_hold',
         'completed',
-        'Claimed ' || slot_shares || ' vested shares from slot ' || slot_record.slot_number || ' level ' || slot_record.level,
+        format('Claimed %s vested shares from level %s slot %s', v_claimable_shares, v_slot.level, v_slot.slot_number),
         NOW()
     );
     
-    RETURN json_build_object(
+    -- Return success result
+    v_result := json_build_object(
         'success', true,
-        'message', 'Vested shares claimed successfully',
-        'shares_claimed', slot_shares
+        'shares_claimed', v_claimable_shares,
+        'level', v_slot.level,
+        'slot_number', v_slot.slot_number,
+        'message', format('Successfully claimed %s shares', v_claimable_shares)
     );
+    
+    RETURN v_result;
     
 EXCEPTION WHEN OTHERS THEN
     RETURN json_build_object(
         'success', false,
-        'message', 'Failed to claim vested shares: ' || SQLERRM,
-        'error_code', 'PROCESSING_ERROR'
+        'error', SQLERRM,
+        'message', 'Failed to claim vested shares'
     );
 END;
-$$;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get user's vesting summary
-CREATE OR REPLACE FUNCTION get_user_vesting_summary(p_user_uuid UUID)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    summary_data JSON;
-BEGIN
-    SELECT json_build_object(
-        'total_slots', COUNT(*),
-        'active_slots', COUNT(*) FILTER (WHERE vested_at IS NULL AND claimed_at IS NULL),
-        'vested_slots', COUNT(*) FILTER (WHERE vested_at IS NOT NULL AND claimed_at IS NULL),
-        'claimed_slots', COUNT(*) FILTER (WHERE claimed_at IS NOT NULL),
-        'total_shares', COALESCE(SUM(shares), 0),
-        'vested_shares', COALESCE(SUM(shares) FILTER (WHERE vested_at IS NOT NULL AND claimed_at IS NULL), 0),
-        'claimed_shares', COALESCE(SUM(shares) FILTER (WHERE claimed_at IS NOT NULL), 0),
-        'by_level', json_object_agg(
-            level,
-            json_build_object(
-                'slots', COUNT(*),
-                'shares', COALESCE(SUM(shares), 0),
-                'vested', COUNT(*) FILTER (WHERE vested_at IS NOT NULL AND claimed_at IS NULL),
-                'claimed', COUNT(*) FILTER (WHERE claimed_at IS NOT NULL)
-            )
-        )
-    ) INTO summary_data
-    FROM pivot_vesting
-    WHERE user_uuid = p_user_uuid
-    GROUP BY user_uuid;
-    
-    RETURN COALESCE(summary_data, json_build_object(
-        'total_slots', 0,
-        'active_slots', 0,
-        'vested_slots', 0,
-        'claimed_slots', 0,
-        'total_shares', 0,
-        'vested_shares', 0,
-        'claimed_shares', 0,
-        'by_level', json_build_object()
-    ));
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN json_build_object(
-        'error', 'Failed to get vesting summary: ' || SQLERRM
-    );
-END;
-$$;
+-- Create a cron job to process vesting automatically (runs every hour)
+-- Note: This requires the pg_cron extension to be enabled
+-- SELECT cron.schedule('process-vesting', '0 * * * *', 'SELECT public.process_vesting();');
 
--- Create trigger to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_pivot_vesting_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_pivot_vesting_updated_at
-    BEFORE UPDATE ON pivot_vesting
-    FOR EACH ROW
-    EXECUTE FUNCTION update_pivot_vesting_updated_at();
-
--- Grant necessary permissions
-GRANT SELECT, UPDATE ON pivot_vesting TO authenticated;
-GRANT EXECUTE ON FUNCTION initialize_user_vesting_slots(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION add_shares_to_vesting_slot(UUID, INTEGER, INTEGER, NUMERIC) TO authenticated;
-GRANT EXECUTE ON FUNCTION vest_shares_in_slot(UUID, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION claim_vested_shares_pivot(UUID, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_vesting_summary(UUID) TO authenticated;
-
--- Success message
-SELECT 'Pivot vesting system created successfully!' as result;
+RAISE NOTICE 'Pivot vesting system created successfully!';
+RAISE NOTICE 'Use initialize_user_vesting(user_uuid) to set up vesting slots for users';
+RAISE NOTICE 'Use add_shares_to_vesting(user_uuid, level, shares) to lock shares in vesting';
+RAISE NOTICE 'Use claim_vested_shares(slot_id, user_uuid) to claim vested shares';
