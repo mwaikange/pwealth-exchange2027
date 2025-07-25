@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS pivot_vesting (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_pivot_vesting_user_uuid ON pivot_vesting(user_uuid);
-CREATE INDEX idx_pivot_vesting_level ON pivot_vesting(level);
-CREATE INDEX idx_pivot_vesting_status ON pivot_vesting(activated, invested, claimed);
-CREATE INDEX idx_pivot_vesting_progress ON pivot_vesting(progress);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_user_uuid ON pivot_vesting(user_uuid);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_level ON pivot_vesting(level);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_status ON pivot_vesting(activated, invested, claimed);
+CREATE INDEX IF NOT EXISTS idx_pivot_vesting_progress ON pivot_vesting(progress);
 
 -- Enable RLS
 ALTER TABLE pivot_vesting ENABLE ROW LEVEL SECURITY;

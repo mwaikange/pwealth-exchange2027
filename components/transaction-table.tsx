@@ -1,60 +1,64 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
+import { formatCurrency } from "@/lib/utils"
 
 interface Transaction {
   id: string
+  user_uuid: string
   transaction_type: string
-  shares: number
-  total_amount: number
-  from_wallet: string
-  to_wallet: string
-  status: string
+  amount: number
+  shares?: number
   description: string
+  status: string
   created_at: string
+  reference_id?: string
 }
 
-interface TransactionTableProps {
-  transactions: Transaction[]
-}
+export function TransactionTable() {
+  const { user } = useAuth()
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-export function TransactionTable({ transactions }: TransactionTableProps) {
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10
-  const totalPages = Math.ceil(transactions.length / itemsPerPage)
+  useEffect(() => {
+    if (user) {
+      fetchTransactions()
+    }
+  }, [user])
 
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const currentTransactions = transactions.slice(startIndex, endIndex)
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
+      const { data, error: fetchError } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_uuid", user?.id)
+        .order("created_at", { ascending: false })
+        .limit(50)
 
-  const formatShares = (shares: number) => {
-    return Number(shares).toFixed(4)
-  }
+      if (fetchError) {
+        throw new Error(fetchError.message)
+      }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-NA", {
-      style: "currency",
-      currency: "NAD",
-      minimumFractionDigits: 2,
-    }).format(amount)
+      setTransactions(data || [])
+    } catch (err: any) {
+      console.error("Error fetching transactions:", err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const getStatusBadge = (status: string) => {
-    const statusColors = {
+    const statusColors: Record<string, string> = {
       completed: "bg-green-500",
       pending: "bg-yellow-500",
       failed: "bg-red-500",
@@ -62,115 +66,112 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
     }
 
     return (
-      <Badge className={statusColors[status as keyof typeof statusColors] || "bg-gray-500"}>
+      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500"} text-white`}>
         {status.toUpperCase()}
       </Badge>
     )
   }
 
-  const getTransactionTypeDisplay = (type: string) => {
-    const typeMap = {
-      purchase: "Purchase",
-      vesting: "Vesting",
-      claim: "Claim",
-      exchange_buy: "Exchange Buy",
-      exchange_sell: "Exchange Sell",
-      transfer: "Transfer",
-      cashout: "Cashout",
-      aft_purchase: "AFT Purchase",
+  const formatAmount = (transaction: Transaction) => {
+    // For share-related transactions, show shares
+    if (transaction.shares && transaction.shares > 0) {
+      // Check if it's an AFT transaction
+      if (transaction.description?.toLowerCase().includes("aft")) {
+        return `${transaction.shares.toFixed(4)} AFT`
+      }
+      return `${transaction.shares.toFixed(4)} Shares`
     }
-    return typeMap[type as keyof typeof typeMap] || type
+
+    // For monetary transactions, show currency
+    return formatCurrency(transaction.amount)
   }
 
-  const getAmountDisplay = (transaction: Transaction) => {
-    // For AFT transactions, show AFT units
-    if (transaction.transaction_type === "aft_purchase") {
-      return `${formatShares(transaction.shares)} AFT`
-    }
-    // For all other transactions, show shares
-    return `${formatShares(transaction.shares)} Shares`
+  const getAmountColumnHeader = () => {
+    return "Amount (Shares)"
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction History</CardTitle>
+          <CardDescription>Your recent transactions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <div className="text-muted-foreground">Loading transactions...</div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction History</CardTitle>
+          <CardDescription>Your recent transactions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <div className="text-red-500">Error loading transactions: {error}</div>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-slate-700">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-slate-700">
-              <TableHead className="text-slate-300">Date</TableHead>
-              <TableHead className="text-slate-300">Type</TableHead>
-              <TableHead className="text-slate-300">Amount (Shares)</TableHead>
-              <TableHead className="text-slate-300">Value (N$)</TableHead>
-              <TableHead className="text-slate-300">From</TableHead>
-              <TableHead className="text-slate-300">To</TableHead>
-              <TableHead className="text-slate-300">Status</TableHead>
-              <TableHead className="text-slate-300">Description</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {currentTransactions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-slate-400 py-8">
-                  No transactions found
-                </TableCell>
-              </TableRow>
-            ) : (
-              currentTransactions.map((transaction) => (
-                <TableRow key={transaction.id} className="border-slate-700">
-                  <TableCell className="text-slate-300">{formatDate(transaction.created_at)}</TableCell>
-                  <TableCell className="text-slate-300">
-                    {getTransactionTypeDisplay(transaction.transaction_type)}
-                  </TableCell>
-                  <TableCell className="text-slate-300">{getAmountDisplay(transaction)}</TableCell>
-                  <TableCell className="text-slate-300">{formatCurrency(transaction.total_amount)}</TableCell>
-                  <TableCell className="text-slate-300 capitalize">
-                    {transaction.from_wallet?.replace(/_/g, " ")}
-                  </TableCell>
-                  <TableCell className="text-slate-300 capitalize">
-                    {transaction.to_wallet?.replace(/_/g, " ")}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(transaction.status)}</TableCell>
-                  <TableCell className="text-slate-300 max-w-xs truncate">{transaction.description}</TableCell>
+    <Card>
+      <CardHeader>
+        <CardTitle>Transaction History</CardTitle>
+        <CardDescription>Your recent transactions</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {transactions.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-muted-foreground">No transactions found</div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">{getAmountColumnHeader()}</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Reference</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-slate-400">
-            Showing {startIndex + 1} to {Math.min(endIndex, transactions.length)} of {transactions.length} transactions
+              </TableHeader>
+              <TableBody>
+                {transactions.map((transaction) => (
+                  <TableRow key={transaction.id}>
+                    <TableCell className="font-medium">
+                      {new Date(transaction.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{transaction.transaction_type.replace(/_/g, " ").toUpperCase()}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">{transaction.description}</TableCell>
+                    <TableCell className="text-right font-mono">{formatAmount(transaction)}</TableCell>
+                    <TableCell>{getStatusBadge(transaction.status)}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {transaction.reference_id ? (
+                        <span className="truncate block max-w-24">{transaction.reference_id}</span>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="border-slate-600 text-slate-300"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-            <div className="text-sm text-slate-300">
-              Page {currentPage} of {totalPages}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="border-slate-600 text-slate-300"
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
