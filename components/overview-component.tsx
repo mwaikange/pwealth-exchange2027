@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { DollarSign, TrendingUp, Lock, Clock, CheckCircle, Wallet, PiggyBank, ArrowUpRight } from "lucide-react"
 
-export default function OverviewComponent() {
+export function OverviewComponent() {
   const { user } = useAuth()
   const { cashBalance, holdWalletPreHold, holdWalletPostHold, loading: walletLoading } = useWallet()
   const { getTotalVestingInProgress, getTotalClaimableShares, loading: vestingLoading } = useVesting()
