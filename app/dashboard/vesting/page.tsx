@@ -7,6 +7,7 @@ import { useTransactions } from "@/contexts/transaction-context"
 import Celebration from "@/components/celebration"
 import { VestingSlot } from "@/components/vesting-slot"
 import { VestConfirmationModal } from "@/components/vest-confirmation-modal"
+import { SlidingNotification, useNotification } from "@/components/sliding-notification"
 import { AlertCircle, Clock, Loader2 } from "lucide-react"
 
 export default function Vesting() {
@@ -17,16 +18,14 @@ export default function Vesting() {
   const [investError, setInvestError] = useState("")
   const [claimError, setClaimError] = useState("")
 
-  const [showActivateConfirmation, setShowActivateConfirmation] = useState(false)
-  const [showInvestConfirmation, setShowInvestConfirmation] = useState(false)
   const [showVestModal, setShowVestModal] = useState(false)
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null)
   const [selectedLevel, setSelectedLevel] = useState<number>(1)
-  const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
-
-  // Add a new state variable to track when any action is being processed
   const [isProcessing, setIsProcessing] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
+
+  // Notification system
+  const { notification, showNotification, hideNotification } = useNotification()
 
   // Get wallet functions
   const { holdWalletPreHold, holdWalletPostHold, loading: walletLoading, error: walletError } = useWallet()
@@ -87,15 +86,14 @@ export default function Vesting() {
       const slot = currentLevelSlots[slotIndex]
       await claimShares(currentLevel, slotIndex)
 
-      setClaimSuccess(
-        `Successfully claimed ${slot.shares_amount} shares from ${VESTING_LEVELS[currentLevel as keyof typeof VESTING_LEVELS].name} Slot ${slotIndex + 1}!`,
-      )
+      const levelName = VESTING_LEVELS[currentLevel as keyof typeof VESTING_LEVELS].name
+      const message = `Successfully claimed ${slot.amount.toFixed(4)} shares from ${levelName} Slot ${slotIndex + 1}!`
 
-      // Show confetti for completed claims
+      showNotification(message, "success")
       setShowConfetti(true)
     } catch (error: any) {
       console.error("Claim failed:", error)
-      setVestError(`Claim failed: ${error.message || "Unknown error"}`)
+      showNotification(`Claim failed: ${error.message || "Unknown error"}`, "error")
     } finally {
       setIsProcessing(false)
     }
@@ -121,6 +119,7 @@ export default function Vesting() {
       // Record transaction
       if (typeof addTransaction === "function") {
         const holdDays = getHoldPeriodForLevel(selectedLevel)
+        const levelName = VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS].name
         await addTransaction({
           transaction_type: "vesting",
           shares: amount,
@@ -128,12 +127,17 @@ export default function Vesting() {
           from_wallet: "hold_pre",
           to_wallet: "vesting_locked",
           status: "completed",
-          description: `Vested ${amount} shares in ${VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS].name} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
+          description: `Vested ${amount.toFixed(4)} shares in ${levelName} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
         })
       }
+
+      // Show success notification
+      const levelName = VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS].name
+      const message = `Successfully vested ${amount.toFixed(4)} shares in ${levelName} Slot ${selectedSlotIndex + 1}!`
+      showNotification(message, "success")
     } catch (error: any) {
       console.error("Vest failed:", error)
-      setVestError(`Vesting failed: ${error.message || "Unknown error"}`)
+      showNotification(`Vesting failed: ${error.message || "Unknown error"}`, "error")
       throw error // Re-throw so modal can handle it
     } finally {
       setIsProcessing(false)
@@ -169,6 +173,14 @@ export default function Vesting() {
 
   return (
     <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto">
+      {/* Sliding Notification */}
+      <SlidingNotification
+        message={notification.message}
+        type={notification.type}
+        isVisible={notification.isVisible}
+        onClose={hideNotification}
+      />
+
       {/* Page Title */}
       <div className="px-6 mb-2">
         <h1 className="text-2xl font-bold text-slate-100">Vesting Schedules</h1>
@@ -194,22 +206,22 @@ export default function Vesting() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-slate-400">Available (Pre-Hold)</div>
-              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold.toFixed(0)}</div>
+              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold.toFixed(4)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Currently Vesting</div>
-              <div className="text-xl font-bold text-yellow-400">{totalVesting}</div>
+              <div className="text-xl font-bold text-yellow-400">{totalVesting.toFixed(4)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Ready to Claim</div>
-              <div className="text-xl font-bold text-green-400">{totalClaimable}</div>
+              <div className="text-xl font-bold text-green-400">{totalClaimable.toFixed(4)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Post-Hold</div>
-              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold.toFixed(0)}</div>
+              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold.toFixed(4)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
           </div>
@@ -281,35 +293,18 @@ export default function Vesting() {
 
       {/* Vesting Slots - Real data from Supabase */}
       <div className="px-6 pb-6">
-        <h3 className="text-lg font-medium mb-4 text-slate-100">
-          Your {activeTab} Vesting Slots ({currentLevelSlots.length} Available)
-        </h3>
-        {currentLevelSlots.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
-            <p>No vesting slots available for this level</p>
-            <p className="text-sm">Contact support to set up vesting schedules</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {currentLevelSlots.map((slot, index) => (
-              <VestingSlot
-                key={slot.id}
-                slot={{
-                  id: slot.id,
-                  status:
-                    slot.status === "Active" ? "in_progress" : slot.status === "Completed" ? "claimable" : "empty",
-                  startDate: slot.start_date ? new Date(slot.start_date).getTime() : undefined,
-                  amount: slot.shares_amount,
-                  progress: slot.progress,
-                  level: Number.parseInt(slot.level),
-                }}
-                slotIndex={index}
-                onVest={handleVestSlot}
-                onClaim={handleClaimSlot}
-              />
-            ))}
-          </div>
-        )}
+        <h3 className="text-lg font-medium mb-4 text-slate-100">Your {activeTab} Vesting Slots (6 Available)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {currentLevelSlots.map((slot, index) => (
+            <VestingSlot
+              key={slot.id}
+              slot={slot}
+              slotIndex={index}
+              onVest={handleVestSlot}
+              onClaim={handleClaimSlot}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Info Section */}
@@ -321,15 +316,13 @@ export default function Vesting() {
               • <strong>Dedicated Slots:</strong> Each level has its own 6 slots (18 total slots across all levels)
             </p>
             <p>
-              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for 5 days (Retail), 30 days (Small
-              Business), or 90 days (Corporate)
+              • <strong>Vest:</strong> Lock shares from your Pre-Hold balance for the specified hold period
             </p>
             <p>
-              • <strong>Fixed Level:</strong> When you click VEST, the level is automatically set to the current tab
+              • <strong>Level Limits:</strong> Retail (1-50), Small Business (51-500), Corporate (501+) shares per slot
             </p>
             <p>
-              • <strong>Levels:</strong> Choose based on amount - Retail (1-50), Small Business (51-500), Corporate
-              (501+)
+              • <strong>Hold Periods:</strong> Retail (5 days), Small Business (30 days), Corporate (90 days)
             </p>
             <p>
               • <strong>Progress:</strong> Watch your shares vest over the selected period
