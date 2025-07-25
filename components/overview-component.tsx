@@ -60,7 +60,7 @@ export function OverviewComponent() {
       setError(null)
 
       // Fetch total locked shares from pivot_vesting table
-      const { data: vestingData, error: vestingError } = await supabase.from("pivot_vesting").select("shares, status")
+      const { data: vestingData, error: vestingError } = await supabase.from("pivot_vesting").select("amount, status")
 
       if (vestingError) {
         console.error("Error fetching vesting data:", vestingError)
@@ -70,15 +70,15 @@ export function OverviewComponent() {
       // Calculate vesting statistics
       const totalLockedShares = (vestingData || [])
         .filter((item) => item.status === "locked")
-        .reduce((sum, item) => sum + (Number(item.shares) || 0), 0)
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
 
       const totalClaimableShares = (vestingData || [])
         .filter((item) => item.status === "claimable")
-        .reduce((sum, item) => sum + (Number(item.shares) || 0), 0)
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
 
       const totalClaimedShares = (vestingData || [])
         .filter((item) => item.status === "claimed")
-        .reduce((sum, item) => sum + (Number(item.shares) || 0), 0)
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
 
       // Fetch user count and other stats
       const { count: userCount, error: userError } = await supabase
