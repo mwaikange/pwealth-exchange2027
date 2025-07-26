@@ -1,5 +1,5 @@
 -- Alternative cron setup for Vercel deployment
--- This creates an API route handler for Vercel Cron
+-- This creates functions that can be called via HTTP endpoints
 
 -- Create a function to handle Vercel cron requests
 CREATE OR REPLACE FUNCTION handle_weekly_price_cron()
@@ -9,20 +9,20 @@ SECURITY DEFINER
 AS $$
 DECLARE
   result json;
-  current_time timestamptz;
+  current_timestamp timestamptz;
   current_day text;
   current_hour integer;
   current_minute integer;
 BEGIN
-  -- Get current time info
-  current_time := now();
-  current_day := to_char(current_time, 'Day');
-  current_hour := EXTRACT(hour FROM current_time);
-  current_minute := EXTRACT(minute FROM current_time);
+  -- Get current time info (fixed variable name)
+  current_timestamp := now();
+  current_day := to_char(current_timestamp, 'Day');
+  current_hour := EXTRACT(hour FROM current_timestamp);
+  current_minute := EXTRACT(minute FROM current_timestamp);
   
   -- Log the execution
   RAISE NOTICE 'Cron executed at: %, Day: %, Hour: %, Minute: %', 
-    current_time, trim(current_day), current_hour, current_minute;
+    current_timestamp, trim(current_day), current_hour, current_minute;
   
   -- Check if it's Monday and around 09:15 (allow 09:10-09:20 window)
   IF trim(current_day) = 'Monday' AND current_hour = 9 AND current_minute BETWEEN 10 AND 20 THEN
@@ -31,7 +31,7 @@ BEGIN
     
     -- Add execution context
     result := result || json_build_object(
-      'executed_at', current_time,
+      'executed_at', current_timestamp,
       'execution_context', 'vercel_cron',
       'day_check', 'Monday - OK',
       'time_check', format('09:%s - OK', current_minute)
@@ -43,7 +43,7 @@ BEGIN
     RETURN json_build_object(
       'success', false,
       'message', 'Not executed - outside Monday 09:10-09:20 window',
-      'current_time', current_time,
+      'current_time', current_timestamp,
       'current_day', trim(current_day),
       'current_hour', current_hour,
       'current_minute', current_minute,
@@ -112,3 +112,54 @@ BEGIN
   );
 END;
 $$;
+
+-- Create API endpoint helper function
+CREATE OR REPLACE FUNCTION api_weekly_price_endpoint(action_param text DEFAULT 'status')
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  CASE action_param
+    WHEN 'calculate' THEN
+      RETURN handle_weekly_price_cron();
+    WHEN 'manual' THEN
+      RETURN handle_manual_price_cron();
+    WHEN 'status' THEN
+      RETURN get_cron_status();
+    WHEN 'current_price' THEN
+      RETURN json_build_object(
+        'current_price', get_current_share_price(),
+        'timestamp', now()
+      );
+    ELSE
+      RETURN json_build_object(
+        'error', 'Invalid action',
+        'available_actions', ARRAY['calculate', 'manual', 'status', 'current_price']
+      );
+  END CASE;
+END;
+$$;
+
+-- Add helpful comments
+COMMENT ON FUNCTION handle_weekly_price_cron() IS 'Handles Vercel cron requests - only executes on Monday 09:10-09:20';
+COMMENT ON FUNCTION handle_manual_price_cron() IS 'Manual trigger for testing - bypasses time checks';
+COMMENT ON FUNCTION get_cron_status() IS 'Returns current system status and next execution time';
+COMMENT ON FUNCTION api_weekly_price_endpoint(text) IS 'Main API endpoint function for Vercel integration';
+
+-- Instructions for Vercel setup:
+-- 1. Add to vercel.json:
+-- {
+--   "crons": [
+--     {
+--       "path": "/api/cron/weekly-price",
+--       "schedule": "15 9 * * 1"
+--     }
+--   ]
+-- }
+-- 
+-- 2. Create app/api/cron/weekly-price/route.ts:
+-- export async function GET() {
+--   const { data } = await supabase.rpc('handle_weekly_price_cron')
+--   return Response.json(data)
+-- }

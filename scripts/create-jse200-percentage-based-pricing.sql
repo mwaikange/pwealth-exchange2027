@@ -1,19 +1,18 @@
 -- Update existing JSE200_PriceUpdate_Mondays table structure (if needed)
 -- The table already exists, so we'll just ensure it has the right constraints
 
--- Add unique constraint on week_start_date if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE table_name = 'JSE200_PriceUpdate_Mondays' 
-        AND constraint_type = 'UNIQUE'
-        AND constraint_name LIKE '%week_start_date%'
-    ) THEN
-        ALTER TABLE JSE200_PriceUpdate_Mondays 
-        ADD CONSTRAINT unique_week_start_date UNIQUE(week_start_date);
-    END IF;
-END $$;
+-- Ensure the table has proper constraints
+ALTER TABLE JSE200_PriceUpdate_Mondays 
+ADD CONSTRAINT IF NOT EXISTS unique_week_start_date UNIQUE (week_start_date);
+
+-- Add index for better performance
+CREATE INDEX IF NOT EXISTS idx_jse200_week_start_date ON JSE200_PriceUpdate_Mondays (week_start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_jse200_created_at ON JSE200_PriceUpdate_Mondays (created_at DESC);
+
+-- Add comments to document the tables
+COMMENT ON TABLE JSE200_PriceUpdate_Mondays IS 'JSE200 index data updated every Monday with percentage changes';
+COMMENT ON COLUMN JSE200_PriceUpdate_Mondays.percent_change IS 'Percentage change from previous week (e.g., -5.32 for -5.32%)';
+COMMENT ON COLUMN JSE200_PriceUpdate_Mondays.week_start_date IS 'Monday date for the week';
 
 -- Add unique constraint on effective_date for weekly_prices if it doesn't exist
 DO $$
@@ -29,10 +28,14 @@ BEGIN
     END IF;
 END $$;
 
--- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_jse200_week_start_date ON JSE200_PriceUpdate_Mondays(week_start_date DESC);
-CREATE INDEX IF NOT EXISTS idx_jse200_created_at ON JSE200_PriceUpdate_Mondays(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_weekly_prices_effective_date ON weekly_prices(effective_date DESC);
+-- Add index for better performance
+CREATE INDEX IF NOT EXISTS idx_weekly_prices_effective_date ON weekly_prices (effective_date DESC);
+
+-- Add comments to document the tables
+COMMENT ON TABLE weekly_prices IS 'Weekly share prices calculated from JSE200 percentage changes';
+COMMENT ON COLUMN weekly_prices.final_price IS 'Final calculated share price for the week';
+COMMENT ON COLUMN weekly_prices.j200_growth IS 'JSE200 percentage change used in calculation';
+COMMENT ON COLUMN weekly_prices.effective_date IS 'Monday date when price becomes effective';
 
 -- Enable RLS if not already enabled
 ALTER TABLE JSE200_PriceUpdate_Mondays ENABLE ROW LEVEL SECURITY;
