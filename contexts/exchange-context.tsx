@@ -63,35 +63,65 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch market orders
+  // Fetch market orders - ONLY ACTIVE ORDERS (not fully filled/matched)
   const fetchMarketOrders = async () => {
     try {
-      // Fetch market sell orders
+      // Fetch market sell orders - ONLY available and partial (NOT matched, completed, expired, cancelled)
       const { data: sellOrders, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
-        .neq("status", "cancelled")
+        .in("status", ["available", "partial"]) // Only active sell orders
+        .gt("shares", 0) // Ensure shares is not 0 or null
+        .not("shares", "is", null) // Exclude null shares
         .order("created_at", { ascending: false })
         .limit(20)
 
       if (sellError) throw sellError
 
-      // Fetch market buy orders
+      // Filter out any orders with NaN or invalid data
+      const validSellOrders = (sellOrders || []).filter((order) => {
+        const shares = Number(order.shares)
+        const pricePerShare = Number(order.price_per_share)
+        const filledShares = Number(order.filled_shares) || 0
+
+        return (
+          !isNaN(shares) && !isNaN(pricePerShare) && shares > 0 && pricePerShare > 0 && filledShares < shares // Not fully filled
+        )
+      })
+
+      // Fetch market buy orders - ONLY pending and partial (NOT filled, completed, cancelled)
       const { data: buyOrders, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
-        .neq("status", "cancelled")
+        .in("status", ["pending", "partial"]) // Only active buy orders
+        .gt("total_amount", 0) // Ensure total_amount is not 0 or null
+        .not("total_amount", "is", null) // Exclude null amounts
         .order("created_at", { ascending: false })
         .limit(20)
 
       if (buyError) throw buyError
 
-      setMarketSellOrders(sellOrders || [])
-      setMarketBuyOrders(buyOrders || [])
+      // Filter out any orders with NaN or invalid data
+      const validBuyOrders = (buyOrders || []).filter((order) => {
+        const totalAmount = Number(order.total_amount)
+        const pricePerShare = Number(order.price_per_share)
+        const filledAmount = Number(order.filled_amount) || 0
 
-      console.log("Market orders fetched:", {
-        sellOrders: sellOrders?.length || 0,
-        buyOrders: buyOrders?.length || 0,
+        return (
+          !isNaN(totalAmount) &&
+          !isNaN(pricePerShare) &&
+          totalAmount > 0 &&
+          pricePerShare > 0 &&
+          filledAmount < totalAmount // Not fully filled
+        )
+      })
+
+      setMarketSellOrders(validSellOrders)
+      setMarketBuyOrders(validBuyOrders)
+
+      console.log("Market orders fetched (ACTIVE ONLY):", {
+        sellOrders: validSellOrders.length,
+        buyOrders: validBuyOrders.length,
       })
     } catch (err) {
       console.error("Error fetching market orders:", err)
@@ -100,12 +130,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch user orders with correct column name
+  // Fetch user orders - ALL STATUSES (user sees their complete history)
   const fetchUserOrders = async () => {
     if (!user) return
 
     try {
-      // Fetch user sell orders using user_uuid
+      // Fetch user sell orders - ALL STATUSES for user history
       const { data: userSells, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
@@ -114,7 +144,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (sellError) throw sellError
 
-      // Fetch user buy orders using user_uuid
+      // Filter out invalid data but keep all statuses
+      const validUserSells = (userSells || []).filter((order) => {
+        const shares = Number(order.shares)
+        const pricePerShare = Number(order.price_per_share)
+
+        return !isNaN(shares) && !isNaN(pricePerShare) && shares > 0 && pricePerShare > 0
+      })
+
+      // Fetch user buy orders - ALL STATUSES for user history
       const { data: userBuys, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
@@ -123,12 +161,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (buyError) throw buyError
 
-      setUserSellOrders(userSells || [])
-      setUserBuyOrders(userBuys || [])
+      // Filter out invalid data but keep all statuses
+      const validUserBuys = (userBuys || []).filter((order) => {
+        const totalAmount = Number(order.total_amount)
+        const pricePerShare = Number(order.price_per_share)
 
-      console.log("User orders fetched:", {
-        sellOrders: userSells?.length || 0,
-        buyOrders: userBuys?.length || 0,
+        return !isNaN(totalAmount) && !isNaN(pricePerShare) && totalAmount > 0 && pricePerShare > 0
+      })
+
+      setUserSellOrders(validUserSells)
+      setUserBuyOrders(validUserBuys)
+
+      console.log("User orders fetched (ALL STATUSES):", {
+        sellOrders: validUserSells.length,
+        buyOrders: validUserBuys.length,
       })
     } catch (err) {
       console.error("Error fetching user orders:", err)

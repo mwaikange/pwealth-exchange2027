@@ -145,10 +145,14 @@ export default function ExchangePage() {
 
     if ("total_amount" in order) {
       // Buy order
-      fillPercentage = (order.filled_amount / order.total_amount) * 100
+      const filledAmount = Number(order.filled_amount) || 0
+      const totalAmount = Number(order.total_amount) || 0
+      fillPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
     } else {
       // Sell order
-      fillPercentage = (order.filled_shares / order.shares) * 100
+      const filledShares = Number(order.filled_shares) || 0
+      const totalShares = Number(order.shares) || 0
+      fillPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
     }
 
     if (fillPercentage === 0) {
@@ -171,6 +175,7 @@ export default function ExchangePage() {
       completed: "default",
       filled: "default",
       available: "default",
+      matched: "default",
       expired: "destructive",
       cancelled: "destructive",
     } as const
@@ -181,6 +186,7 @@ export default function ExchangePage() {
       completed: "bg-green-500",
       filled: "bg-blue-500",
       available: "bg-green-500",
+      matched: "bg-blue-500",
       expired: "bg-red-500",
       cancelled: "bg-gray-500",
     } as const
@@ -389,13 +395,13 @@ export default function ExchangePage() {
         </div>
       </div>
 
-      {/* Order Books */}
+      {/* Order Books - ONLY ACTIVE ORDERS */}
       <div className="grid grid-cols-2 gap-6">
-        {/* Market Buy Orders */}
+        {/* Market Buy Orders - ONLY pending and partial */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Buy Orders ({(marketBuyOrders ?? []).length})
+              Market Buy Orders ({(marketBuyOrders ?? []).length}) - Active Only
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -405,7 +411,6 @@ export default function ExchangePage() {
               ) : (
                 marketBuyOrders.slice(0, 10).map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
-                  // Ensure filled_amount is a number and total_amount is not zero to prevent NaN
                   const filledAmount = Number(order.filled_amount) || 0
                   const totalAmount = Number(order.total_amount) || 0
                   const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
@@ -431,11 +436,11 @@ export default function ExchangePage() {
           </CardContent>
         </Card>
 
-        {/* Market Sell Orders */}
+        {/* Market Sell Orders - ONLY available and partial */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Sell Orders ({(marketSellOrders ?? []).length})
+              Market Sell Orders ({(marketSellOrders ?? []).length}) - Active Only
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -443,36 +448,40 @@ export default function ExchangePage() {
               {(marketSellOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active sell orders</p>
               ) : (
-                marketSellOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{formatShares(order.shares)} shares</span>
-                      <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                marketSellOrders.slice(0, 10).map((order) => {
+                  const filledShares = Number(order.filled_shares) || 0
+                  const totalShares = Number(order.shares) || 0
+                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-slate-100">{formatShares(order.shares)} shares</span>
+                        <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {getStatusBadge(order, false)}
+                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% filled</span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {formatShares(order.filled_shares)}/{formatShares(order.shares)}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* User Orders */}
+      {/* User Orders - ALL STATUSES (complete history) */}
       <div className="grid grid-cols-2 gap-6">
         {/* Your Buy Orders */}
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Buy Orders ({(userBuyOrders ?? []).length})
+              Your Buy Orders ({(userBuyOrders ?? []).length}) - All History
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -482,7 +491,6 @@ export default function ExchangePage() {
               ) : (
                 userBuyOrders.map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
-                  // Ensure filled_amount is a number and total_amount is not zero to prevent NaN
                   const filledAmount = Number(order.filled_amount) || 0
                   const totalAmount = Number(order.total_amount) || 0
                   const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
@@ -512,7 +520,7 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Sell Orders ({(userSellOrders ?? []).length})
+              Your Sell Orders ({(userSellOrders ?? []).length}) - All History
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -520,21 +528,27 @@ export default function ExchangePage() {
               {(userSellOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
-                userSellOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{formatShares(order.shares)} shares</span>
-                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
+                userSellOrders.map((order) => {
+                  const filledShares = Number(order.filled_shares) || 0
+                  const totalShares = Number(order.shares) || 0
+                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+
+                  return (
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="font-medium text-slate-100">{formatShares(order.shares)} shares</span>
+                          <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
+                        </div>
+                        {getStatusBadge(order, true)}
                       </div>
-                      {getStatusBadge(order, true)}
+                      <Progress value={filledPercentage} className="h-2 [&>div]:bg-green-500" />
+                      <div className="text-xs text-slate-400 mt-1">
+                        Filled: {formatShares(filledShares)} / {formatShares(totalShares)} shares
+                      </div>
                     </div>
-                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {formatShares(order.filled_shares)} / {formatShares(order.shares)} shares
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
