@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { Deno } from "https://deno.land/std@0.168.0/io/mod.ts" // Declare Deno variable
+import { Deno } from "https://deno.land/std@0.168.0/node/global.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,8 +27,11 @@ serve(async (req) => {
       const { data, error } = await supabaseClient.rpc("calculate_weekly_share_price_from_jse200")
 
       if (error) {
+        console.error("Weekly price calculation error:", error)
         throw error
       }
+
+      console.log("Weekly price calculation result:", data)
 
       return new Response(
         JSON.stringify({
@@ -49,8 +52,11 @@ serve(async (req) => {
       const { data, error } = await supabaseClient.rpc("trigger_weekly_price_calculation")
 
       if (error) {
+        console.error("Manual trigger error:", error)
         throw error
       }
+
+      console.log("Manual trigger result:", data)
 
       return new Response(
         JSON.stringify({
@@ -66,11 +72,90 @@ serve(async (req) => {
       )
     }
 
-    return new Response(JSON.stringify({ error: "Invalid action specified" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
-    })
+    if (action === "get_current_price") {
+      // Get current share price
+      const { data, error } = await supabaseClient.rpc("get_current_share_price")
+
+      if (error) {
+        console.error("Get current price error:", error)
+        throw error
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          current_price: data,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      )
+    }
+
+    if (action === "get_price_history") {
+      // Get price history
+      const { data, error } = await supabaseClient.rpc("get_price_history", { limit_count: 10 })
+
+      if (error) {
+        console.error("Get price history error:", error)
+        throw error
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          price_history: data,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      )
+    }
+
+    if (action === "get_jse200_history") {
+      // Get JSE200 history
+      const { data, error } = await supabaseClient.rpc("get_jse200_history", { limit_count: 10 })
+
+      if (error) {
+        console.error("Get JSE200 history error:", error)
+        throw error
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          jse200_history: data,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      )
+    }
+
+    return new Response(
+      JSON.stringify({
+        error: "Invalid action specified",
+        available_actions: [
+          "weekly_price_calculation",
+          "manual_trigger",
+          "get_current_price",
+          "get_price_history",
+          "get_jse200_history",
+        ],
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+      },
+    )
   } catch (error) {
+    console.error("Cron function error:", error)
     return new Response(
       JSON.stringify({
         error: error.message,

@@ -1,8 +1,13 @@
 -- Setup cron job to run every Monday at 09:15
 -- Note: This requires pg_cron extension to be enabled
 
--- Enable pg_cron extension (run as superuser)
--- CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- Enable pg_cron extension (run as superuser if not already enabled)
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Remove existing cron job if it exists
+SELECT cron.unschedule('weekly-share-price-calculation') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'weekly-share-price-calculation'
+);
 
 -- Schedule the weekly price calculation for every Monday at 09:15
 SELECT cron.schedule(
@@ -11,11 +16,22 @@ SELECT cron.schedule(
   'SELECT calculate_weekly_share_price_from_jse200();'
 );
 
--- Alternative: Schedule via Supabase Edge Functions (if pg_cron not available)
--- This would be handled by the updated weekly-price-cron function
-
 -- Verify cron job was created
-SELECT * FROM cron.job WHERE jobname = 'weekly-share-price-calculation';
+SELECT 
+  jobid,
+  schedule,
+  command,
+  nodename,
+  nodeport,
+  database,
+  username,
+  active,
+  jobname
+FROM cron.job 
+WHERE jobname = 'weekly-share-price-calculation';
+
+-- To manually test the cron job execution:
+-- SELECT calculate_weekly_share_price_from_jse200();
 
 -- To remove the cron job (if needed):
 -- SELECT cron.unschedule('weekly-share-price-calculation');
