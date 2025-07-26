@@ -20,7 +20,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     )
 
-    const { action, pegPrice } = await req.json()
+    const { action } = await req.json()
 
     if (action === "daily_hodl_snapshot") {
       // Run daily HODL snapshot calculation
@@ -44,16 +44,14 @@ serve(async (req) => {
     }
 
     if (action === "weekly_price_calculation") {
-      // Run weekly price calculation
-      const { error } = await supabaseClient.rpc("calculate_weekly_share_price", {
-        peg_price_input: pegPrice || 100.0,
-      })
+      // Run weekly price calculation using JSE200 data
+      const { error } = await supabaseClient.rpc("set_weekly_price_from_jse200")
 
       if (error) {
         throw error
       }
 
-      // Get the calculated price
+      // Get the updated price
       const { data: weeklyPrice } = await supabaseClient
         .from("weekly_share_prices")
         .select("*")
@@ -64,7 +62,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Weekly share price calculated successfully",
+          message: "Weekly share price updated from JSE200 data successfully",
           data: weeklyPrice,
           timestamp: new Date().toISOString(),
         }),
