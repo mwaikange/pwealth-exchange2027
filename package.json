@@ -9,7 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@auth/core": "latest",
+    "@auth/core": "0.34.2",
     "@chakra-ui/react": "latest",
     "@emotion/react": "latest",
     "@hookform/resolvers": "latest",
