@@ -10,18 +10,6 @@ import { Progress } from "@/components/ui/progress"
 import { Lock, Unlock, CheckCircle, Loader2 } from "lucide-react"
 import { VestConfirmationModal } from "./vest-confirmation-modal"
 
-// Safe number conversion with fallback
-const safeNumber = (value: any): number => {
-  const num = Number(value)
-  return isNaN(num) ? 0 : num
-}
-
-// Safe toFixed with fallback
-const safeToFixed = (value: any, decimals = 4): string => {
-  const num = safeNumber(value)
-  return num.toFixed(decimals)
-}
-
 interface VestingSlot {
   id?: string
   user_uuid: string
@@ -113,7 +101,7 @@ export function VestingSlot({
   const getProgressValue = () => {
     if (slot.status === "claimed") return 100
     if (slot.status === "claimable") return 75
-    if (safeNumber(slot.shares) > 0) return 50
+    if (slot.shares > 0) return 50
     return 0
   }
 
@@ -124,7 +112,7 @@ export function VestingSlot({
       case "claimable":
         return "bg-green-500"
       case "locked":
-        return safeNumber(slot.shares) > 0 ? "bg-yellow-500" : "bg-gray-500"
+        return slot.shares > 0 ? "bg-yellow-500" : "bg-gray-500"
       default:
         return "bg-gray-500"
     }
@@ -145,7 +133,7 @@ export function VestingSlot({
         <CardContent className="space-y-4">
           {/* Shares Display */}
           <div className="text-center">
-            <div className="text-2xl font-bold text-slate-100">{safeToFixed(slot.shares)}</div>
+            <div className="text-2xl font-bold text-slate-100">{slot.shares.toFixed(4)}</div>
             <div className="text-xs text-slate-400">shares</div>
           </div>
 
@@ -163,8 +151,8 @@ export function VestingSlot({
             <div className="text-xs text-slate-400 text-center">
               {slot.status === "claimed" && "Fully Claimed"}
               {slot.status === "claimable" && "Ready to Claim"}
-              {slot.status === "locked" && safeNumber(slot.shares) > 0 && "Vested & Locked"}
-              {slot.status === "locked" && safeNumber(slot.shares) === 0 && "Empty Slot"}
+              {slot.status === "locked" && slot.shares > 0 && "Vested & Locked"}
+              {slot.status === "locked" && slot.shares === 0 && "Empty Slot"}
             </div>
           </div>
 
@@ -173,7 +161,7 @@ export function VestingSlot({
             {slot.status === "locked" && (
               <Button
                 onClick={() => setShowVestModal(true)}
-                disabled={isProcessing || safeNumber(availableShares) <= 0}
+                disabled={isProcessing || availableShares <= 0}
                 className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
                 size="sm"
               >
