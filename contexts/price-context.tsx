@@ -8,14 +8,12 @@ import { useAuth } from "@/contexts/auth-context"
 type PriceData = {
   currentPrice: number
   priceChange: number
-  hodlPercentage: number
   lastUpdated: Date | null
 }
 
 type PriceHistory = {
   date: string
   price: number
-  hodlPercentage: number
   j200Growth: number
   priceChange: number
 }
@@ -35,7 +33,6 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   const [priceData, setPriceData] = useState<PriceData>({
     currentPrice: 108.2,
     priceChange: 0,
-    hodlPercentage: 75.0,
     lastUpdated: null,
   })
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([])
@@ -56,13 +53,6 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
         throw priceError
       }
 
-      // Get current HODL percentage
-      const { data: hodlPct, error: hodlError } = await supabase.rpc("get_current_hodl_percentage")
-      if (hodlError) {
-        console.error("HODL percentage error:", hodlError)
-        throw hodlError
-      }
-
       // Get latest weekly price data for change calculation
       const { data: weeklyData, error: weeklyError } = await supabase
         .from("weekly_prices")
@@ -79,7 +69,6 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       const newPriceData = {
         currentPrice: Number(currentPrice) || 108.2,
         priceChange: Number(weeklyData?.price_change) || 0,
-        hodlPercentage: Number(hodlPct) || 75.0,
         lastUpdated: weeklyData?.created_at ? new Date(weeklyData.created_at) : null,
       }
 
@@ -94,7 +83,6 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       setPriceData({
         currentPrice: 108.2,
         priceChange: 0,
-        hodlPercentage: 75.0,
         lastUpdated: null,
       })
     }
@@ -115,7 +103,6 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       const formattedHistory: PriceHistory[] = (data || []).map((item: any) => ({
         date: item.date,
         price: Number(item.price),
-        hodlPercentage: Number(item.hodl_percentage),
         j200Growth: Number(item.j200_growth),
         priceChange: Number(item.price_change),
       }))

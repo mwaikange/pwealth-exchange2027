@@ -1,40 +1,92 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase-singleton"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { usePrice } from "@/contexts/price-context"
 
 export default function SharePriceCard() {
-  const [sharePrice, setSharePrice] = useState<number>(108.2)
-  const [loading, setLoading] = useState(true)
+  const { priceData, loading, error } = usePrice()
 
-  useEffect(() => {
-    const fetchSharePrice = async () => {
-      try {
-        const { data, error } = await supabase.rpc("get_current_share_price")
-        if (error) throw error
-        setSharePrice(Number(data) || 108.2)
-      } catch (err) {
-        console.error("Error fetching share price:", err)
-        setSharePrice(108.2) // Fallback
-      } finally {
-        setLoading(false)
-      }
-    }
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">Loading...</div>
+          <p className="text-xs text-muted-foreground">Fetching latest price data</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
-    fetchSharePrice()
+  if (error) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-red-500">Error</div>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
-    // Refresh price every 5 minutes
-    const interval = setInterval(fetchSharePrice, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [])
+  const { currentPrice, priceChange, lastUpdated } = priceData
+
+  const getTrendIcon = () => {
+    if (priceChange > 0) return <TrendingUp className="h-4 w-4 text-green-500" />
+    if (priceChange < 0) return <TrendingDown className="h-4 w-4 text-red-500" />
+    return <Minus className="h-4 w-4 text-gray-500" />
+  }
+
+  const getTrendColor = () => {
+    if (priceChange > 0) return "text-green-500"
+    if (priceChange < 0) return "text-red-500"
+    return "text-gray-500"
+  }
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency: "ZAR",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(price)
+  }
+
+  const formatChange = (change: number) => {
+    const sign = change >= 0 ? "+" : ""
+    return `${sign}${formatPrice(change)}`
+  }
+
+  const formatLastUpdated = (date: Date | null) => {
+    if (!date) return "No recent updates"
+
+    const now = new Date()
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+
+    if (diffInHours < 1) return "Updated recently"
+    if (diffInHours < 24) return `Updated ${diffInHours}h ago`
+
+    const diffInDays = Math.floor(diffInHours / 24)
+    return `Updated ${diffInDays}d ago`
+  }
 
   return (
-    <div className="border-l-4 border-gray-400 dark:border-gray-600 pl-4">
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-1">SHARE PRICE</h1>
-      <div className="text-5xl font-bold text-black dark:text-white mb-2">
-        {loading ? "Loading..." : `N$${sharePrice.toFixed(2)}`}
-      </div>
-      <div className="text-gray-600 dark:text-gray-400">this week</div>
-    </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+        {getTrendIcon()}
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{formatPrice(currentPrice)}</div>
+        <div className={`text-xs ${getTrendColor()}`}>{formatChange(priceChange)} from last week</div>
+        <p className="text-xs text-muted-foreground mt-1">{formatLastUpdated(lastUpdated)}</p>
+      </CardContent>
+    </Card>
   )
 }
