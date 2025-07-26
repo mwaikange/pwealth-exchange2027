@@ -7,8 +7,7 @@ import { supabase } from "@/lib/supabase-singleton"
 interface PriceData {
   currentPrice: number
   priceChange: number
-  priceChangePercent: number
-  lastUpdated: string
+  priceChangePercentage: number
 }
 
 interface PriceHistory {
@@ -34,8 +33,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   const [priceData, setPriceData] = useState<PriceData>({
     currentPrice: 108.2,
     priceChange: 0,
-    priceChangePercent: 0,
-    lastUpdated: new Date().toISOString(),
+    priceChangePercentage: 0,
   })
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,7 +44,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       setError(null)
 
-      console.log("🔄 Refreshing price data...")
+      console.log("🔄 Fetching price data...")
 
       // Fetch current price with NaN protection
       const { data: currentPriceData, error: priceError } = await supabase.rpc("get_current_share_price")
@@ -86,23 +84,22 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
 
       // Calculate price change from history
       let priceChange = 0
-      let priceChangePercent = 0
+      let priceChangePercentage = 0
 
       if (processedHistory.length >= 2) {
         const previousPrice = processedHistory[1].final_price
         priceChange = safeCurrentPrice - previousPrice
-        priceChangePercent = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0
+        priceChangePercentage = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0
 
         // Additional NaN protection
         if (isNaN(priceChange)) priceChange = 0
-        if (isNaN(priceChangePercent)) priceChangePercent = 0
+        if (isNaN(priceChangePercentage)) priceChangePercentage = 0
       }
 
       setPriceData({
         currentPrice: safeCurrentPrice,
         priceChange,
-        priceChangePercent,
-        lastUpdated: new Date().toISOString(),
+        priceChangePercentage,
       })
 
       setPriceHistory(processedHistory)
@@ -110,7 +107,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       console.log("✅ Price data updated:", {
         currentPrice: safeCurrentPrice,
         priceChange,
-        priceChangePercent,
+        priceChangePercentage,
         historyCount: processedHistory.length,
       })
     } catch (err: any) {
@@ -121,8 +118,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       setPriceData({
         currentPrice: 108.2,
         priceChange: 0,
-        priceChangePercent: 0,
-        lastUpdated: new Date().toISOString(),
+        priceChangePercentage: 0,
       })
       setPriceHistory([])
     } finally {

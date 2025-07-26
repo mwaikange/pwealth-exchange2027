@@ -3,48 +3,32 @@ import { supabase } from "@/lib/supabase-singleton"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("🔍 Price system status check")
+    console.log("🔍 Checking price system health")
 
-    // Get system health
-    const { data: healthData, error: healthError } = await supabase.rpc("get_price_system_health")
+    // Get system health status
+    const { data, error } = await supabase.rpc("get_price_system_health")
 
-    if (healthError) {
-      console.error("❌ Health check error:", healthError)
+    if (error) {
+      console.error("❌ Health check error:", error)
       return NextResponse.json(
         {
           success: false,
-          error: healthError.message,
+          error: error.message,
           timestamp: new Date().toISOString(),
         },
         { status: 500 },
       )
     }
 
-    // Get cron status
-    const { data: cronData, error: cronError } = await supabase.rpc("get_cron_status")
-
-    if (cronError) {
-      console.error("❌ Cron status error:", cronError)
-      return NextResponse.json(
-        {
-          success: false,
-          error: cronError.message,
-          timestamp: new Date().toISOString(),
-        },
-        { status: 500 },
-      )
-    }
-
-    console.log("✅ System status retrieved successfully")
+    console.log("✅ Health check completed:", data)
 
     return NextResponse.json({
       success: true,
-      health: healthData,
-      cron: cronData,
+      health: data,
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("❌ Status route error:", error)
+    console.error("❌ Health check exception:", error)
     return NextResponse.json(
       {
         success: false,

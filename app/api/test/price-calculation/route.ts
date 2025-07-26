@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase-singleton"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("🧪 Price calculation test - GET")
+    console.log("🧪 Testing price calculation")
 
     // Test the calculation function
     const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
@@ -20,15 +20,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log("✅ Test calculation result:", data)
+    console.log("✅ Test calculation completed:", data)
 
     return NextResponse.json({
       success: true,
-      data,
+      result: data,
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("❌ Test route error:", error)
+    console.error("❌ Test calculation exception:", error)
     return NextResponse.json(
       {
         success: false,
@@ -43,36 +43,18 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { percent_change, description } = body
+    const { percent_change = 2.5, description = "Manual test" } = body
 
-    console.log("🧪 Price calculation simulation - POST", { percent_change, description })
+    console.log("🧪 Simulating price calculation:", { percent_change, description })
 
-    if (percent_change !== undefined) {
-      // Insert test JSE200 data
-      const { error: insertError } = await supabase.from("JSE200_PriceUpdate_Mondays").insert({
-        percentage_change: percent_change,
-        description: description || `Test simulation: ${percent_change}% change`,
-        created_at: new Date().toISOString(),
-      })
-
-      if (insertError) {
-        console.error("❌ Error inserting test JSE200 data:", insertError)
-        return NextResponse.json(
-          {
-            success: false,
-            error: insertError.message,
-            timestamp: new Date().toISOString(),
-          },
-          { status: 500 },
-        )
-      }
-    }
-
-    // Run the calculation
-    const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
+    // Simulate the calculation
+    const { data, error } = await supabase.rpc("simulate_price_calculation", {
+      percent_change: Number(percent_change),
+      description: String(description),
+    })
 
     if (error) {
-      console.error("❌ Simulation calculation error:", error)
+      console.error("❌ Simulation error:", error)
       return NextResponse.json(
         {
           success: false,
@@ -83,19 +65,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log("✅ Simulation result:", data)
+    console.log("✅ Simulation completed:", data)
 
     return NextResponse.json({
       success: true,
-      data,
-      simulation: {
-        percent_change,
-        description,
-      },
+      simulation: data,
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("❌ Simulation route error:", error)
+    console.error("❌ Simulation exception:", error)
     return NextResponse.json(
       {
         success: false,

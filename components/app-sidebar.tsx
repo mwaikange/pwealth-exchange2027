@@ -10,9 +10,9 @@ import {
   SquareTerminal,
   TrendingUp,
   Wallet,
+  Users,
   CreditCard,
   BarChart3,
-  Gift,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -54,7 +54,7 @@ const data = {
       icon: TrendingUp,
       items: [
         {
-          title: "Buy & Sell Shares",
+          title: "Share Exchange",
           url: "/dashboard/exchange",
         },
       ],
@@ -62,10 +62,10 @@ const data = {
     {
       title: "Vesting",
       url: "/dashboard/vesting",
-      icon: BarChart3,
+      icon: Wallet,
       items: [
         {
-          title: "Vest Shares for 8 days",
+          title: "Vest Shares for 5 days",
           url: "/dashboard/vesting",
         },
       ],
@@ -84,7 +84,7 @@ const data = {
     {
       title: "Referrals",
       url: "/dashboard/referrals",
-      icon: Gift,
+      icon: Users,
       items: [
         {
           title: "Referral Program",
@@ -95,10 +95,10 @@ const data = {
     {
       title: "Cashout",
       url: "/dashboard/cashout",
-      icon: Wallet,
+      icon: BarChart3,
       items: [
         {
-          title: "Withdraw Funds",
+          title: "Cashout Wallet",
           url: "/dashboard/cashout",
         },
       ],
@@ -117,17 +117,17 @@ const data = {
   ],
   projects: [
     {
-      name: "Design Engineering",
+      name: "Share Price",
       url: "#",
       icon: Frame,
     },
     {
-      name: "Sales & Marketing",
+      name: "Market Data",
       url: "#",
       icon: PieChart,
     },
     {
-      name: "Travel",
+      name: "Analytics",
       url: "#",
       icon: Map,
     },

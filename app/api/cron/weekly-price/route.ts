@@ -3,13 +3,13 @@ import { supabase } from "@/lib/supabase-singleton"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("🔄 Weekly price cron triggered via GET")
+    console.log("🔄 Weekly price cron job triggered")
 
     // Call the cron handler function
     const { data, error } = await supabase.rpc("handle_weekly_price_cron")
 
     if (error) {
-      console.error("❌ Cron execution error:", error)
+      console.error("❌ Cron job error:", error)
       return NextResponse.json(
         {
           success: false,
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log("✅ Cron execution result:", data)
+    console.log("✅ Cron job completed:", data)
 
     return NextResponse.json({
       success: true,
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("❌ Cron route error:", error)
+    console.error("❌ Cron job exception:", error)
     return NextResponse.json(
       {
         success: false,
@@ -42,13 +42,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("🔄 Manual price calculation triggered via POST")
+    console.log("🔄 Manual price calculation triggered")
 
     // Call the manual trigger function
     const { data, error } = await supabase.rpc("handle_manual_price_cron")
 
     if (error) {
-      console.error("❌ Manual calculation error:", error)
+      console.error("❌ Manual trigger error:", error)
       return NextResponse.json(
         {
           success: false,
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log("✅ Manual calculation result:", data)
+    console.log("✅ Manual trigger completed:", data)
 
     return NextResponse.json({
       success: true,
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("❌ Manual calculation route error:", error)
+    console.error("❌ Manual trigger exception:", error)
     return NextResponse.json(
       {
         success: false,
