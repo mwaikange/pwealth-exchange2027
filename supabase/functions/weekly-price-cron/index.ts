@@ -22,9 +22,9 @@ serve(async (req) => {
 
     const { action } = await req.json()
 
-    if (action === "daily_hodl_snapshot") {
-      // Run daily HODL snapshot calculation
-      const { error } = await supabaseClient.rpc("calculate_daily_hodl_snapshot")
+    if (action === "weekly_price_calculation") {
+      // Run weekly price calculation based on JSE200 percentage change
+      const { data, error } = await supabaseClient.rpc("calculate_weekly_share_price_from_jse200")
 
       if (error) {
         throw error
@@ -33,7 +33,8 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Daily HODL snapshot calculated successfully",
+          message: "Weekly share price calculated from JSE200 percentage change",
+          calculation_details: data,
           timestamp: new Date().toISOString(),
         }),
         {
@@ -43,27 +44,19 @@ serve(async (req) => {
       )
     }
 
-    if (action === "weekly_price_calculation") {
-      // Run weekly price calculation using JSE200 data
-      const { error } = await supabaseClient.rpc("set_weekly_price_from_jse200")
+    if (action === "manual_trigger") {
+      // Manual trigger for testing
+      const { data, error } = await supabaseClient.rpc("trigger_weekly_price_calculation")
 
       if (error) {
         throw error
       }
 
-      // Get the updated price
-      const { data: weeklyPrice } = await supabaseClient
-        .from("weekly_share_prices")
-        .select("*")
-        .order("week_start", { ascending: false })
-        .limit(1)
-        .single()
-
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Weekly share price updated from JSE200 data successfully",
-          data: weeklyPrice,
+          message: "Manual price calculation triggered successfully",
+          calculation_details: data,
           timestamp: new Date().toISOString(),
         }),
         {
