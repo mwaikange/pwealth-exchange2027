@@ -10,6 +10,7 @@ import { useWallet } from "@/contexts/wallet-context"
 import { useExchange } from "@/contexts/exchange-context"
 import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ExchangePageSkeleton } from "@/components/skeletons/exchange-page-skeleton"
 
 // Helper functions for formatting
 const formatCurrency = (value: number): string => {
@@ -192,14 +193,7 @@ export default function ExchangePage() {
   }
 
   if (loading) {
-    return (
-      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-white" />
-          <span className="ml-2 text-white">Loading exchange data...</span>
-        </div>
-      </div>
-    )
+    return <ExchangePageSkeleton />
   }
 
   if (walletError || exchangeError) {

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
+import { TransactionTableSkeleton } from "@/components/skeletons/transaction-table-skeleton"
 
 interface Transaction {
   id: string
@@ -168,19 +169,7 @@ export function TransactionTable() {
   const currentTransactions = transactions.slice(startIndex, endIndex)
 
   if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Transaction History</CardTitle>
-          <CardDescription>Your recent transactions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <div className="text-muted-foreground">Loading transactions...</div>
-          </div>
-        </CardContent>
-      </Card>
-    )
+    return <TransactionTableSkeleton />
   }
 
   if (error) {

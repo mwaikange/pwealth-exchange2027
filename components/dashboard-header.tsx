@@ -8,6 +8,7 @@ import { useTransactions } from "@/contexts/transaction-context"
 import { useState, useEffect } from "react"
 import { AFTPurchaseModal } from "./aft-purchase-modal"
 import { SlidingNotification } from "./sliding-notification"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // Add the import for the Supabase client and useRouter
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
@@ -168,17 +169,29 @@ export function DashboardHeader() {
           <div className="flex items-center space-x-2">
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">Buy Wallet</div>
-              <div className="text-xl font-bold">{loading ? "..." : formatCurrency(buyWalletBalance)}</div>
+              {loading ? (
+                <Skeleton className="h-7 w-20 mt-1" />
+              ) : (
+                <div className="text-xl font-bold">{formatCurrency(buyWalletBalance)}</div>
+              )}
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">Hold Wallet</div>
-              <div className="text-xl font-bold">{loading ? "..." : `${holdWalletBalance.toFixed(4)} shares`}</div>
+              {loading ? (
+                <Skeleton className="h-7 w-24 mt-1" />
+              ) : (
+                <div className="text-xl font-bold">{`${holdWalletBalance.toFixed(4)} shares`}</div>
+              )}
             </div>
 
             <div className="bg-[#2a2d3a] rounded px-3 py-1.5 flex flex-col items-center min-w-[100px]">
               <div className="text-xs text-gray-400">Cashout Wallet</div>
-              <div className="text-xl font-bold">{loading ? "..." : formatCurrency(cashoutWalletBalance)}</div>
+              {loading ? (
+                <Skeleton className="h-7 w-20 mt-1" />
+              ) : (
+                <div className="text-xl font-bold">{formatCurrency(cashoutWalletBalance)}</div>
+              )}
             </div>
           </div>
 

@@ -4,6 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
+import { v4 as uuidv4 } from "uuid"
 
 type MarketOrder = {
   id: string
@@ -210,13 +211,26 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "User not authenticated" }
     }
 
-    try {
-      // Ensure amount is not NaN
-      const safeAmount = isNaN(amount) ? 0 : amount
-      if (safeAmount <= 0) {
-        return { success: false, message: "Invalid amount" }
-      }
+    const safeAmount = isNaN(amount) ? 0 : amount
+    if (safeAmount <= 0) {
+      return { success: false, message: "Invalid amount" }
+    }
 
+    // 1. Optimistic UI Update
+    const tempId = uuidv4()
+    const optimisticOrder: UserOrder = {
+      id: tempId,
+      user_uuid: user.id,
+      total_amount: safeAmount,
+      price_per_share: currentSharePrice,
+      status: "pending",
+      created_at: new Date().toISOString(),
+      amount_filled: 0,
+    }
+    setUserBuyOrders((prev) => [optimisticOrder, ...prev])
+
+    try {
+      // 2. Call Supabase
       const { data, error } = await supabase.rpc("place_buy_order", {
         p_user_uuid: user.id,
         p_total_amount: safeAmount,
@@ -225,12 +239,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       if (data?.success) {
+        // 3. On success, refresh to get real data
         await refreshOrders()
         return { success: true, message: data.message || "Buy order placed successfully" }
       } else {
-        return { success: false, message: data?.message || "Failed to place buy order" }
+        throw new Error(data?.message || "Failed to place buy order")
       }
     } catch (err: any) {
+      // 4. On failure, revert the optimistic update
+      setUserBuyOrders((prev) => prev.filter((order) => order.id !== tempId))
       console.error("Error placing buy order:", err)
       return { success: false, message: err.message || "Failed to place buy order" }
     }
@@ -242,13 +259,26 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "User not authenticated" }
     }
 
-    try {
-      // Ensure shares is not NaN
-      const safeShares = isNaN(shares) ? 0 : shares
-      if (safeShares <= 0) {
-        return { success: false, message: "Invalid number of shares" }
-      }
+    const safeShares = isNaN(shares) ? 0 : shares
+    if (safeShares <= 0) {
+      return { success: false, message: "Invalid number of shares" }
+    }
 
+    // 1. Optimistic UI Update
+    const tempId = uuidv4()
+    const optimisticOrder: UserOrder = {
+      id: tempId,
+      user_uuid: user.id,
+      shares_available: safeShares,
+      shares_remaining: safeShares,
+      price_per_share: currentSharePrice,
+      status: "available",
+      created_at: new Date().toISOString(),
+    }
+    setUserSellOrders((prev) => [optimisticOrder, ...prev])
+
+    try {
+      // 2. Call Supabase
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
         p_shares: safeShares,
@@ -257,12 +287,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       if (data?.success) {
+        // 3. On success, refresh to get real data
         await refreshOrders()
         return { success: true, message: data.message || "Sell order placed successfully" }
       } else {
-        return { success: false, message: data?.message || "Failed to place sell order" }
+        throw new Error(data?.message || "Failed to place sell order")
       }
     } catch (err: any) {
+      // 4. On failure, revert the optimistic update
+      setUserSellOrders((prev) => prev.filter((order) => order.id !== tempId))
       console.error("Error placing sell order:", err)
       return { success: false, message: err.message || "Failed to place sell order" }
     }
