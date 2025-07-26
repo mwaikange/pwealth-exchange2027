@@ -138,73 +138,53 @@ export default function ExchangePage() {
     }
   }
 
-  // Helper function to determine correct status based on actual completion
-  const getCorrectStatus = (order: any, isUserOrder = false) => {
-    let fillPercentage = 0
-
-    if ("total_amount" in order && order.total_amount) {
-      // Buy order - use amount_filled vs total_amount
-      const amountFilled = Number(order.amount_filled) || 0
-      const totalAmount = Number(order.total_amount) || 0
-      fillPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
-
-      // Buy order status logic
-      if (fillPercentage >= 100) {
-        return isUserOrder ? "filled" : "filled" // Buy orders get "filled" when complete
-      } else if (fillPercentage > 0) {
-        return "partial"
-      } else {
-        return "pending"
-      }
-    } else if ("shares_available" in order && order.shares_available) {
-      // Sell order - use shares_remaining vs shares_available
-      const sharesRemaining = Number(order.shares_remaining) || 0
-      const sharesAvailable = Number(order.shares_available) || 0
-      const sharesSold = sharesAvailable - sharesRemaining
-      fillPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
-
-      // Sell order status logic
-      if (fillPercentage >= 100) {
-        return isUserOrder ? "matched" : "matched" // Sell orders get "matched" when complete
-      } else if (fillPercentage > 0) {
-        return "partial"
-      } else {
-        return "available"
-      }
-    }
-
-    return order.status // fallback to original status
+  // Use actual database status directly - no calculation override
+  const getActualStatus = (order: any) => {
+    // Return the actual status from the database
+    return order.status || "unknown"
   }
 
-  const getStatusBadge = (order: any, isUserOrder = false) => {
-    const actualStatus = getCorrectStatus(order, isUserOrder)
+  const getStatusBadge = (order: any) => {
+    const actualStatus = getActualStatus(order)
 
     const variants = {
+      // Buy order statuses
       pending: "secondary",
       partial: "outline",
       filled: "default",
-      matched: "default",
-      available: "default",
       completed: "default",
-      expired: "destructive",
       cancelled: "destructive",
+
+      // Sell order statuses
+      available: "default",
+      matched: "default",
+      expired: "destructive",
+
+      // Unknown fallback
+      unknown: "secondary",
     } as const
 
     const colors = {
-      pending: "bg-yellow-500",
-      partial: "bg-orange-500",
-      filled: "bg-green-500", // Buy orders - green when filled
-      matched: "bg-blue-500", // Sell orders - blue when matched
-      available: "bg-green-500",
-      completed: "bg-green-500",
-      expired: "bg-red-500",
-      cancelled: "bg-gray-500",
+      // Buy order statuses
+      pending: "bg-yellow-500 text-white",
+      partial: "bg-orange-500 text-white",
+      filled: "bg-green-500 text-white",
+      completed: "bg-green-500 text-white",
+      cancelled: "bg-red-500 text-white",
+
+      // Sell order statuses
+      available: "bg-green-500 text-white",
+      matched: "bg-blue-500 text-white",
+      expired: "bg-red-500 text-white",
+
+      // Unknown fallback
+      unknown: "bg-gray-500 text-white",
     } as const
 
     return (
       <Badge
         variant={variants[actualStatus as keyof typeof variants] || "secondary"}
-        className={colors[actualStatus as keyof typeof colors] || "bg-gray-500"}
+        className={colors[actualStatus as keyof typeof colors] || "bg-gray-500 text-white"}
       >
         {actualStatus.replace("_", " ").toUpperCase()}
       </Badge>
@@ -435,7 +415,7 @@ export default function ExchangePage() {
                         <span className="text-xs text-slate-400">({formatShares(estimatedShares)} shares)</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {getStatusBadge(order, false)}
+                        {getStatusBadge(order)}
                         <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% filled</span>
                       </div>
                     </div>
@@ -476,7 +456,7 @@ export default function ExchangePage() {
                         <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {getStatusBadge(order, false)}
+                        {getStatusBadge(order)}
                         <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% sold</span>
                       </div>
                     </div>
@@ -515,7 +495,7 @@ export default function ExchangePage() {
                           <span className="font-medium text-slate-100">{formatCurrency(totalAmount)}</span>
                           <span className="text-sm text-slate-400 ml-2">({formatShares(estimatedShares)} shares)</span>
                         </div>
-                        {getStatusBadge(order, true)}
+                        {getStatusBadge(order)}
                       </div>
                       <Progress value={filledPercentage} className="h-2 [&>div]:bg-yellow-500" />
                       <div className="text-xs text-slate-400 mt-1">
@@ -554,7 +534,7 @@ export default function ExchangePage() {
                           <span className="font-medium text-slate-100">{formatShares(sharesAvailable)} shares</span>
                           <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
                         </div>
-                        {getStatusBadge(order, true)}
+                        {getStatusBadge(order)}
                       </div>
                       <Progress value={filledPercentage} className="h-2 [&>div]:bg-green-500" />
                       <div className="text-xs text-slate-400 mt-1">
