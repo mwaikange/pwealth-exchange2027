@@ -143,16 +143,17 @@ export default function ExchangePage() {
   const getCorrectStatus = (order: any, isUserOrder = false) => {
     let fillPercentage = 0
 
-    if ("total_amount" in order) {
-      // Buy order
-      const filledAmount = Number(order.filled_amount) || 0
+    if ("total_amount" in order && order.total_amount) {
+      // Buy order - use amount_filled vs total_amount
+      const amountFilled = Number(order.amount_filled) || 0
       const totalAmount = Number(order.total_amount) || 0
-      fillPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
-    } else {
-      // Sell order
-      const filledShares = Number(order.filled_shares) || 0
-      const totalShares = Number(order.shares) || 0
-      fillPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+      fillPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
+    } else if ("shares_available" in order && order.shares_available) {
+      // Sell order - use shares_remaining vs shares_available
+      const sharesRemaining = Number(order.shares_remaining) || 0
+      const sharesAvailable = Number(order.shares_available) || 0
+      const sharesSold = sharesAvailable - sharesRemaining
+      fillPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
     }
 
     if (fillPercentage === 0) {
@@ -411,9 +412,9 @@ export default function ExchangePage() {
               ) : (
                 marketBuyOrders.slice(0, 10).map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
-                  const filledAmount = Number(order.filled_amount) || 0
+                  const amountFilled = Number(order.amount_filled) || 0
                   const totalAmount = Number(order.total_amount) || 0
-                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+                  const filledPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
 
                   return (
                     <div
@@ -421,7 +422,7 @@ export default function ExchangePage() {
                       className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
                     >
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                        <span className="text-sm font-medium text-slate-100">{formatCurrency(totalAmount)}</span>
                         <span className="text-xs text-slate-400">({formatShares(estimatedShares)} shares)</span>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -449,9 +450,10 @@ export default function ExchangePage() {
                 <p className="text-slate-400 text-center py-4">No active sell orders</p>
               ) : (
                 marketSellOrders.slice(0, 10).map((order) => {
-                  const filledShares = Number(order.filled_shares) || 0
-                  const totalShares = Number(order.shares) || 0
-                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+                  const sharesRemaining = Number(order.shares_remaining) || 0
+                  const sharesAvailable = Number(order.shares_available) || 0
+                  const sharesSold = sharesAvailable - sharesRemaining
+                  const filledPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
 
                   return (
                     <div
@@ -459,12 +461,14 @@ export default function ExchangePage() {
                       className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
                     >
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-slate-100">{formatShares(order.shares)} shares</span>
+                        <span className="text-sm font-medium text-slate-100">
+                          {formatShares(sharesRemaining)} shares
+                        </span>
                         <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
                       </div>
                       <div className="flex items-center space-x-2">
                         {getStatusBadge(order, false)}
-                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% filled</span>
+                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% sold</span>
                       </div>
                     </div>
                   )
@@ -491,22 +495,22 @@ export default function ExchangePage() {
               ) : (
                 userBuyOrders.map((order) => {
                   const estimatedShares = order.price_per_share > 0 ? order.total_amount / order.price_per_share : 0
-                  const filledAmount = Number(order.filled_amount) || 0
+                  const amountFilled = Number(order.amount_filled) || 0
                   const totalAmount = Number(order.total_amount) || 0
-                  const filledPercentage = totalAmount > 0 ? (filledAmount / totalAmount) * 100 : 0
+                  const filledPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
 
                   return (
                     <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                          <span className="font-medium text-slate-100">{formatCurrency(totalAmount)}</span>
                           <span className="text-sm text-slate-400 ml-2">({formatShares(estimatedShares)} shares)</span>
                         </div>
                         {getStatusBadge(order, true)}
                       </div>
                       <Progress value={filledPercentage} className="h-2 [&>div]:bg-yellow-500" />
                       <div className="text-xs text-slate-400 mt-1">
-                        Filled: {formatCurrency(filledAmount)} / {formatCurrency(totalAmount)}
+                        Filled: {formatCurrency(amountFilled)} / {formatCurrency(totalAmount)}
                       </div>
                     </div>
                   )
@@ -529,22 +533,23 @@ export default function ExchangePage() {
                 <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
                 userSellOrders.map((order) => {
-                  const filledShares = Number(order.filled_shares) || 0
-                  const totalShares = Number(order.shares) || 0
-                  const filledPercentage = totalShares > 0 ? (filledShares / totalShares) * 100 : 0
+                  const sharesRemaining = Number(order.shares_remaining) || 0
+                  const sharesAvailable = Number(order.shares_available) || 0
+                  const sharesSold = sharesAvailable - sharesRemaining
+                  const filledPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
 
                   return (
                     <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className="font-medium text-slate-100">{formatShares(order.shares)} shares</span>
+                          <span className="font-medium text-slate-100">{formatShares(sharesAvailable)} shares</span>
                           <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
                         </div>
                         {getStatusBadge(order, true)}
                       </div>
                       <Progress value={filledPercentage} className="h-2 [&>div]:bg-green-500" />
                       <div className="text-xs text-slate-400 mt-1">
-                        Filled: {formatShares(filledShares)} / {formatShares(totalShares)} shares
+                        Sold: {formatShares(sharesSold)} / {formatShares(sharesAvailable)} shares
                       </div>
                     </div>
                   )

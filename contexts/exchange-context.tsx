@@ -8,10 +8,10 @@ import { useAuth } from "@/contexts/auth-context"
 type MarketOrder = {
   id: string
   total_amount?: number
-  shares?: number
+  shares_remaining?: number
+  shares_available?: number
   price_per_share: number
-  filled_amount?: number
-  filled_shares?: number
+  amount_filled?: number
   status: string
   created_at: string
 }
@@ -71,8 +71,8 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         .from("sell_orders")
         .select("*")
         .in("status", ["available", "partial"]) // Only active sell orders
-        .gt("shares", 0) // Ensure shares is not 0 or null
-        .not("shares", "is", null) // Exclude null shares
+        .gt("shares_remaining", 0) // Ensure shares_remaining is not 0 or null
+        .not("shares_remaining", "is", null) // Exclude null shares_remaining
         .order("created_at", { ascending: false })
         .limit(20)
 
@@ -80,12 +80,17 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       // Filter out any orders with NaN or invalid data
       const validSellOrders = (sellOrders || []).filter((order) => {
-        const shares = Number(order.shares)
+        const sharesRemaining = Number(order.shares_remaining)
+        const sharesAvailable = Number(order.shares_available)
         const pricePerShare = Number(order.price_per_share)
-        const filledShares = Number(order.filled_shares) || 0
 
         return (
-          !isNaN(shares) && !isNaN(pricePerShare) && shares > 0 && pricePerShare > 0 && filledShares < shares // Not fully filled
+          !isNaN(sharesRemaining) &&
+          !isNaN(sharesAvailable) &&
+          !isNaN(pricePerShare) &&
+          sharesRemaining > 0 &&
+          sharesAvailable > 0 &&
+          pricePerShare > 0
         )
       })
 
@@ -104,15 +109,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       // Filter out any orders with NaN or invalid data
       const validBuyOrders = (buyOrders || []).filter((order) => {
         const totalAmount = Number(order.total_amount)
+        const amountFilled = Number(order.amount_filled) || 0
         const pricePerShare = Number(order.price_per_share)
-        const filledAmount = Number(order.filled_amount) || 0
 
         return (
           !isNaN(totalAmount) &&
+          !isNaN(amountFilled) &&
           !isNaN(pricePerShare) &&
           totalAmount > 0 &&
           pricePerShare > 0 &&
-          filledAmount < totalAmount // Not fully filled
+          amountFilled < totalAmount // Not fully filled
         )
       })
 
@@ -146,10 +152,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       // Filter out invalid data but keep all statuses
       const validUserSells = (userSells || []).filter((order) => {
-        const shares = Number(order.shares)
+        const sharesAvailable = Number(order.shares_available)
         const pricePerShare = Number(order.price_per_share)
 
-        return !isNaN(shares) && !isNaN(pricePerShare) && shares > 0 && pricePerShare > 0
+        return !isNaN(sharesAvailable) && !isNaN(pricePerShare) && sharesAvailable > 0 && pricePerShare > 0
       })
 
       // Fetch user buy orders - ALL STATUSES for user history
