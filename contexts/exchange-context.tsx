@@ -17,7 +17,7 @@ type MarketOrder = {
 }
 
 type UserOrder = MarketOrder & {
-  user_id: string
+  user_uuid: string
 }
 
 type ExchangeContextType = {
@@ -100,25 +100,25 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch user orders
+  // Fetch user orders with correct column name
   const fetchUserOrders = async () => {
     if (!user) return
 
     try {
-      // Fetch user sell orders
+      // Fetch user sell orders using user_uuid
       const { data: userSells, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_uuid", user.id)
         .order("created_at", { ascending: false })
 
       if (sellError) throw sellError
 
-      // Fetch user buy orders
+      // Fetch user buy orders using user_uuid
       const { data: userBuys, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_uuid", user.id)
         .order("created_at", { ascending: false })
 
       if (buyError) throw buyError
@@ -166,7 +166,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       }
 
       const { data, error } = await supabase.rpc("place_buy_order", {
-        p_user_id: user.id,
+        p_user_uuid: user.id,
         p_total_amount: safeAmount,
       })
 
@@ -198,7 +198,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       }
 
       const { data, error } = await supabase.rpc("place_sell_order", {
-        p_user_id: user.id,
+        p_user_uuid: user.id,
         p_shares: safeShares,
       })
 

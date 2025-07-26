@@ -7,35 +7,30 @@ import { usePrice } from "@/contexts/price-context"
 export default function SharePriceCard() {
   const { priceData, loading, error } = usePrice()
 
-  const formatPrice = (price: number) => {
-    // Ensure price is never NaN
-    const safePrice = isNaN(price) ? 108.2 : price
-    return new Intl.NumberFormat("en-ZA", {
-      style: "currency",
-      currency: "ZAR",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(safePrice)
+  // NaN protection for display
+  const safeCurrentPrice = isNaN(priceData.currentPrice) ? 108.2 : priceData.currentPrice
+  const safePriceChange = isNaN(priceData.priceChange) ? 0 : priceData.priceChange
+  const safePriceChangePercent = isNaN(priceData.priceChangePercent) ? 0 : priceData.priceChangePercent
+
+  const formatCurrency = (amount: number) => {
+    const safeAmount = isNaN(amount) ? 0 : amount
+    return `N$${safeAmount.toFixed(2)}`
   }
 
-  const formatChange = (change: number) => {
-    // Ensure change is never NaN
-    const safeChange = isNaN(change) ? 0 : change
-    const sign = safeChange > 0 ? "+" : ""
-    return `${sign}${safeChange.toFixed(2)}`
+  const formatPercentage = (percent: number) => {
+    const safePercent = isNaN(percent) ? 0 : percent
+    return `${safePercent >= 0 ? "+" : ""}${safePercent.toFixed(2)}%`
   }
 
-  const getChangeIcon = (change: number) => {
-    const safeChange = isNaN(change) ? 0 : change
-    if (safeChange > 0) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (safeChange < 0) return <TrendingDown className="h-4 w-4 text-red-600" />
-    return <Minus className="h-4 w-4 text-gray-600" />
+  const getTrendIcon = () => {
+    if (safePriceChange > 0) return <TrendingUp className="h-4 w-4" />
+    if (safePriceChange < 0) return <TrendingDown className="h-4 w-4" />
+    return <Minus className="h-4 w-4" />
   }
 
-  const getChangeColor = (change: number) => {
-    const safeChange = isNaN(change) ? 0 : change
-    if (safeChange > 0) return "text-green-600"
-    if (safeChange < 0) return "text-red-600"
+  const getTrendColor = () => {
+    if (safePriceChange > 0) return "text-green-600"
+    if (safePriceChange < 0) return "text-red-600"
     return "text-gray-600"
   }
 
@@ -43,12 +38,12 @@ export default function SharePriceCard() {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Share Price</CardTitle>
-          <div className="h-4 w-4 animate-pulse bg-gray-300 rounded" />
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold animate-pulse bg-gray-300 h-8 w-24 rounded mb-1" />
-          <div className="animate-pulse bg-gray-300 h-4 w-16 rounded" />
+          <div className="text-2xl font-bold">Loading...</div>
+          <p className="text-xs text-muted-foreground">Fetching latest price</p>
         </CardContent>
       </Card>
     )
@@ -58,12 +53,12 @@ export default function SharePriceCard() {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Share Price</CardTitle>
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">R 108.20</div>
-          <p className="text-xs text-muted-foreground">Error loading price data</p>
+          <div className="text-2xl font-bold">N$108.20</div>
+          <p className="text-xs text-red-600">Error loading price data</p>
         </CardContent>
       </Card>
     )
@@ -73,18 +68,13 @@ export default function SharePriceCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
-        {getChangeIcon(priceData.priceChange)}
+        {getTrendIcon()}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{formatPrice(priceData.currentPrice)}</div>
-        <div className={`text-xs flex items-center gap-1 ${getChangeColor(priceData.priceChange)}`}>
-          <span>{formatChange(priceData.priceChange)}</span>
-          <span className="text-muted-foreground">
-            {priceData.lastUpdated
-              ? `• Updated ${priceData.lastUpdated.toLocaleDateString()}`
-              : "• Based on JSE200 index"}
-          </span>
-        </div>
+        <div className="text-2xl font-bold">{formatCurrency(safeCurrentPrice)}</div>
+        <p className={`text-xs ${getTrendColor()}`}>
+          {formatCurrency(safePriceChange)} ({formatPercentage(safePriceChangePercent)}) from last week
+        </p>
       </CardContent>
     </Card>
   )

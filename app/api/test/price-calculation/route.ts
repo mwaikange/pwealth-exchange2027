@@ -3,68 +3,106 @@ import { supabase } from "@/lib/supabase-singleton"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Price calculation test requested")
+    console.log("🧪 Price calculation test - GET")
 
-    // Get current system status
-    const { data, error } = await supabase.rpc("get_price_system_health")
+    // Test the calculation function
+    const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
 
     if (error) {
-      console.error("Test status error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      console.error("❌ Test calculation error:", error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+        { status: 500 },
+      )
     }
 
-    const response = {
+    console.log("✅ Test calculation result:", data)
+
+    return NextResponse.json({
       success: true,
-      message: "Price calculation system is ready for testing",
+      data,
       timestamp: new Date().toISOString(),
-      system_health: data,
-      available_actions: [
-        "POST /api/test/price-calculation - Manual calculation",
-        "GET /api/cron/weekly-price - Cron simulation",
-        "POST /api/cron/weekly-price - Force calculation",
-      ],
-    }
-
-    return NextResponse.json(response)
+    })
   } catch (error: any) {
-    console.error("Test endpoint error:", error)
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    console.error("❌ Test route error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || "Internal server error",
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("Manual price calculation test triggered")
+    const body = await request.json()
+    const { percent_change, description } = body
 
-    // Parse request body for custom parameters
-    let customParams = {}
-    try {
-      const body = await request.json()
-      customParams = body
-    } catch {
-      // No body or invalid JSON, use defaults
+    console.log("🧪 Price calculation simulation - POST", { percent_change, description })
+
+    if (percent_change !== undefined) {
+      // Insert test JSE200 data
+      const { error: insertError } = await supabase.from("JSE200_PriceUpdate_Mondays").insert({
+        percentage_change: percent_change,
+        description: description || `Test simulation: ${percent_change}% change`,
+        created_at: new Date().toISOString(),
+      })
+
+      if (insertError) {
+        console.error("❌ Error inserting test JSE200 data:", insertError)
+        return NextResponse.json(
+          {
+            success: false,
+            error: insertError.message,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 500 },
+        )
+      }
     }
 
-    // Call the manual calculation function
+    // Run the calculation
     const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
 
     if (error) {
-      console.error("Manual calculation test error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      console.error("❌ Simulation calculation error:", error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        },
+        { status: 500 },
+      )
     }
 
-    const response = {
+    console.log("✅ Simulation result:", data)
+
+    return NextResponse.json({
       success: true,
-      message: "Manual price calculation completed",
+      data,
+      simulation: {
+        percent_change,
+        description,
+      },
       timestamp: new Date().toISOString(),
-      calculation_result: data,
-      custom_params: customParams,
-    }
-
-    console.log("Manual calculation test completed:", response)
-    return NextResponse.json(response)
+    })
   } catch (error: any) {
-    console.error("Manual calculation test error:", error)
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    console.error("❌ Simulation route error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || "Internal server error",
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 },
+    )
   }
 }
