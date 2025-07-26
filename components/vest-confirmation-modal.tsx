@@ -1,18 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Clock, AlertCircle, Lock } from "lucide-react"
+import type React from "react"
 
-// Vesting levels configuration
-const VESTING_LEVELS = {
-  1: { name: "Retail", days: 5, minShares: 1, maxShares: 50 },
-  2: { name: "Small Business", days: 30, minShares: 51, maxShares: 500 },
-  3: { name: "Corporate", days: 90, minShares: 501, maxShares: Number.POSITIVE_INFINITY },
-} as const
+import { useState } from "react"
+import { X, AlertTriangle, Loader2, Clock } from "lucide-react"
+import { VESTING_LEVELS } from "@/contexts/vesting-context"
 
 interface VestConfirmationModalProps {
   isOpen: boolean
@@ -20,7 +12,7 @@ interface VestConfirmationModalProps {
   onConfirm: (amount: number) => Promise<void>
   availableShares: number
   slotIndex: number
-  fixedLevel: number
+  fixedLevel: number // The level is now fixed based on which tab the user clicked from
 }
 
 export function VestConfirmationModal({
@@ -35,68 +27,39 @@ export function VestConfirmationModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState("")
 
-  // Get level configuration
-  const levelConfig = VESTING_LEVELS[fixedLevel as keyof typeof VESTING_LEVELS]
+  if (!isOpen) return null
 
-  // Reset form when modal opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      setAmount("")
-      setError("")
-      setIsProcessing(false)
-    }
-  }, [isOpen])
-
-  // Safe number conversion
-  const safeNumber = (value: any): number => {
-    const num = Number(value)
-    return isNaN(num) ? 0 : num
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/[^\d]/g, "")
+    setAmount(value)
+    setError("")
   }
 
-  // Format shares to 4 decimal places
-  const formatShares = (value: number): string => {
-    return safeNumber(value).toFixed(4)
-  }
+  const validateAmount = () => {
+    const numAmount = Number(amount)
 
-  // Validate vesting amount
-  const validateAmount = (value: number) => {
-    if (value <= 0) {
-      return "Amount must be greater than 0"
+    if (!amount || numAmount <= 0) {
+      return "Please enter a valid amount"
     }
 
-    if (value > availableShares) {
-      return "Insufficient shares in Hold Wallet (Pre-Hold)"
+    if (numAmount > availableShares) {
+      return `Insufficient shares. You have ${availableShares} shares available`
     }
 
-    // Level-specific validation
-    if (value < levelConfig.minShares) {
-      return `${levelConfig.name} level requires minimum ${levelConfig.minShares} shares per slot`
+    const levelConfig = VESTING_LEVELS[fixedLevel as keyof typeof VESTING_LEVELS]
+    if (numAmount < levelConfig.min) {
+      return `Minimum ${levelConfig.min} shares required for ${levelConfig.name} level`
     }
 
-    if (levelConfig.maxShares !== Number.POSITIVE_INFINITY && value > levelConfig.maxShares) {
-      return `${levelConfig.name} level allows maximum ${levelConfig.maxShares} shares per slot`
+    if (numAmount > levelConfig.max) {
+      return `Maximum ${levelConfig.max} shares allowed for ${levelConfig.name} level`
     }
 
     return null
   }
 
-  const handleAmountChange = (value: string) => {
-    setAmount(value)
-    setError("")
-
-    if (value) {
-      const numValue = safeNumber(value)
-      const validationError = validateAmount(numValue)
-      if (validationError) {
-        setError(validationError)
-      }
-    }
-  }
-
   const handleConfirm = async () => {
-    const numAmount = safeNumber(amount)
-    const validationError = validateAmount(numAmount)
-
+    const validationError = validateAmount()
     if (validationError) {
       setError(validationError)
       return
@@ -104,151 +67,129 @@ export function VestConfirmationModal({
 
     try {
       setIsProcessing(true)
+      await onConfirm(Number(amount))
+      setAmount("")
       setError("")
-      await onConfirm(numAmount)
       onClose()
-    } catch (err: any) {
-      setError(err.message || "Failed to vest shares")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleMaxClick = () => {
-    const maxAllowed = Math.min(
-      availableShares,
-      levelConfig.maxShares === Number.POSITIVE_INFINITY ? availableShares : levelConfig.maxShares,
-    )
-    setAmount(maxAllowed.toString())
-    setError("")
+  const handleClose = () => {
+    if (!isProcessing) {
+      setAmount("")
+      setError("")
+      onClose()
+    }
   }
 
-  const numAmount = safeNumber(amount)
-  const isValidAmount = numAmount > 0 && !validateAmount(numAmount)
-
-  if (!levelConfig) {
-    return null
-  }
+  const levelConfig = VESTING_LEVELS[fixedLevel as keyof typeof VESTING_LEVELS]
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md bg-slate-800 border-slate-700 text-slate-100">
-        <DialogHeader>
-          <DialogTitle className="flex items-center text-slate-100">
-            <Lock className="w-5 h-5 mr-2 text-blue-400" />
-            Vest Shares
-          </DialogTitle>
-        </DialogHeader>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-lg w-full max-w-lg mx-4 border border-slate-700 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-slate-700">
+          <h3 className="text-xl font-bold text-slate-100">Vest Shares - Slot {slotIndex + 1}</h3>
+          <button onClick={handleClose} className="text-slate-400 hover:text-slate-200" disabled={isProcessing}>
+            <X size={20} />
+          </button>
+        </div>
 
-        <div className="space-y-4">
-          {/* Level Information */}
-          <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-slate-300">
-                Level {fixedLevel} - {levelConfig.name}
-              </span>
+        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          <div className="bg-slate-700 rounded-lg p-2">
+            <div className="text-xs text-slate-300">Available Shares (Pre-Hold)</div>
+            <div className="text-xl font-bold text-blue-400">{availableShares}</div>
+          </div>
+
+          <div className="bg-blue-500/20 border border-blue-500 rounded-md p-2">
+            <div className="text-xs font-medium text-blue-300 mb-1">Vesting Level (Fixed)</div>
+            <div className="text-base font-bold text-blue-100">
+              Level {fixedLevel} - {levelConfig.name}
             </div>
-            <div className="flex items-center text-slate-300 text-sm mb-2">
-              <Clock className="w-4 h-4 mr-2 text-blue-400" />
-              <span>Lock Period: {levelConfig.days} days</span>
-            </div>
-            <div className="text-xs text-slate-400">
-              Allowed Range: {levelConfig.minShares}-
-              {levelConfig.maxShares === Number.POSITIVE_INFINITY ? "unlimited" : levelConfig.maxShares} shares
+            <div className="text-xs text-blue-300">
+              {levelConfig.min}-{levelConfig.max === Number.POSITIVE_INFINITY ? "∞" : levelConfig.max} shares
             </div>
           </div>
 
-          {/* Available Shares */}
-          <div className="bg-slate-700 rounded-lg p-3 border border-slate-600">
-            <div className="text-sm text-slate-300 mb-1">Available to Vest</div>
-            <div className="text-lg font-semibold text-slate-100">{formatShares(availableShares)} shares</div>
-            <div className="text-xs text-slate-400">From Hold Wallet (Pre-Hold)</div>
-          </div>
-
-          {/* Amount Input */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300">Shares to Vest</label>
-            <div className="flex space-x-2">
-              <Input
-                type="number"
-                placeholder="0.0000"
-                value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
-                disabled={isProcessing}
-                min="0"
-                step="0.0001"
-                className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleMaxClick}
-                disabled={isProcessing}
-                className="bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600"
-              >
-                MAX
-              </Button>
-            </div>
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <Alert variant="destructive" className="bg-red-900 border-red-700">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-red-100">{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Vesting Summary */}
-          {isValidAmount && (
-            <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
-              <h4 className="text-sm font-medium text-slate-300 mb-3">Vesting Summary</h4>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Shares to Lock:</span>
-                  <span className="text-slate-100 font-medium">{formatShares(numAmount)} shares</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Lock Period:</span>
-                  <span className="text-slate-100 font-medium">{levelConfig.days} days</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">After Vesting:</span>
-                  <span className="text-slate-100 font-medium">{formatShares(numAmount)} shares (same amount)</span>
+          <div className="bg-yellow-500/20 border border-yellow-500 rounded-md p-2">
+            <div className="flex items-center text-yellow-400 text-xs">
+              <Clock className="w-3 h-3 mr-1" />
+              <div>
+                <div className="font-medium">
+                  {levelConfig.name} Hold Period: {levelConfig.holdDays} days
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Amount Input */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Number of Shares to Vest</label>
+            <input
+              type="text"
+              value={amount}
+              onChange={handleAmountChange}
+              placeholder={`Enter ${levelConfig.min}-${levelConfig.max === Number.POSITIVE_INFINITY ? "∞" : levelConfig.max} shares`}
+              className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-2 text-slate-100 placeholder-slate-400"
+              disabled={isProcessing}
+            />
+            <div className="text-xs text-slate-400 mt-1">
+              {levelConfig.name} level: {levelConfig.min} -{" "}
+              {levelConfig.max === Number.POSITIVE_INFINITY ? "unlimited" : levelConfig.max} shares
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-500/20 border border-red-500 rounded-md p-3 flex items-center text-red-400 text-sm">
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              {error}
+            </div>
           )}
 
-          {/* Important Notice */}
-          <Alert className="bg-blue-900 border-blue-700">
-            <AlertCircle className="h-4 w-4 text-blue-400" />
-            <AlertDescription className="text-blue-100">
-              <strong>Important:</strong> Vested shares will be locked for {levelConfig.days} days and cannot be traded
-              until the vesting period completes. This action cannot be undone.
-            </AlertDescription>
-          </Alert>
-
-          {/* Action Buttons */}
-          <div className="flex space-x-3 pt-2">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={isProcessing}
-              className="flex-1 bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={!isValidAmount || isProcessing}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {isProcessing ? "Vesting..." : "Vest Shares"}
-            </Button>
+          <div className="bg-orange-500/20 border border-orange-500 rounded-md p-2">
+            <div className="flex items-start">
+              <AlertTriangle className="w-3 h-3 text-orange-500 mr-1 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-orange-200">
+                <div className="font-medium mb-1">Important Notice:</div>
+                <div className="space-y-0.5">
+                  <div>• Shares deducted from Pre-Hold balance</div>
+                  <div>• Locked for {levelConfig.holdDays} days</div>
+                  <div>• Claim to Post-Hold after {levelConfig.holdDays} days</div>
+                  <div>• Action cannot be reversed</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <div className="flex gap-2 p-4 border-t border-slate-700">
+          <button
+            onClick={handleClose}
+            className="flex-1 bg-slate-600 hover:bg-slate-500 text-slate-100 py-2 px-3 rounded-md text-sm font-medium transition-colors"
+            disabled={isProcessing}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center"
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              `Vest ${levelConfig.holdDays}d`
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
