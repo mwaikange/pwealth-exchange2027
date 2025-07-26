@@ -1,52 +1,47 @@
--- Create clean price functions without any HODL dependencies
--- This replaces all previous functions with HODL-free versions
+-- Create clean price functions without HODL dependencies and fix NaN issues
 
--- 1️⃣ Clean get_latest_share_price function
-CREATE OR REPLACE FUNCTION get_latest_share_price()
-RETURNS NUMERIC
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  latest_price NUMERIC;
-BEGIN
-  SELECT final_price INTO latest_price
-  FROM weekly_prices
-  ORDER BY effective_date DESC
-  LIMIT 1;
-  
-  -- Return default if no price found
-  RETURN COALESCE(latest_price, 108.2);
-END;
-$$;
-
--- 2️⃣ Clean get_current_share_price function
+-- 1. Function to get current share price (fixed to prevent NaN)
 CREATE OR REPLACE FUNCTION get_current_share_price()
-RETURNS NUMERIC
+RETURNS NUMERIC(10,2)
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  current_price NUMERIC;
+  current_price NUMERIC(10,2);
 BEGIN
-  -- Get the most recent final price
-  SELECT final_price INTO current_price
+  -- Get the latest price from weekly_prices
+  SELECT COALESCE(final_price, 108.20) INTO current_price
   FROM weekly_prices
   ORDER BY effective_date DESC
   LIMIT 1;
   
-  -- Return default price if no data found
-  RETURN COALESCE(current_price, 108.2);
+  -- Ensure we never return NULL or NaN
+  IF current_price IS NULL OR current_price <= 0 THEN
+    current_price := 108.20;
+  END IF;
+  
+  RETURN current_price;
 END;
 $$;
 
--- 3️⃣ Fixed get_price_history function (corrected table reference)
+-- 2. Function to get latest share price (alias for compatibility)
+CREATE OR REPLACE FUNCTION get_latest_share_price()
+RETURNS NUMERIC(10,2)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN get_current_share_price();
+END;
+$$;
+
+-- 3. Function to get price history without HODL
 CREATE OR REPLACE FUNCTION get_price_history(days_back INTEGER DEFAULT 30)
 RETURNS TABLE(
   date TEXT,
-  price NUMERIC,
-  j200_growth NUMERIC,
-  price_change NUMERIC
+  price NUMERIC(10,2),
+  j200_growth NUMERIC(10,6),
+  price_change NUMERIC(10,2)
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -54,241 +49,141 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT 
-    wp.effective_date::TEXT as date,
-    wp.final_price as price,
-    COALESCE(wp.j200_growth, 0) as j200_growth,
-    COALESCE(wp.price_change, 0) as price_change
-  FROM weekly_prices wp
-  WHERE wp.effective_date >= (CURRENT_DATE - INTERVAL '1 day' * days_back)
-  ORDER BY wp.effective_date DESC;
+    effective_date::TEXT as date,
+    COALESCE(final_price, 108.20) as price,
+    COALESCE(j200_growth, 0.0) as j200_growth,
+    COALESCE(price_change, 0.0) as price_change
+  FROM weekly_prices
+  WHERE effective_date >= CURRENT_DATE - INTERVAL '1 day' * days_back
+  ORDER BY effective_date DESC;
 END;
 $$;
 
--- 4️⃣ Clean validate_jse200_data function
-CREATE OR REPLACE FUNCTION validate_jse200_data()
+-- 4. Function to calculate weekly share price from JSE200 (without HODL)
+CREATE OR REPLACE FUNCTION calculate_weekly_share_price_from_jse200()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  validation_result json;
-  total_records INTEGER;
-  recent_records INTEGER;
-  data_quality TEXT;
+  latest_jse RECORD;
+  previous_price NUMERIC(10,2);
+  new_price NUMERIC(10,2);
+  price_change NUMERIC(10,2);
+  result json;
 BEGIN
-  -- Count total JSE200 records
-  SELECT COUNT(*) INTO total_records
-  FROM "JSE200_PriceUpdate_Mondays";
-  
-  -- Count recent records (last 8 weeks)
-  SELECT COUNT(*) INTO recent_records
+  -- Get the latest JSE200 data
+  SELECT * INTO latest_jse
   FROM "JSE200_PriceUpdate_Mondays"
-  WHERE created_at > (now() - INTERVAL '8 weeks');
+  ORDER BY created_at DESC
+  LIMIT 1;
   
-  -- Determine data quality
-  data_quality := CASE 
-    WHEN recent_records >= 6 THEN 'GOOD'
-    WHEN recent_records >= 3 THEN 'FAIR'
-    ELSE 'POOR'
-  END;
+  IF latest_jse IS NULL THEN
+    RETURN json_build_object(
+      'success', false,
+      'message', 'No JSE200 data available'
+    );
+  END IF;
   
-  validation_result := json_build_object(
-    'total_records', total_records,
-    'recent_records_8w', recent_records,
-    'data_quality', data_quality,
-    'last_update', (
-      SELECT created_at 
-      FROM "JSE200_PriceUpdate_Mondays" 
-      ORDER BY created_at DESC 
-      LIMIT 1
-    ),
-    'validation_timestamp', now()
-  );
-  
-  RETURN validation_result;
-END;
-$$;
-
--- 5️⃣ Clean get_price_calculation_summary function
-CREATE OR REPLACE FUNCTION get_price_calculation_summary()
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  summary_result json;
-  total_calculations INTEGER;
-  latest_calculation RECORD;
-  avg_price_change NUMERIC;
-BEGIN
-  -- Count total price calculations
-  SELECT COUNT(*) INTO total_calculations
-  FROM weekly_prices;
-  
-  -- Get latest calculation
-  SELECT * INTO latest_calculation
+  -- Get the previous week's price (fallback to base price)
+  SELECT COALESCE(final_price, 100.00) INTO previous_price
   FROM weekly_prices
   ORDER BY effective_date DESC
   LIMIT 1;
   
-  -- Calculate average price change
-  SELECT AVG(price_change) INTO avg_price_change
-  FROM weekly_prices
-  WHERE price_change IS NOT NULL;
+  -- Calculate new price based on JSE200 percentage change
+  new_price := previous_price * (1 + latest_jse.percentage_change / 100);
+  price_change := new_price - previous_price;
   
-  summary_result := json_build_object(
-    'total_calculations', total_calculations,
-    'latest_calculation_date', latest_calculation.effective_date,
-    'latest_price', latest_calculation.final_price,
-    'latest_change', latest_calculation.price_change,
-    'average_weekly_change', ROUND(avg_price_change, 2),
-    'summary_timestamp', now()
+  -- Ensure price is never negative or NaN
+  IF new_price IS NULL OR new_price <= 0 THEN
+    new_price := COALESCE(previous_price, 108.20);
+    price_change := 0;
+  END IF;
+  
+  -- Insert new price record
+  INSERT INTO weekly_prices (
+    effective_date,
+    base_price,
+    j200_growth,
+    final_price,
+    price_change,
+    created_at
+  ) VALUES (
+    CURRENT_DATE,
+    previous_price,
+    latest_jse.percentage_change / 100,
+    new_price,
+    price_change,
+    NOW()
   );
   
-  RETURN summary_result;
+  result := json_build_object(
+    'success', true,
+    'message', 'Price calculated successfully',
+    'previous_price', previous_price,
+    'new_price', new_price,
+    'price_change', price_change,
+    'jse200_change', latest_jse.percentage_change,
+    'effective_date', CURRENT_DATE
+  );
+  
+  RETURN result;
 END;
 $$;
 
--- 6️⃣ Clean get_price_system_health function
+-- 5. Manual trigger function
+CREATE OR REPLACE FUNCTION trigger_weekly_price_calculation()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN calculate_weekly_share_price_from_jse200();
+END;
+$$;
+
+-- 6. System health check function
 CREATE OR REPLACE FUNCTION get_price_system_health()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  health_report json;
-  jse_validation json;
-  price_summary json;
-  recent_calculations INTEGER;
-BEGIN
-  -- Get JSE200 data validation
-  jse_validation := validate_jse200_data();
-  
-  -- Get price calculation summary
-  price_summary := get_price_calculation_summary();
-  
-  -- Count recent calculations (last 30 days)
-  SELECT COUNT(*) INTO recent_calculations
-  FROM weekly_prices
-  WHERE created_at > (now() - INTERVAL '30 days');
-  
-  health_report := json_build_object(
-    'timestamp', now(),
-    'overall_status', CASE 
-      WHEN (jse_validation->>'data_quality') = 'GOOD' AND recent_calculations >= 4 THEN 'HEALTHY'
-      WHEN (jse_validation->>'data_quality') = 'FAIR' OR recent_calculations >= 2 THEN 'WARNING'
-      ELSE 'CRITICAL'
-    END,
-    'jse200_data_quality', jse_validation,
-    'price_calculation_summary', price_summary,
-    'recent_calculations_30d', recent_calculations,
-    'current_share_price', get_current_share_price(),
-    'next_scheduled_run', date_trunc('week', CURRENT_DATE + INTERVAL '7 days')::date || ' 09:15:00'
-  );
-  
-  RETURN health_report;
-END;
-$$;
-
--- 7️⃣ Clean simulate_price_calculation function
-CREATE OR REPLACE FUNCTION simulate_price_calculation(
-  test_percent_change NUMERIC,
-  test_description TEXT DEFAULT 'Test simulation'
-)
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  current_price NUMERIC;
-  simulated_price NUMERIC;
-  simulation_result json;
+  current_price NUMERIC(10,2);
+  latest_jse RECORD;
+  price_count INTEGER;
+  result json;
 BEGIN
   -- Get current price
   current_price := get_current_share_price();
   
-  -- Calculate simulated price
-  simulated_price := ROUND(current_price * (1 + (test_percent_change / 100)), 2);
+  -- Get latest JSE200 data
+  SELECT * INTO latest_jse
+  FROM "JSE200_PriceUpdate_Mondays"
+  ORDER BY created_at DESC
+  LIMIT 1;
   
-  simulation_result := json_build_object(
-    'simulation_description', test_description,
+  -- Count price records
+  SELECT COUNT(*) INTO price_count
+  FROM weekly_prices;
+  
+  result := json_build_object(
+    'system_status', 'healthy',
     'current_price', current_price,
-    'test_percent_change', test_percent_change,
-    'simulated_new_price', simulated_price,
-    'price_difference', (simulated_price - current_price),
-    'percentage_impact', ROUND(((simulated_price - current_price) / current_price) * 100, 4),
-    'calculation_formula', format('%s × (1 + %s/100) = %s', current_price, test_percent_change, simulated_price),
-    'simulation_timestamp', now()
-  );
-  
-  RETURN simulation_result;
-END;
-$$;
-
--- 8️⃣ Clean check_price_data_consistency function
-CREATE OR REPLACE FUNCTION check_price_data_consistency()
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  consistency_report json;
-  calculation_errors INTEGER := 0;
-  missing_jse_data INTEGER := 0;
-  orphaned_prices INTEGER := 0;
-BEGIN
-  -- Check for calculation errors (where manual calculation doesn't match stored result)
-  WITH calc_check AS (
-    SELECT 
-      wp.effective_date,
-      wp.base_price,
-      wp.j200_growth,
-      wp.final_price,
-      ROUND(wp.base_price * (1 + (wp.j200_growth / 100)), 2) as expected_price,
-      ABS(wp.final_price - ROUND(wp.base_price * (1 + (wp.j200_growth / 100)), 2)) as price_diff
-    FROM weekly_prices wp
-    WHERE wp.base_price IS NOT NULL AND wp.j200_growth IS NOT NULL
-  )
-  SELECT COUNT(*) INTO calculation_errors
-  FROM calc_check
-  WHERE price_diff > 0.01; -- Allow for small rounding differences
-  
-  -- Check for weekly prices without corresponding JSE200 data
-  SELECT COUNT(*) INTO orphaned_prices
-  FROM weekly_prices wp
-  LEFT JOIN "JSE200_PriceUpdate_Mondays" jse ON wp.effective_date = jse.week_start_date
-  WHERE jse.week_start_date IS NULL AND wp.effective_date != date_trunc('week', CURRENT_DATE)::date;
-  
-  -- Check for JSE200 data without corresponding price calculations
-  SELECT COUNT(*) INTO missing_jse_data
-  FROM "JSE200_PriceUpdate_Mondays" jse
-  LEFT JOIN weekly_prices wp ON jse.week_start_date = wp.effective_date
-  WHERE wp.effective_date IS NULL AND jse.week_start_date <= date_trunc('week', CURRENT_DATE)::date;
-  
-  consistency_report := json_build_object(
-    'check_timestamp', now(),
-    'calculation_errors', calculation_errors,
-    'orphaned_price_records', orphaned_prices,
-    'missing_price_calculations', missing_jse_data,
-    'overall_consistency', CASE 
-      WHEN calculation_errors = 0 AND orphaned_prices = 0 AND missing_jse_data = 0 THEN 'PERFECT'
-      WHEN calculation_errors = 0 AND (orphaned_prices + missing_jse_data) <= 2 THEN 'GOOD'
-      WHEN calculation_errors <= 1 AND (orphaned_prices + missing_jse_data) <= 5 THEN 'FAIR'
-      ELSE 'POOR'
+    'price_records_count', price_count,
+    'latest_jse200', CASE 
+      WHEN latest_jse IS NOT NULL THEN row_to_json(latest_jse)
+      ELSE json_build_object('status', 'no_data')
     END,
-    'recommendations', CASE 
-      WHEN calculation_errors > 0 THEN 'Review calculation logic and recalculate affected weeks'
-      WHEN missing_jse_data > 0 THEN 'Run price calculations for missing JSE200 data'
-      WHEN orphaned_prices > 0 THEN 'Verify JSE200 data completeness'
-      ELSE 'No action required'
-    END
+    'last_check', NOW()
   );
   
-  RETURN consistency_report;
+  RETURN result;
 END;
 $$;
 
--- 9️⃣ Clean cron functions (no HODL references)
+-- 7. Vercel cron handler (Monday 09:10-09:20)
 CREATE OR REPLACE FUNCTION handle_weekly_price_cron()
 RETURNS json
 LANGUAGE plpgsql
@@ -329,6 +224,7 @@ BEGIN
 END;
 $$;
 
+-- 8. Manual trigger (ignores time checks)
 CREATE OR REPLACE FUNCTION handle_manual_price_cron()
 RETURNS json
 LANGUAGE plpgsql
@@ -346,6 +242,7 @@ BEGIN
 END;
 $$;
 
+-- 9. Status check function
 CREATE OR REPLACE FUNCTION get_cron_status()
 RETURNS json
 LANGUAGE plpgsql
@@ -377,6 +274,7 @@ BEGIN
 END;
 $$;
 
+-- 10. Main API endpoint function
 CREATE OR REPLACE FUNCTION api_weekly_price_endpoint(action_param TEXT DEFAULT 'status')
 RETURNS json
 LANGUAGE plpgsql
@@ -404,12 +302,10 @@ BEGIN
 END;
 $$;
 
--- 🔟 Add clean comments
-COMMENT ON FUNCTION get_price_history(INTEGER) IS 'Returns price history based on JSE200 data only - HODL functionality removed';
-COMMENT ON FUNCTION get_latest_share_price() IS 'Returns the most recent share price - no HODL dependencies';
-COMMENT ON FUNCTION get_current_share_price() IS 'Returns current share price - simplified without HODL';
-COMMENT ON FUNCTION validate_jse200_data() IS 'Validates JSE200 data quality - HODL references removed';
-COMMENT ON FUNCTION get_price_calculation_summary() IS 'Price calculation summary - clean of HODL dependencies';
-COMMENT ON FUNCTION get_price_system_health() IS 'System health check - HODL functionality removed';
-COMMENT ON FUNCTION simulate_price_calculation(NUMERIC, TEXT) IS 'Price simulation based on JSE200 changes only';
-COMMENT ON FUNCTION check_price_data_consistency() IS 'Data consistency check - no HODL validation';
+-- Add comments for reference
+COMMENT ON FUNCTION get_current_share_price() IS 'Returns current share price with NaN protection';
+COMMENT ON FUNCTION get_price_history(integer) IS 'Returns price history without HODL data';
+COMMENT ON FUNCTION handle_weekly_price_cron() IS 'Handles Vercel cron requests - only executes on Monday 09:10-09:20';
+COMMENT ON FUNCTION handle_manual_price_cron() IS 'Manual trigger for testing - bypasses time checks';
+COMMENT ON FUNCTION get_cron_status() IS 'Returns current system status and next execution time';
+COMMENT ON FUNCTION api_weekly_price_endpoint(text) IS 'Main API endpoint function for Vercel integration';

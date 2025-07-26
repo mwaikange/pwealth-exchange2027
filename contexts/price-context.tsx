@@ -40,14 +40,14 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
 
-  // Fetch current price data
+  // Fetch current price data with NaN protection
   const refreshPrice = async () => {
     try {
       setError(null)
       console.log("Refreshing price data...")
 
-      // Get latest share price
-      const { data: currentPrice, error: priceError } = await supabase.rpc("get_latest_share_price")
+      // Get latest share price with fallback
+      const { data: currentPrice, error: priceError } = await supabase.rpc("get_current_share_price")
       if (priceError) {
         console.error("Price fetch error:", priceError)
         throw priceError
@@ -66,9 +66,17 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
         // Don't throw here, just log the error
       }
 
+      // Ensure we never have NaN values
+      const safeCurrentPrice = Number(currentPrice) || 108.2
+      const safePriceChange = Number(weeklyData?.price_change) || 0
+
+      // Additional NaN protection
+      const finalCurrentPrice = isNaN(safeCurrentPrice) ? 108.2 : safeCurrentPrice
+      const finalPriceChange = isNaN(safePriceChange) ? 0 : safePriceChange
+
       const newPriceData = {
-        currentPrice: Number(currentPrice) || 108.2,
-        priceChange: Number(weeklyData?.price_change) || 0,
+        currentPrice: finalCurrentPrice,
+        priceChange: finalPriceChange,
         lastUpdated: weeklyData?.created_at ? new Date(weeklyData.created_at) : null,
       }
 
@@ -79,7 +87,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       console.error("Error fetching price data:", err)
       setError(err.message || "Failed to fetch price data")
 
-      // Set fallback data on error
+      // Set fallback data on error (never NaN)
       setPriceData({
         currentPrice: 108.2,
         priceChange: 0,
@@ -102,9 +110,9 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
 
       const formattedHistory: PriceHistory[] = (data || []).map((item: any) => ({
         date: item.date,
-        price: Number(item.price),
-        j200Growth: Number(item.j200_growth),
-        priceChange: Number(item.price_change),
+        price: Number(item.price) || 108.2, // NaN protection
+        j200Growth: Number(item.j200_growth) || 0, // NaN protection
+        priceChange: Number(item.price_change) || 0, // NaN protection
       }))
 
       setPriceHistory(formattedHistory)

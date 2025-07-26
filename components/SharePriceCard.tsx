@@ -8,28 +8,34 @@ export default function SharePriceCard() {
   const { priceData, loading, error } = usePrice()
 
   const formatPrice = (price: number) => {
+    // Ensure price is never NaN
+    const safePrice = isNaN(price) ? 108.2 : price
     return new Intl.NumberFormat("en-ZA", {
       style: "currency",
       currency: "ZAR",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(price)
+    }).format(safePrice)
   }
 
   const formatChange = (change: number) => {
-    const sign = change > 0 ? "+" : ""
-    return `${sign}${change.toFixed(2)}`
+    // Ensure change is never NaN
+    const safeChange = isNaN(change) ? 0 : change
+    const sign = safeChange > 0 ? "+" : ""
+    return `${sign}${safeChange.toFixed(2)}`
   }
 
   const getChangeIcon = (change: number) => {
-    if (change > 0) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (change < 0) return <TrendingDown className="h-4 w-4 text-red-600" />
+    const safeChange = isNaN(change) ? 0 : change
+    if (safeChange > 0) return <TrendingUp className="h-4 w-4 text-green-600" />
+    if (safeChange < 0) return <TrendingDown className="h-4 w-4 text-red-600" />
     return <Minus className="h-4 w-4 text-gray-600" />
   }
 
   const getChangeColor = (change: number) => {
-    if (change > 0) return "text-green-600"
-    if (change < 0) return "text-red-600"
+    const safeChange = isNaN(change) ? 0 : change
+    if (safeChange > 0) return "text-green-600"
+    if (safeChange < 0) return "text-red-600"
     return "text-gray-600"
   }
 

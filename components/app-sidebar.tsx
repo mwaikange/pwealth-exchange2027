@@ -71,7 +71,7 @@ export function AppSidebar({ open }: AppSidebarProps) {
       )}
     >
       <div className="flex flex-col h-full">
-        <div className="p-4 text-xl font-bold">PEER WEALTH TOKEN</div>
+        <div className="p-4 text-xl font-bold">PEER WEALTH</div>
         <nav className="flex-1">
           <ul className="space-y-1">
             {navItems.map((item) => {
