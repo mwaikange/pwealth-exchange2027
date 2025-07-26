@@ -13,7 +13,7 @@
       "maxDuration": 15
     },
     "app/api/test/price-calculation/route.ts": {
-      "maxDuration": 15
+      "maxDuration": 20
     }
   }
 }

@@ -47,14 +47,21 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   const refreshPrice = async () => {
     try {
       setError(null)
+      console.log("Refreshing price data...")
 
       // Get latest share price
       const { data: currentPrice, error: priceError } = await supabase.rpc("get_latest_share_price")
-      if (priceError) throw priceError
+      if (priceError) {
+        console.error("Price fetch error:", priceError)
+        throw priceError
+      }
 
       // Get current HODL percentage
       const { data: hodlPct, error: hodlError } = await supabase.rpc("get_current_hodl_percentage")
-      if (hodlError) throw hodlError
+      if (hodlError) {
+        console.error("HODL percentage error:", hodlError)
+        throw hodlError
+      }
 
       // Get latest weekly price data for change calculation
       const { data: weeklyData, error: weeklyError } = await supabase
@@ -65,25 +72,31 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (weeklyError && weeklyError.code !== "PGRST116") {
-        // Ignore "no rows" error
-        throw weeklyError
+        console.error("Weekly data error:", weeklyError)
+        // Don't throw here, just log the error
       }
 
-      setPriceData({
+      const newPriceData = {
         currentPrice: Number(currentPrice) || 108.2,
         priceChange: Number(weeklyData?.price_change) || 0,
         hodlPercentage: Number(hodlPct) || 75.0,
         lastUpdated: weeklyData?.created_at ? new Date(weeklyData.created_at) : null,
-      })
+      }
 
-      console.log("Price data refreshed:", {
-        currentPrice,
-        hodlPct,
-        priceChange: weeklyData?.price_change,
-      })
+      setPriceData(newPriceData)
+
+      console.log("Price data refreshed successfully:", newPriceData)
     } catch (err: any) {
       console.error("Error fetching price data:", err)
       setError(err.message || "Failed to fetch price data")
+
+      // Set fallback data on error
+      setPriceData({
+        currentPrice: 108.2,
+        priceChange: 0,
+        hodlPercentage: 75.0,
+        lastUpdated: null,
+      })
     }
   }
 
@@ -91,9 +104,13 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   const refreshHistory = async (days = 30) => {
     try {
       setError(null)
+      console.log(`Refreshing price history for ${days} days...`)
 
       const { data, error } = await supabase.rpc("get_price_history", { days_back: days })
-      if (error) throw error
+      if (error) {
+        console.error("Price history error:", error)
+        throw error
+      }
 
       const formattedHistory: PriceHistory[] = (data || []).map((item: any) => ({
         date: item.date,
@@ -104,10 +121,13 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       }))
 
       setPriceHistory(formattedHistory)
-      console.log("Price history refreshed:", formattedHistory.length, "records")
+      console.log("Price history refreshed successfully:", formattedHistory.length, "records")
     } catch (err: any) {
       console.error("Error fetching price history:", err)
       setError(err.message || "Failed to fetch price history")
+
+      // Set empty array on error
+      setPriceHistory([])
     }
   }
 
@@ -115,7 +135,7 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await Promise.all([refreshPrice(), refreshHistory()])
+      await Promise.all([refreshPrice().catch(console.error), refreshHistory().catch(console.error)])
       setLoading(false)
     }
 
@@ -126,6 +146,8 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return
 
+    console.log("Setting up real-time price subscription...")
+
     const subscription = supabase
       .channel("price_updates")
       .on(
@@ -135,14 +157,15 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
           schema: "public",
           table: "weekly_prices",
         },
-        () => {
-          console.log("Price update detected, refreshing...")
-          refreshPrice()
+        (payload) => {
+          console.log("Price update detected:", payload)
+          refreshPrice().catch(console.error)
         },
       )
       .subscribe()
 
     return () => {
+      console.log("Unsubscribing from price updates...")
       subscription.unsubscribe()
     }
   }, [user])
