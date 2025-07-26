@@ -27,12 +27,15 @@ interface VestingSlotProps {
     created_at?: string
     updated_at?: string
     start_date?: string | Date
+    start_time?: string | null
+    end_time?: string | null
     progress?: number
+    startDate?: number
   }
   slotIndex: number
   level?: number
-  onVest: (level: number, slotIndex: number, shares: number) => Promise<void>
-  onClaim: (level: number, slotIndex: number) => Promise<void>
+  onVest: (slotIndex: number) => void
+  onClaim: (slotIndex: number) => void
   availableShares?: number
   isProcessing?: boolean
 }
@@ -68,8 +71,10 @@ export function VestingSlot({
 
   // Calculate unlock date for locked slots
   const getUnlockDate = () => {
-    if (slot.start_date) {
-      const startTime = new Date(slot.start_date).getTime()
+    if (slot.start_time || slot.start_date) {
+      const startTime = slot.start_time
+        ? new Date(slot.start_time).getTime()
+        : slot.startDate || (slot.start_date ? new Date(slot.start_date).getTime() : Date.now())
       const unlockTime = startTime + levelInfo.days * 24 * 60 * 60 * 1000
       return new Date(unlockTime)
     }
@@ -90,18 +95,16 @@ export function VestingSlot({
   }
 
   // Handle vest action
-  const handleVest = async () => {
-    // This will open the modal in the parent component
-    if (onVest) {
-      // For now, we'll use a default amount - the modal will handle the actual amount
-      await onVest(slot.level || level, slotIndex, 1)
+  const handleVest = () => {
+    if (onVest && !isProcessing) {
+      onVest(slotIndex)
     }
   }
 
   // Handle claim action
-  const handleClaim = async () => {
-    if (onClaim) {
-      await onClaim(slot.level || level, slotIndex)
+  const handleClaim = () => {
+    if (onClaim && !isProcessing) {
+      onClaim(slotIndex)
     }
   }
 
@@ -130,7 +133,7 @@ export function VestingSlot({
               onMouseLeave={() => setIsHovered(false)}
               disabled={isProcessing || safeNumber(availableShares) <= 0}
               className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
-                isHovered && !isProcessing
+                isHovered && !isProcessing && safeNumber(availableShares) > 0
                   ? "bg-blue-600 text-white transform scale-105"
                   : "bg-blue-500 text-white hover:bg-blue-600"
               } ${isProcessing || safeNumber(availableShares) <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -193,19 +196,17 @@ export function VestingSlot({
       case "claimed":
         return (
           <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <CheckCircle className="w-4 h-4 text-blue-400 mr-2" />
-              <span className="text-blue-400 font-medium text-sm">CLAIMED</span>
+            <div className="text-slate-400 text-sm mb-3">Slot available for new vesting</div>
+            <div className="text-slate-500 text-xs mb-4">
+              Hold period: {levelInfo.name} ({levelInfo.days} days)
             </div>
-            <div className="text-slate-300 text-sm mb-2">{safeToFixed(shares)} shares claimed</div>
-            {unlockDate && <div className="text-slate-400 text-xs mb-3">Claimed: {formatDateTime(unlockDate)}</div>}
             <button
               onClick={handleVest}
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
               disabled={isProcessing || safeNumber(availableShares) <= 0}
               className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-200 ${
-                isHovered && !isProcessing
+                isHovered && !isProcessing && safeNumber(availableShares) > 0
                   ? "bg-blue-600 text-white transform scale-105"
                   : "bg-blue-500 text-white hover:bg-blue-600"
               } ${isProcessing || safeNumber(availableShares) <= 0 ? "opacity-50 cursor-not-allowed" : ""}`}

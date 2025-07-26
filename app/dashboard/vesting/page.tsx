@@ -307,27 +307,20 @@ export default function Vesting() {
       {/* Vesting Slots - Real data from Supabase */}
       <div className="px-6 pb-6">
         <h3 className="text-lg font-medium mb-4 text-slate-100">Your {activeTab} Vesting Slots (6 Available)</h3>
-        {currentLevelSlots.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">
-            <p>No vesting slots available for this level</p>
-            <p className="text-sm">Contact support to set up vesting schedules</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {currentLevelSlots.map((slot, index) => (
-              <VestingSlot
-                key={slot.id}
-                slot={slot}
-                slotIndex={index}
-                level={getActiveLevel()}
-                onVest={handleVestSlot}
-                onClaim={handleClaimSlot}
-                availableShares={holdWalletPreHold}
-                isProcessing={isProcessing}
-              />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {currentLevelSlots.map((slot, index) => (
+            <VestingSlot
+              key={slot.id}
+              slot={slot}
+              slotIndex={index}
+              level={getActiveLevel()}
+              onVest={handleVestSlot}
+              onClaim={handleClaimSlot}
+              availableShares={holdWalletPreHold}
+              isProcessing={isProcessing}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Info Section */}
