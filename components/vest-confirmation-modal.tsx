@@ -13,8 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, Lock, TrendingUp, Gift } from "lucide-react"
+import { Loader2, AlertCircle, Lock, Clock, Info } from "lucide-react"
 
 // Safe number conversion with fallback
 const safeNumber = (value: any): number => {
@@ -35,12 +34,6 @@ interface VestConfirmationModalProps {
   availableShares?: number | string
   level?: number | string
   slotNumber?: number | string
-  levelInfo?: {
-    name?: string
-    multiplier?: number
-    days?: number
-    color?: string
-  }
   isProcessing?: boolean
   loading?: boolean
 }
@@ -52,7 +45,6 @@ export function VestConfirmationModal({
   availableShares = 0,
   level = 1,
   slotNumber = 1,
-  levelInfo,
   isProcessing = false,
   loading = false,
 }: VestConfirmationModalProps) {
@@ -64,17 +56,21 @@ export function VestConfirmationModal({
   const safeLevel = safeNumber(level)
   const safeSlotNumber = safeNumber(slotNumber)
 
-  // Default level info if not provided
-  const defaultLevelInfo = {
-    name: "Bronze",
-    multiplier: 1.1,
-    days: 30,
-    color: "text-amber-600",
+  // Get level information
+  const getLevelInfo = (levelNum: number) => {
+    switch (levelNum) {
+      case 1:
+        return { name: "Retail", days: 5, range: "1-50", color: "text-blue-400" }
+      case 2:
+        return { name: "Small Business", days: 30, range: "51-500", color: "text-green-400" }
+      case 3:
+        return { name: "Corporate", days: 90, range: "501+", color: "text-purple-400" }
+      default:
+        return { name: "Retail", days: 5, range: "1-50", color: "text-blue-400" }
+    }
   }
 
-  const currentLevelInfo = levelInfo || defaultLevelInfo
-  const safeMultiplier = safeNumber(currentLevelInfo.multiplier) || 1.1
-  const safeDays = safeNumber(currentLevelInfo.days) || 30
+  const levelInfo = getLevelInfo(safeLevel)
 
   const handleConfirm = async () => {
     const shareAmount = safeNumber(shares)
@@ -87,6 +83,20 @@ export function VestConfirmationModal({
 
     if (shareAmount > safeAvailableShares) {
       setError(`You only have ${safeToFixed(safeAvailableShares)} shares available`)
+      return
+    }
+
+    // Level-specific validation
+    if (safeLevel === 1 && (shareAmount < 1 || shareAmount > 50)) {
+      setError("Retail level: You can vest between 1-50 shares per slot")
+      return
+    }
+    if (safeLevel === 2 && (shareAmount < 51 || shareAmount > 500)) {
+      setError("Small Business level: You can vest between 51-500 shares per slot")
+      return
+    }
+    if (safeLevel === 3 && shareAmount < 501) {
+      setError("Corporate level: You must vest at least 501 shares per slot")
       return
     }
 
@@ -108,13 +118,19 @@ export function VestConfirmationModal({
   }
 
   const setMaxShares = () => {
-    setShares(safeToFixed(safeAvailableShares))
+    // Set max based on level limits and available shares
+    let maxAllowed = safeAvailableShares
+
+    if (safeLevel === 1) {
+      maxAllowed = Math.min(50, safeAvailableShares)
+    } else if (safeLevel === 2) {
+      maxAllowed = Math.min(500, safeAvailableShares)
+    }
+    // Level 3 has no upper limit
+
+    setShares(safeToFixed(maxAllowed))
     setError("")
   }
-
-  // Calculate expected return
-  const expectedReturn = safeNumber(shares) * safeMultiplier
-  const bonusShares = expectedReturn - safeNumber(shares)
 
   const isLoading = isProcessing || loading
 
@@ -127,8 +143,8 @@ export function VestConfirmationModal({
             Vest Shares
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Vest shares into Level {safeToFixed(safeLevel, 0)}, Slot {safeToFixed(safeSlotNumber, 0)}. Vested shares
-            will be locked for {safeDays} days.
+            Vest shares into Level {safeToFixed(safeLevel, 0)}, Slot {safeToFixed(safeSlotNumber, 0)}. Shares will be
+            locked for {levelInfo.days} days.
           </DialogDescription>
         </DialogHeader>
 
@@ -137,18 +153,15 @@ export function VestConfirmationModal({
           <div className="p-3 bg-slate-700 rounded-lg">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                <Gift className="h-4 w-4 text-amber-500" />
+                <Clock className="h-4 w-4 text-yellow-500" />
                 <span className="font-medium">
-                  Level {safeToFixed(safeLevel, 0)} - {currentLevelInfo.name || "Unknown"}
+                  Level {safeToFixed(safeLevel, 0)} - {levelInfo.name}
                 </span>
               </div>
-              <Badge variant="outline" className="bg-slate-600 text-slate-200">
-                {safeToFixed(safeMultiplier, 1)}x
-              </Badge>
             </div>
             <div className="text-sm text-slate-400 space-y-1">
-              <div>Multiplier: {safeToFixed(safeMultiplier, 1)}x</div>
-              <div>Lock Period: {safeDays} days</div>
+              <div>Lock Period: {levelInfo.days} days</div>
+              <div>Allowed Range: {levelInfo.range} shares per slot</div>
             </div>
           </div>
 
@@ -191,25 +204,25 @@ export function VestConfirmationModal({
             </div>
           </div>
 
-          {/* Expected Return */}
+          {/* Vesting Summary */}
           {safeNumber(shares) > 0 && (
-            <div className="p-3 bg-green-900/30 border border-green-600/30 rounded-lg">
+            <div className="p-3 bg-blue-900/30 border border-blue-600/30 rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-green-400">Expected Return</span>
-                <TrendingUp className="h-4 w-4 text-green-400" />
+                <span className="text-sm text-blue-400">Vesting Summary</span>
+                <Info className="h-4 w-4 text-blue-400" />
               </div>
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Original Amount:</span>
+                  <span className="text-slate-400">Shares to Lock:</span>
                   <span className="text-slate-200">{safeToFixed(shares)} shares</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Bonus ({safeToFixed((safeMultiplier - 1) * 100, 1)}%):</span>
-                  <span className="text-green-400">+{safeToFixed(bonusShares)} shares</span>
+                  <span className="text-slate-400">Lock Period:</span>
+                  <span className="text-slate-200">{levelInfo.days} days</span>
                 </div>
-                <div className="flex justify-between font-semibold border-t border-slate-600 pt-1">
-                  <span className="text-slate-200">Total Return:</span>
-                  <span className="text-green-400">{safeToFixed(expectedReturn)} shares</span>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">After Vesting:</span>
+                  <span className="text-slate-200">{safeToFixed(shares)} shares (same amount)</span>
                 </div>
               </div>
             </div>
@@ -223,11 +236,12 @@ export function VestConfirmationModal({
             </Alert>
           )}
 
-          {/* Warning Info */}
-          <div className="p-3 bg-blue-900/30 border border-blue-600/30 rounded-lg">
-            <div className="text-sm text-blue-400">
-              <strong>Important:</strong> Vested shares will be locked for {safeDays} days and cannot be traded until
-              the vesting period completes. This action cannot be undone.
+          {/* Important Notice */}
+          <div className="p-3 bg-yellow-900/30 border border-yellow-600/30 rounded-lg">
+            <div className="text-sm text-yellow-400">
+              <strong>Important:</strong> Vesting is a mandatory holding period. Your shares will be locked for{" "}
+              {levelInfo.days} days and cannot be traded until the vesting period completes. You will receive the same
+              number of shares back after the lock period ends.
             </div>
           </div>
         </div>
