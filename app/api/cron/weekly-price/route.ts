@@ -1,11 +1,11 @@
-import { createClient } from "@supabase/supabase-js"
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
+import { supabase } from "@/lib/supabase-singleton"
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // This is called by Vercel cron - uses time window check
+    console.log("Weekly price cron endpoint called via GET")
+
+    // Call the cron handler function
     const { data, error } = await supabase.rpc("handle_weekly_price_cron")
 
     if (error) {
@@ -24,15 +24,15 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      cron_result: data,
+      result: data,
       timestamp: new Date().toISOString(),
     })
-  } catch (error) {
-    console.error("Cron execution error:", error)
+  } catch (error: any) {
+    console.error("Weekly price cron error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: error.message || "Internal server error",
         timestamp: new Date().toISOString(),
       },
       { status: 500 },
@@ -40,13 +40,15 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    // Manual trigger - bypasses time checks
+    console.log("Weekly price cron endpoint called via POST (manual trigger)")
+
+    // Call the manual trigger function
     const { data, error } = await supabase.rpc("handle_manual_price_cron")
 
     if (error) {
-      console.error("Manual trigger error:", error)
+      console.error("Manual cron execution error:", error)
       return NextResponse.json(
         {
           success: false,
@@ -57,19 +59,20 @@ export async function POST() {
       )
     }
 
-    console.log("Manual trigger result:", data)
+    console.log("Manual cron execution result:", data)
 
     return NextResponse.json({
       success: true,
-      manual_result: data,
+      result: data,
       timestamp: new Date().toISOString(),
+      note: "Manual trigger executed - time checks bypassed",
     })
-  } catch (error) {
-    console.error("Manual trigger error:", error)
+  } catch (error: any) {
+    console.error("Manual weekly price cron error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: error.message || "Internal server error",
         timestamp: new Date().toISOString(),
       },
       { status: 500 },

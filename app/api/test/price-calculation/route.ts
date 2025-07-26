@@ -1,39 +1,56 @@
-import { createClient } from "@supabase/supabase-js"
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
+import { supabase } from "@/lib/supabase-singleton"
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Manual trigger for testing (bypasses time checks)
-    const { data, error } = await supabase.rpc("handle_manual_price_cron")
+    console.log("Price calculation test requested")
 
-    if (error) {
-      console.error("Test calculation error:", error)
+    // Get current system status
+    const { data: statusData, error: statusError } = await supabase.rpc("get_cron_status")
+
+    if (statusError) {
+      console.error("Status check error:", statusError)
       return NextResponse.json(
         {
           success: false,
-          error: error.message,
+          error: statusError.message,
           timestamp: new Date().toISOString(),
         },
         { status: 500 },
       )
     }
 
-    console.log("Test calculation result:", data)
-
-    return NextResponse.json({
-      success: true,
-      test_result: data,
-      note: "This is a test calculation that bypasses time checks",
-      timestamp: new Date().toISOString(),
+    // Run a simulation with 2% increase
+    const { data: simulationData, error: simulationError } = await supabase.rpc("simulate_price_calculation", {
+      test_percent_change: 2.0,
+      test_description: "API test simulation - 2% increase",
     })
-  } catch (error) {
-    console.error("Test calculation error:", error)
+
+    if (simulationError) {
+      console.error("Simulation error:", simulationError)
+    }
+
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      system_status: statusData,
+      test_simulation: simulationData,
+      available_actions: {
+        manual_calculation: "POST /api/cron/weekly-price",
+        custom_simulation: "POST /api/test/price-calculation with percent_change",
+        system_health: "GET /api/status/price-system",
+      },
+    }
+
+    console.log("Price calculation test result:", response)
+
+    return NextResponse.json(response)
+  } catch (error: any) {
+    console.error("Price calculation test error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: error.message || "Internal server error",
         timestamp: new Date().toISOString(),
       },
       { status: 500 },
@@ -41,51 +58,63 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { percent_change, description } = body
+    const { percent_change = 1.0, description = "Custom API test" } = body
 
-    if (typeof percent_change !== "number") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "percent_change must be a number",
-          timestamp: new Date().toISOString(),
-        },
-        { status: 400 },
-      )
-    }
+    console.log(`Custom price simulation requested: ${percent_change}% change`)
 
-    // Simulate price calculation with custom percentage
-    const { data, error } = await supabase.rpc("simulate_price_calculation", {
-      test_percent_change: percent_change,
-      test_description: description || `Test with ${percent_change}% change`,
+    // Run custom simulation
+    const { data: simulationData, error: simulationError } = await supabase.rpc("simulate_price_calculation", {
+      test_percent_change: Number(percent_change),
+      test_description: description,
     })
 
-    if (error) {
-      console.error("Simulation error:", error)
+    if (simulationError) {
+      console.error("Custom simulation error:", simulationError)
       return NextResponse.json(
         {
           success: false,
-          error: error.message,
+          error: simulationError.message,
           timestamp: new Date().toISOString(),
         },
         { status: 500 },
       )
     }
 
-    return NextResponse.json({
+    // Optionally run actual calculation if requested
+    let calculationResult = null
+    if (body.execute_calculation === true) {
+      console.log("Executing actual price calculation...")
+      const { data: calcData, error: calcError } = await supabase.rpc("handle_manual_price_cron")
+
+      if (calcError) {
+        console.error("Calculation execution error:", calcError)
+      } else {
+        calculationResult = calcData
+      }
+    }
+
+    const response = {
       success: true,
-      simulation: data,
       timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error("Simulation error:", error)
+      simulation_result: simulationData,
+      calculation_result: calculationResult,
+      note: calculationResult
+        ? "Both simulation and actual calculation executed"
+        : 'Simulation only - add "execute_calculation": true to run actual calculation',
+    }
+
+    console.log("Custom price simulation result:", response)
+
+    return NextResponse.json(response)
+  } catch (error: any) {
+    console.error("Custom price simulation error:", error)
     return NextResponse.json(
       {
         success: false,
-        error: "Internal server error",
+        error: error.message || "Internal server error",
         timestamp: new Date().toISOString(),
       },
       { status: 500 },
