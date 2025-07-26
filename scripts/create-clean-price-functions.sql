@@ -40,7 +40,31 @@ BEGIN
 END;
 $$;
 
--- 3️⃣ Clean validate_jse200_data function
+-- 3️⃣ Fixed get_price_history function (corrected table reference)
+CREATE OR REPLACE FUNCTION get_price_history(days_back INTEGER DEFAULT 30)
+RETURNS TABLE(
+  date TEXT,
+  price NUMERIC,
+  j200_growth NUMERIC,
+  price_change NUMERIC
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    wp.effective_date::TEXT as date,
+    wp.final_price as price,
+    COALESCE(wp.j200_growth, 0) as j200_growth,
+    COALESCE(wp.price_change, 0) as price_change
+  FROM weekly_prices wp
+  WHERE wp.effective_date >= (CURRENT_DATE - INTERVAL '1 day' * days_back)
+  ORDER BY wp.effective_date DESC;
+END;
+$$;
+
+-- 4️⃣ Clean validate_jse200_data function
 CREATE OR REPLACE FUNCTION validate_jse200_data()
 RETURNS json
 LANGUAGE plpgsql
@@ -85,7 +109,7 @@ BEGIN
 END;
 $$;
 
--- 4️⃣ Clean get_price_calculation_summary function
+-- 5️⃣ Clean get_price_calculation_summary function
 CREATE OR REPLACE FUNCTION get_price_calculation_summary()
 RETURNS json
 LANGUAGE plpgsql
@@ -125,7 +149,7 @@ BEGIN
 END;
 $$;
 
--- 5️⃣ Clean get_price_system_health function
+-- 6️⃣ Clean get_price_system_health function
 CREATE OR REPLACE FUNCTION get_price_system_health()
 RETURNS json
 LANGUAGE plpgsql
@@ -166,7 +190,7 @@ BEGIN
 END;
 $$;
 
--- 6️⃣ Clean simulate_price_calculation function
+-- 7️⃣ Clean simulate_price_calculation function
 CREATE OR REPLACE FUNCTION simulate_price_calculation(
   test_percent_change NUMERIC,
   test_description TEXT DEFAULT 'Test simulation'
@@ -201,7 +225,7 @@ BEGIN
 END;
 $$;
 
--- 7️⃣ Clean check_price_data_consistency function
+-- 8️⃣ Clean check_price_data_consistency function
 CREATE OR REPLACE FUNCTION check_price_data_consistency()
 RETURNS json
 LANGUAGE plpgsql
@@ -264,7 +288,7 @@ BEGIN
 END;
 $$;
 
--- 8️⃣ Clean cron functions (no HODL references)
+-- 9️⃣ Clean cron functions (no HODL references)
 CREATE OR REPLACE FUNCTION handle_weekly_price_cron()
 RETURNS json
 LANGUAGE plpgsql
@@ -380,7 +404,7 @@ BEGIN
 END;
 $$;
 
--- 9️⃣ Add clean comments
+-- 🔟 Add clean comments
 COMMENT ON FUNCTION get_price_history(INTEGER) IS 'Returns price history based on JSE200 data only - HODL functionality removed';
 COMMENT ON FUNCTION get_latest_share_price() IS 'Returns the most recent share price - no HODL dependencies';
 COMMENT ON FUNCTION get_current_share_price() IS 'Returns current share price - simplified without HODL';

@@ -1,6 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { usePrice } from "@/contexts/price-context"
 
@@ -9,13 +10,15 @@ export default function SharePriceCard() {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="w-full">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">Loading...</div>
-          <p className="text-xs text-muted-foreground">Fetching latest price data</p>
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          </div>
         </CardContent>
       </Card>
     )
@@ -23,69 +26,71 @@ export default function SharePriceCard() {
 
   if (error) {
     return (
-      <Card>
+      <Card className="w-full">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold text-red-500">Error</div>
-          <p className="text-xs text-muted-foreground">{error}</p>
+          <div className="text-red-500 text-sm">Error loading price data</div>
+          <div className="text-2xl font-bold text-gray-400">N$ 108.20</div>
         </CardContent>
       </Card>
     )
   }
 
-  const { currentPrice, priceChange, lastUpdated } = priceData
-
-  const getTrendIcon = () => {
-    if (priceChange > 0) return <TrendingUp className="h-4 w-4 text-green-500" />
-    if (priceChange < 0) return <TrendingDown className="h-4 w-4 text-red-500" />
-    return <Minus className="h-4 w-4 text-gray-500" />
-  }
-
-  const getTrendColor = () => {
-    if (priceChange > 0) return "text-green-500"
-    if (priceChange < 0) return "text-red-500"
-    return "text-gray-500"
-  }
-
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("en-ZA", {
+    return new Intl.NumberFormat("en-NA", {
       style: "currency",
-      currency: "ZAR",
+      currency: "NAD",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(price)
   }
 
   const formatChange = (change: number) => {
-    const sign = change >= 0 ? "+" : ""
-    return `${sign}${formatPrice(change)}`
+    const sign = change > 0 ? "+" : ""
+    return `${sign}${change.toFixed(2)}%`
   }
 
-  const formatLastUpdated = (date: Date | null) => {
-    if (!date) return "No recent updates"
+  const getChangeIcon = (change: number) => {
+    if (change > 0) return <TrendingUp className="h-4 w-4" />
+    if (change < 0) return <TrendingDown className="h-4 w-4" />
+    return <Minus className="h-4 w-4" />
+  }
 
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+  const getChangeColor = (change: number) => {
+    if (change > 0) return "text-green-600"
+    if (change < 0) return "text-red-600"
+    return "text-gray-600"
+  }
 
-    if (diffInHours < 1) return "Updated recently"
-    if (diffInHours < 24) return `Updated ${diffInHours}h ago`
-
-    const diffInDays = Math.floor(diffInHours / 24)
-    return `Updated ${diffInDays}d ago`
+  const getBadgeVariant = (change: number) => {
+    if (change > 0) return "default" // Green
+    if (change < 0) return "destructive" // Red
+    return "secondary" // Gray
   }
 
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
-        {getTrendIcon()}
+        <Badge variant={getBadgeVariant(priceData.priceChange)} className="flex items-center gap-1">
+          {getChangeIcon(priceData.priceChange)}
+          {formatChange(priceData.priceChange)}
+        </Badge>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{formatPrice(currentPrice)}</div>
-        <div className={`text-xs ${getTrendColor()}`}>{formatChange(priceChange)} from last week</div>
-        <p className="text-xs text-muted-foreground mt-1">{formatLastUpdated(lastUpdated)}</p>
+        <div className="text-2xl font-bold">{formatPrice(priceData.currentPrice)}</div>
+        <div className="flex items-center gap-2 mt-2">
+          <span className={`text-sm ${getChangeColor(priceData.priceChange)}`}>
+            Weekly change: {formatChange(priceData.priceChange)}
+          </span>
+        </div>
+        {priceData.lastUpdated && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Last updated: {priceData.lastUpdated.toLocaleDateString()} at {priceData.lastUpdated.toLocaleTimeString()}
+          </p>
+        )}
       </CardContent>
     </Card>
   )

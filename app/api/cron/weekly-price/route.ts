@@ -5,7 +5,7 @@ const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SE
 
 export async function GET() {
   try {
-    // This is called by Vercel cron - only executes on Monday 09:10-09:20
+    // This is called by Vercel cron - uses time window check
     const { data, error } = await supabase.rpc("handle_weekly_price_cron")
 
     if (error) {
@@ -22,14 +22,13 @@ export async function GET() {
 
     console.log("Cron execution result:", data)
 
-    // Return success response
     return NextResponse.json({
       success: true,
       cron_result: data,
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("Cron function error:", error)
+    console.error("Cron execution error:", error)
     return NextResponse.json(
       {
         success: false,
@@ -43,11 +42,11 @@ export async function GET() {
 
 export async function POST() {
   try {
-    // Manual trigger for testing (bypasses time checks)
+    // Manual trigger - bypasses time checks
     const { data, error } = await supabase.rpc("handle_manual_price_cron")
 
     if (error) {
-      console.error("Manual cron execution error:", error)
+      console.error("Manual trigger error:", error)
       return NextResponse.json(
         {
           success: false,
@@ -58,16 +57,15 @@ export async function POST() {
       )
     }
 
-    console.log("Manual cron execution result:", data)
+    console.log("Manual trigger result:", data)
 
     return NextResponse.json({
       success: true,
       manual_result: data,
-      note: "Manual execution bypassed time checks",
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("Manual cron function error:", error)
+    console.error("Manual trigger error:", error)
     return NextResponse.json(
       {
         success: false,
