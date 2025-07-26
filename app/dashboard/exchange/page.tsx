@@ -17,9 +17,8 @@ const formatCurrency = (value: number): string => {
 }
 
 const formatShares = (value: number): string => {
-  return Number(value)
-    .toFixed(4)
-    .replace(/\.?0+$/, "")
+  // Always format to 4 decimal places for fractional platform
+  return Number(value).toFixed(4)
 }
 
 export default function ExchangePage() {
@@ -139,7 +138,7 @@ export default function ExchangePage() {
     }
   }
 
-  // Helper function to determine correct status based on fill percentage
+  // Helper function to determine correct status based on actual completion
   const getCorrectStatus = (order: any, isUserOrder = false) => {
     let fillPercentage = 0
 
@@ -148,20 +147,30 @@ export default function ExchangePage() {
       const amountFilled = Number(order.amount_filled) || 0
       const totalAmount = Number(order.total_amount) || 0
       fillPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
+
+      // Buy order status logic
+      if (fillPercentage >= 100) {
+        return isUserOrder ? "filled" : "filled" // Buy orders get "filled" when complete
+      } else if (fillPercentage > 0) {
+        return "partial"
+      } else {
+        return "pending"
+      }
     } else if ("shares_available" in order && order.shares_available) {
       // Sell order - use shares_remaining vs shares_available
       const sharesRemaining = Number(order.shares_remaining) || 0
       const sharesAvailable = Number(order.shares_available) || 0
       const sharesSold = sharesAvailable - sharesRemaining
       fillPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
-    }
 
-    if (fillPercentage === 0) {
-      return "total_amount" in order ? "pending" : "available"
-    } else if (fillPercentage > 0 && fillPercentage < 100) {
-      return "partial"
-    } else if (fillPercentage >= 100) {
-      return isUserOrder ? "completed" : "filled"
+      // Sell order status logic
+      if (fillPercentage >= 100) {
+        return isUserOrder ? "matched" : "matched" // Sell orders get "matched" when complete
+      } else if (fillPercentage > 0) {
+        return "partial"
+      } else {
+        return "available"
+      }
     }
 
     return order.status // fallback to original status
@@ -173,10 +182,10 @@ export default function ExchangePage() {
     const variants = {
       pending: "secondary",
       partial: "outline",
-      completed: "default",
       filled: "default",
-      available: "default",
       matched: "default",
+      available: "default",
+      completed: "default",
       expired: "destructive",
       cancelled: "destructive",
     } as const
@@ -184,10 +193,10 @@ export default function ExchangePage() {
     const colors = {
       pending: "bg-yellow-500",
       partial: "bg-orange-500",
-      completed: "bg-green-500",
-      filled: "bg-blue-500",
+      filled: "bg-green-500", // Buy orders - green when filled
+      matched: "bg-blue-500", // Sell orders - blue when matched
       available: "bg-green-500",
-      matched: "bg-blue-500",
+      completed: "bg-green-500",
       expired: "bg-red-500",
       cancelled: "bg-gray-500",
     } as const
