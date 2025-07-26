@@ -10,6 +10,18 @@ import { SlidingNotification } from "@/components/sliding-notification"
 import { useNotification } from "@/hooks/use-notification"
 import { AlertCircle, Clock, Loader2 } from "lucide-react"
 
+// Safe number conversion with fallback
+const safeNumber = (value: any): number => {
+  const num = Number(value)
+  return isNaN(num) ? 0 : num
+}
+
+// Safe toFixed with fallback
+const safeToFixed = (value: any, decimals = 4): string => {
+  const num = safeNumber(value)
+  return num.toFixed(decimals)
+}
+
 export default function Vesting() {
   const [activeTab, setActiveTab] = useState("Retail")
   const [vestError, setVestError] = useState("")
@@ -86,7 +98,7 @@ export default function Vesting() {
       await claimShares(currentLevel, slotIndex)
 
       const levelName = VESTING_LEVELS[currentLevel as keyof typeof VESTING_LEVELS].name
-      const message = `Successfully claimed ${slot.amount.toFixed(4)} shares from ${levelName} Slot ${slotIndex + 1}!`
+      const message = `Successfully claimed ${safeToFixed(slot.amount)} shares from ${levelName} Slot ${slotIndex + 1}!`
 
       showNotification("success", message)
     } catch (error: any) {
@@ -125,13 +137,13 @@ export default function Vesting() {
           from_wallet: "hold_pre",
           to_wallet: "vesting_locked",
           status: "completed",
-          description: `Vested ${amount.toFixed(4)} shares in ${levelName} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
+          description: `Vested ${safeToFixed(amount)} shares in ${levelName} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
         })
       }
 
       // Show success notification
       const levelName = VESTING_LEVELS[selectedLevel as keyof typeof VESTING_LEVELS].name
-      const message = `Successfully vested ${amount.toFixed(4)} shares in ${levelName} Slot ${selectedSlotIndex + 1}!`
+      const message = `Successfully vested ${safeToFixed(amount)} shares in ${levelName} Slot ${selectedSlotIndex + 1}!`
       showNotification("success", message)
     } catch (error: any) {
       console.error("Vest failed:", error)
@@ -207,22 +219,22 @@ export default function Vesting() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <div className="text-slate-400">Available (Pre-Hold)</div>
-              <div className="text-xl font-bold text-blue-400">{holdWalletPreHold.toFixed(4)}</div>
+              <div className="text-xl font-bold text-blue-400">{safeToFixed(holdWalletPreHold)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Currently Vesting</div>
-              <div className="text-xl font-bold text-yellow-400">{totalVesting.toFixed(4)}</div>
+              <div className="text-xl font-bold text-yellow-400">{safeToFixed(totalVesting)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Ready to Claim</div>
-              <div className="text-xl font-bold text-green-400">{totalClaimable.toFixed(4)}</div>
+              <div className="text-xl font-bold text-green-400">{safeToFixed(totalClaimable)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
             <div>
               <div className="text-slate-400">Post-Hold</div>
-              <div className="text-xl font-bold text-purple-400">{holdWalletPostHold.toFixed(4)}</div>
+              <div className="text-xl font-bold text-purple-400">{safeToFixed(holdWalletPostHold)}</div>
               <div className="text-xs text-slate-500">shares</div>
             </div>
           </div>
@@ -307,8 +319,11 @@ export default function Vesting() {
                 key={slot.id}
                 slot={slot}
                 slotIndex={index}
+                level={getActiveLevel()}
                 onVest={handleVestSlot}
                 onClaim={handleClaimSlot}
+                availableShares={holdWalletPreHold}
+                isProcessing={isProcessing}
               />
             ))}
           </div>
