@@ -1,75 +1,73 @@
 import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Alert } from "@/components/ui/alert"
+import { Card } from "@/components/ui/card"
 
 export function ExchangePageSkeleton() {
   return (
-    <div className="p-6 space-y-6 bg-gray-900 min-h-screen animate-pulse">
-      <Alert className="bg-slate-800/50 border-slate-700">
-        <Skeleton className="h-5 w-full" />
-      </Alert>
+    <div className="h-[calc(100vh-130px)] bg-gray-900 overflow-auto p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <Skeleton className="h-8 w-48 mb-2 bg-slate-700" />
+        <Skeleton className="h-4 w-80 bg-slate-700" />
+      </div>
 
-      <div className="grid grid-cols-4 gap-6">
-        {/* Share Price Skeleton */}
-        <div className="col-span-1">
-          <Card className="bg-slate-800/50 border-slate-700">
-            <CardHeader className="pb-2">
-              <Skeleton className="h-4 w-3/4" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-1/2 mb-1" />
-              <Skeleton className="h-3 w-1/4" />
-            </CardContent>
-          </Card>
+      {/* Price Card */}
+      <Card className="bg-slate-800/50 border-slate-700 p-4">
+        <Skeleton className="h-6 w-32 mb-3 bg-slate-700" />
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-32 bg-slate-700" />
+          <Skeleton className="h-6 w-24 bg-slate-700" />
         </div>
+      </Card>
 
-        {/* Wallet Cards Skeleton */}
-        <div className="col-span-3 grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i} className="bg-slate-800/50 border-slate-700">
-              <CardHeader className="pb-2">
-                <Skeleton className="h-4 w-3/4" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-6 w-1/2" />
-                <div className="space-y-2">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
+      {/* Buy/Sell Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Buy Card */}
+        <Card className="bg-slate-800/50 border-slate-700 p-4">
+          <Skeleton className="h-6 w-24 mb-4 bg-slate-700" />
+          <div className="space-y-4">
+            <div>
+              <Skeleton className="h-4 w-20 mb-2 bg-slate-700" />
+              <Skeleton className="h-10 w-full bg-slate-700" />
+            </div>
+            <div>
+              <Skeleton className="h-4 w-24 mb-2 bg-slate-700" />
+              <Skeleton className="h-6 w-32 bg-slate-700" />
+            </div>
+            <Skeleton className="h-10 w-full bg-slate-700" />
+          </div>
+        </Card>
+
+        {/* Sell Card */}
+        <Card className="bg-slate-800/50 border-slate-700 p-4">
+          <Skeleton className="h-6 w-24 mb-4 bg-slate-700" />
+          <div className="space-y-4">
+            <div>
+              <Skeleton className="h-4 w-20 mb-2 bg-slate-700" />
+              <Skeleton className="h-10 w-full bg-slate-700" />
+            </div>
+            <div>
+              <Skeleton className="h-4 w-24 mb-2 bg-slate-700" />
+              <Skeleton className="h-6 w-32 bg-slate-700" />
+            </div>
+            <Skeleton className="h-10 w-full bg-slate-700" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Orders Tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {Array.from({ length: 2 }).map((_, cardIndex) => (
+          <Card key={cardIndex} className="bg-slate-800/50 border-slate-700 p-4">
+            <Skeleton className="h-6 w-32 mb-4 bg-slate-700" />
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex justify-between items-center">
+                  <Skeleton className="h-4 w-20 bg-slate-700" />
+                  <Skeleton className="h-4 w-16 bg-slate-700" />
+                  <Skeleton className="h-4 w-24 bg-slate-700" />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Order Books Skeleton */}
-      <div className="grid grid-cols-2 gap-6">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Card key={i} className="bg-slate-800/50 border-slate-700">
-            <CardHeader>
-              <Skeleton className="h-6 w-3/5" />
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {Array.from({ length: 3 }).map((_, j) => (
-                <Skeleton key={j} className="h-10 w-full rounded-md" />
               ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* User Orders Skeleton */}
-      <div className="grid grid-cols-2 gap-6">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <Card key={i} className="bg-slate-800/50 border-slate-700">
-            <CardHeader>
-              <Skeleton className="h-6 w-3/5" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {Array.from({ length: 2 }).map((_, j) => (
-                <Skeleton key={j} className="h-20 w-full rounded-lg" />
-              ))}
-            </CardContent>
+            </div>
           </Card>
         ))}
       </div>
