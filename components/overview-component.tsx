@@ -1,461 +1,370 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Wallet,
-  TrendingUp,
-  DollarSign,
-  Clock,
-  CheckCircle,
-  Lock,
-  Gift,
-  Calendar,
-  BarChart3,
-  PieChart,
-  Activity,
-} from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
+import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/contexts/wallet-context"
-import { useVesting } from "@/contexts/vesting-context"
+import { usePrice } from "@/contexts/price-context"
+import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
+import { TrendingUp, TrendingDown, Wallet, PiggyBank, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 
-// Safe number conversion with fallback
-const safeNumber = (value: any): number => {
-  const num = Number(value)
-  return isNaN(num) ? 0 : num
-}
-
-// Safe toFixed with fallback
-const safeToFixed = (value: any, decimals = 2): string => {
-  const num = safeNumber(value)
-  return num.toFixed(decimals)
-}
-
-// Safe percentage calculation
-const safePercentage = (value: any, total: any): number => {
-  const numValue = safeNumber(value)
-  const numTotal = safeNumber(total)
-  if (numTotal === 0) return 0
-  return Math.min(Math.max((numValue / numTotal) * 100, 0), 100)
+interface VestingStats {
+  totalLockedShares: number
+  totalClaimableShares: number
+  totalClaimedShares: number
+  totalShares: number
+  averageSharesPerUser: number
 }
 
 export function OverviewComponent() {
   const { user } = useAuth()
-  const { walletBalances, loading: walletLoading } = useWallet()
-  const { getAllVestingSlots, loading: vestingLoading } = useVesting()
+  const {
+    buyWalletBalance = 0,
+    holdWalletPreHold = 0,
+    holdWalletPostHold = 0,
+    cashoutWalletBalance = 0,
+    loading: walletLoading,
+    error: walletError,
+  } = useWallet()
 
-  const [portfolioData, setPortfolioData] = useState({
-    totalValue: 0,
-    availableShares: 0,
-    lockedShares: 0,
-    claimableShares: 0,
-    totalEarnings: 0,
-    monthlyGrowth: 0,
+  const { sharePrice = 100, loading: priceLoading, error: priceError } = usePrice()
+
+  const [stats, setStats] = useState<VestingStats>({
+    totalLockedShares: 0,
+    totalClaimableShares: 0,
+    totalClaimedShares: 0,
+    totalShares: 0,
+    averageSharesPerUser: 0,
   })
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsError, setStatsError] = useState<string | null>(null)
 
-  // Calculate portfolio statistics
+  // Helper function to safely convert to number
+  const safeNumber = (value: any): number => {
+    const num = Number(value)
+    return isNaN(num) ? 0 : num
+  }
+
+  // Helper function to safely format numbers
+  const safeToFixed = (value: any, decimals = 2): string => {
+    const num = safeNumber(value)
+    return num.toFixed(decimals)
+  }
+
+  // Fetch vesting statistics
+  const fetchStats = async () => {
+    if (!user) return
+
+    try {
+      setStatsLoading(true)
+      setStatsError(null)
+
+      console.log("📊 Fetching vesting statistics...")
+
+      // Fetch user's vesting data using the correct column name 'amount'
+      const { data: vestingData, error: vestingError } = await supabase
+        .from("pivot_vesting")
+        .select("amount, status")
+        .eq("user_uuid", user.id)
+
+      if (vestingError) {
+        console.error("Error fetching vesting data:", vestingError)
+        throw new Error(`Error fetching vesting data: ${vestingError.message}`)
+      }
+
+      // Process vesting data with safe number conversion
+      const processedData = (vestingData || []).map((item) => ({
+        ...item,
+        amount: safeNumber(item.amount),
+      }))
+
+      // Calculate statistics
+      const totalLockedShares = processedData
+        .filter((item) => item.status === "locked")
+        .reduce((sum, item) => sum + item.amount, 0)
+
+      const totalClaimableShares = processedData
+        .filter((item) => item.status === "claimable" || item.status === "claim")
+        .reduce((sum, item) => sum + item.amount, 0)
+
+      const totalClaimedShares = processedData
+        .filter((item) => item.status === "claimed")
+        .reduce((sum, item) => sum + item.amount, 0)
+
+      const totalShares = totalLockedShares + totalClaimableShares + totalClaimedShares
+
+      setStats({
+        totalLockedShares,
+        totalClaimableShares,
+        totalClaimedShares,
+        totalShares,
+        averageSharesPerUser: totalShares > 0 ? totalShares / 1 : 0, // Single user for now
+      })
+
+      console.log("✅ Vesting statistics loaded:", {
+        totalLockedShares,
+        totalClaimableShares,
+        totalClaimedShares,
+        totalShares,
+      })
+    } catch (err: any) {
+      console.error("❌ Error fetching vesting statistics:", err)
+      setStatsError(err.message || "Failed to fetch vesting statistics")
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  // Load stats when component mounts or user changes
   useEffect(() => {
-    if (!walletBalances) return
-
-    const vestingSlots = getAllVestingSlots()
-
-    // Safe extraction of wallet data
-    const availableShares = safeNumber(walletBalances.shares)
-    const cashBalance = safeNumber(walletBalances.cash)
-
-    // Calculate vesting statistics
-    const lockedShares = vestingSlots
-      .filter((slot) => slot.status === "locked")
-      .reduce((sum, slot) => sum + safeNumber(slot.amount), 0)
-
-    const claimableShares = vestingSlots
-      .filter((slot) => slot.status === "claim")
-      .reduce((sum, slot) => sum + safeNumber(slot.amount), 0)
-
-    // Estimate total value (assuming $1 per share for demo)
-    const totalShares = availableShares + lockedShares + claimableShares
-    const totalValue = totalShares + cashBalance
-
-    // Calculate estimated earnings from vesting multipliers
-    const totalEarnings = vestingSlots
-      .filter((slot) => slot.status === "claim" || slot.status === "claimed")
-      .reduce((sum, slot) => {
-        const originalAmount = safeNumber(slot.amount)
-        const multiplier = getVestingMultiplier(safeNumber(slot.level))
-        return sum + (originalAmount * multiplier - originalAmount)
-      }, 0)
-
-    // Mock monthly growth (in real app, this would come from historical data)
-    const monthlyGrowth = 12.5
-
-    setPortfolioData({
-      totalValue,
-      availableShares,
-      lockedShares,
-      claimableShares,
-      totalEarnings,
-      monthlyGrowth,
-    })
-  }, [walletBalances, getAllVestingSlots])
-
-  // Get vesting multiplier for level
-  const getVestingMultiplier = (level: number): number => {
-    const multipliers: Record<number, number> = {
-      1: 1.1,
-      2: 1.25,
-      3: 1.5,
-      4: 2.0,
-      5: 3.0,
+    if (user) {
+      fetchStats()
     }
-    return multipliers[level] || 1.0
-  }
+  }, [user, buyWalletBalance, holdWalletPreHold, holdWalletPostHold, cashoutWalletBalance])
 
-  // Get level info
-  const getLevelInfo = (level: number) => {
-    const levelMap: Record<number, { name: string; color: string; icon: any }> = {
-      1: { name: "Bronze", color: "text-amber-600", icon: Gift },
-      2: { name: "Silver", color: "text-gray-600", icon: TrendingUp },
-      3: { name: "Gold", color: "text-yellow-600", icon: CheckCircle },
-      4: { name: "Platinum", color: "text-purple-600", icon: Lock },
-      5: { name: "Diamond", color: "text-blue-600", icon: Calendar },
-    }
-    return levelMap[level] || { name: "Unknown", color: "text-gray-500", icon: Clock }
-  }
+  // Calculate totals with safe number conversion
+  const totalBalance = safeNumber(buyWalletBalance) + safeNumber(cashoutWalletBalance)
+  const portfolioValue = safeNumber(holdWalletPreHold) + safeNumber(holdWalletPostHold)
+  const totalPortfolioValue = portfolioValue * safeNumber(sharePrice)
 
-  if (walletLoading || vestingLoading) {
+  // Calculate distribution percentages
+  const totalWalletValue = totalBalance + totalPortfolioValue
+  const buyPercentage = totalWalletValue > 0 ? (safeNumber(buyWalletBalance) / totalWalletValue) * 100 : 0
+  const holdPrePercentage =
+    totalWalletValue > 0 ? ((safeNumber(holdWalletPreHold) * safeNumber(sharePrice)) / totalWalletValue) * 100 : 0
+  const holdPostPercentage =
+    totalWalletValue > 0 ? ((safeNumber(holdWalletPostHold) * safeNumber(sharePrice)) / totalWalletValue) * 100 : 0
+  const cashoutPercentage = totalWalletValue > 0 ? (safeNumber(cashoutWalletBalance) / totalWalletValue) * 100 : 0
+
+  const loading = walletLoading || priceLoading || statsLoading
+  const error = walletError || priceError || statsError
+
+  if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader className="pb-2">
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-gray-200 rounded w-1/2 mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-full"></div>
-              </CardContent>
-            </Card>
-          ))}
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <span className="ml-2 text-slate-600">Loading overview data...</span>
         </div>
       </div>
     )
   }
 
-  const vestingSlots = getAllVestingSlots()
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-6">
+            <div className="flex items-center text-red-600">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <span className="font-medium">Error loading overview data</span>
+            </div>
+            <p className="text-red-600 text-sm mt-1">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Portfolio Summary Cards */}
+    <div className="p-6 space-y-6">
+      {/* Portfolio Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Portfolio Value */}
-        <Card>
+        {/* Total Balance */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Portfolio Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-slate-300">Total Cash Balance</CardTitle>
+            <Wallet className="h-4 w-4 text-slate-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${safeToFixed(portfolioData.totalValue, 2)}</div>
-            <p className="text-xs text-muted-foreground">
-              <span className="text-green-600 flex items-center">
-                <TrendingUp className="h-3 w-3 mr-1" />+{safeToFixed(portfolioData.monthlyGrowth, 1)}% this month
-              </span>
+            <div className="text-2xl font-bold text-slate-100">N${safeToFixed(totalBalance, 2)}</div>
+            <p className="text-xs text-slate-400">Buy + Cashout wallets</p>
+          </CardContent>
+        </Card>
+
+        {/* Portfolio Value */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-300">Portfolio Value</CardTitle>
+            <TrendingUp className="h-4 w-4 text-slate-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-100">N${safeToFixed(totalPortfolioValue, 2)}</div>
+            <p className="text-xs text-slate-400">
+              {safeToFixed(portfolioValue, 4)} shares @ N${safeToFixed(sharePrice, 2)}
             </p>
           </CardContent>
         </Card>
 
-        {/* Available Shares */}
-        <Card>
+        {/* Current Share Price */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available Shares</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-slate-300">Share Price</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{safeToFixed(portfolioData.availableShares, 4)}</div>
-            <p className="text-xs text-muted-foreground">Ready for trading or vesting</p>
+            <div className="text-2xl font-bold text-green-600">N${safeToFixed(sharePrice, 2)}</div>
+            <p className="text-xs text-slate-400">per share</p>
           </CardContent>
         </Card>
 
-        {/* Locked Shares */}
-        <Card>
+        {/* Total Vesting */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Locked Shares</CardTitle>
-            <Lock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-slate-300">Total Vesting</CardTitle>
+            <PiggyBank className="h-4 w-4 text-slate-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{safeToFixed(portfolioData.lockedShares, 4)}</div>
-            <p className="text-xs text-muted-foreground">Currently vesting</p>
-          </CardContent>
-        </Card>
-
-        {/* Claimable Shares */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Claimable Shares</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{safeToFixed(portfolioData.claimableShares, 4)}</div>
-            <p className="text-xs text-muted-foreground">Ready to claim</p>
+            <div className="text-2xl font-bold text-slate-100">{safeToFixed(stats.totalShares, 0)}</div>
+            <p className="text-xs text-slate-400">shares across all levels</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Detailed Analytics */}
-      <Tabs defaultValue="portfolio" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="portfolio">Portfolio Breakdown</TabsTrigger>
-          <TabsTrigger value="vesting">Vesting Overview</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-        </TabsList>
+      {/* Wallet Distribution */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-slate-100">Wallet Distribution</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Buy Wallet */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium flex items-center text-slate-300">
+                  <TrendingUp className="h-4 w-4 mr-2 text-blue-600" />
+                  Buy Wallet
+                </span>
+                <span className="text-sm text-slate-400">{safeToFixed(buyPercentage, 1)}%</span>
+              </div>
+              <div className="text-lg font-semibold text-slate-100">N${safeToFixed(buyWalletBalance, 2)}</div>
+              <Progress value={buyPercentage} className="h-2" />
+            </div>
 
-        {/* Portfolio Breakdown */}
-        <TabsContent value="portfolio" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Asset Distribution */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <PieChart className="h-5 w-5 mr-2" />
-                  Asset Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Available Shares</span>
-                    <span className="font-medium">{safeToFixed(portfolioData.availableShares, 2)}</span>
-                  </div>
-                  <Progress
-                    value={safePercentage(portfolioData.availableShares, portfolioData.totalValue)}
-                    className="h-2"
-                  />
-                </div>
+            {/* Hold Wallet (Pre-Hold) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium flex items-center text-slate-300">
+                  <Clock className="h-4 w-4 mr-2 text-yellow-600" />
+                  Pre-Hold
+                </span>
+                <span className="text-sm text-slate-400">{safeToFixed(holdPrePercentage, 1)}%</span>
+              </div>
+              <div className="text-lg font-semibold text-slate-100">{safeToFixed(holdWalletPreHold, 4)} shares</div>
+              <Progress value={holdPrePercentage} className="h-2 [&>div]:bg-yellow-500" />
+            </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Locked Shares</span>
-                    <span className="font-medium">{safeToFixed(portfolioData.lockedShares, 2)}</span>
-                  </div>
-                  <Progress
-                    value={safePercentage(portfolioData.lockedShares, portfolioData.totalValue)}
-                    className="h-2"
-                  />
-                </div>
+            {/* Hold Wallet (Post-Hold) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium flex items-center text-slate-300">
+                  <TrendingDown className="h-4 w-4 mr-2 text-green-600" />
+                  Post-Hold
+                </span>
+                <span className="text-sm text-slate-400">{safeToFixed(holdPostPercentage, 1)}%</span>
+              </div>
+              <div className="text-lg font-semibold text-slate-100">{safeToFixed(holdWalletPostHold, 4)} shares</div>
+              <Progress value={holdPostPercentage} className="h-2 [&>div]:bg-green-500" />
+            </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Claimable Shares</span>
-                    <span className="font-medium text-green-600">{safeToFixed(portfolioData.claimableShares, 2)}</span>
-                  </div>
-                  <Progress
-                    value={safePercentage(portfolioData.claimableShares, portfolioData.totalValue)}
-                    className="h-2"
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Cash Balance</span>
-                    <span className="font-medium">${safeToFixed(walletBalances?.cash, 2)}</span>
-                  </div>
-                  <Progress value={safePercentage(walletBalances?.cash, portfolioData.totalValue)} className="h-2" />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Activity className="h-5 w-5 mr-2" />
-                  Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {vestingSlots.slice(0, 5).map((slot, index) => {
-                    const levelInfo = getLevelInfo(safeNumber(slot.level))
-                    const IconComponent = levelInfo.icon
-
-                    return (
-                      <div key={slot.id || index} className="flex items-center space-x-3">
-                        <div className={`p-2 rounded-full bg-gray-100`}>
-                          <IconComponent className={`h-4 w-4 ${levelInfo.color}`} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            Level {safeNumber(slot.level)} - {levelInfo.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {safeToFixed(slot.amount, 4)} shares • {slot.status}
-                          </p>
-                        </div>
-                        <Badge variant={slot.status === "claim" ? "default" : "secondary"}>{slot.status}</Badge>
-                      </div>
-                    )
-                  })}
-
-                  {vestingSlots.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>No vesting activity yet</p>
-                      <p className="text-xs">Start vesting to see your activity here</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            {/* Cashout Wallet */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium flex items-center text-slate-300">
+                  <Wallet className="h-4 w-4 mr-2 text-orange-600" />
+                  Cashout
+                </span>
+                <span className="text-sm text-slate-400">{safeToFixed(cashoutPercentage, 1)}%</span>
+              </div>
+              <div className="text-lg font-semibold text-slate-100">N${safeToFixed(cashoutWalletBalance, 2)}</div>
+              <Progress value={cashoutPercentage} className="h-2 [&>div]:bg-orange-500" />
+            </div>
           </div>
-        </TabsContent>
+        </CardContent>
+      </Card>
 
-        {/* Vesting Overview */}
-        <TabsContent value="vesting" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Vesting Statistics */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Vesting Statistics</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Total Slots</span>
-                  <span className="font-bold">{vestingSlots.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Active Vesting</span>
-                  <span className="font-bold text-yellow-600">
-                    {vestingSlots.filter((s) => s.status === "locked").length}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Ready to Claim</span>
-                  <span className="font-bold text-green-600">
-                    {vestingSlots.filter((s) => s.status === "claim").length}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Total Earnings</span>
-                  <span className="font-bold text-blue-600">{safeToFixed(portfolioData.totalEarnings, 4)}</span>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Vesting Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Locked Shares */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-300">Locked Shares</CardTitle>
+            <Clock className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{safeToFixed(stats.totalLockedShares, 4)}</div>
+            <p className="text-xs text-slate-400">Currently vesting</p>
+          </CardContent>
+        </Card>
 
-            {/* Level Distribution */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Vesting by Level</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {[1, 2, 3, 4, 5].map((level) => {
-                    const levelSlots = vestingSlots.filter((s) => safeNumber(s.level) === level)
-                    const levelInfo = getLevelInfo(level)
-                    const IconComponent = levelInfo.icon
-                    const totalAmount = levelSlots.reduce((sum, slot) => sum + safeNumber(slot.amount), 0)
+        {/* Claimable Shares */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-300">Claimable Shares</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{safeToFixed(stats.totalClaimableShares, 4)}</div>
+            <p className="text-xs text-slate-400">Ready to claim</p>
+          </CardContent>
+        </Card>
 
-                    return (
-                      <div key={level} className="flex items-center space-x-4">
-                        <div className="flex items-center space-x-2 min-w-0 flex-1">
-                          <IconComponent className={`h-5 w-5 ${levelInfo.color}`} />
-                          <span className="font-medium">
-                            Level {level} - {levelInfo.name}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold">{safeToFixed(totalAmount, 4)}</div>
-                          <div className="text-xs text-gray-500">{levelSlots.length} slots</div>
-                        </div>
-                      </div>
-                    )
-                  })}
+        {/* Claimed Shares */}
+        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-slate-300">Claimed Shares</CardTitle>
+            <Badge variant="secondary" className="text-xs bg-slate-700 text-slate-300">
+              Total
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-100">{safeToFixed(stats.totalClaimedShares, 4)}</div>
+            <p className="text-xs text-slate-400">Historical claims</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-slate-100">Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
+              <div className="flex items-center space-x-3">
+                <TrendingUp className="h-8 w-8 text-blue-600" />
+                <div>
+                  <h3 className="font-medium text-slate-100">Buy Shares</h3>
+                  <p className="text-sm text-slate-400">Purchase shares on the exchange</p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+
+            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
+              <div className="flex items-center space-x-3">
+                <PiggyBank className="h-8 w-8 text-yellow-600" />
+                <div>
+                  <h3 className="font-medium text-slate-100">Vest Shares</h3>
+                  <p className="text-sm text-slate-400">Lock shares for higher returns</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
+              <div className="flex items-center space-x-3">
+                <Wallet className="h-8 w-8 text-orange-600" />
+                <div>
+                  <h3 className="font-medium text-slate-100">Cashout</h3>
+                  <p className="text-sm text-slate-400">Withdraw your earnings</p>
+                </div>
+              </div>
+            </div>
           </div>
-        </TabsContent>
-
-        {/* Performance */}
-        <TabsContent value="performance" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Earnings Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <BarChart3 className="h-5 w-5 mr-2" />
-                  Earnings Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm font-medium">Total Earnings</span>
-                  <span className="font-bold text-green-600">
-                    +{safeToFixed(portfolioData.totalEarnings, 4)} shares
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                  <span className="text-sm font-medium">Monthly Growth</span>
-                  <span className="font-bold text-blue-600">+{safeToFixed(portfolioData.monthlyGrowth, 1)}%</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                  <span className="text-sm font-medium">Portfolio Value</span>
-                  <span className="font-bold text-purple-600">${safeToFixed(portfolioData.totalValue, 2)}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Performance Metrics */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Performance Metrics</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Portfolio Utilization</span>
-                    <span>
-                      {safeToFixed(
-                        safePercentage(
-                          portfolioData.lockedShares + portfolioData.claimableShares,
-                          portfolioData.totalValue,
-                        ),
-                        1,
-                      )}
-                      %
-                    </span>
-                  </div>
-                  <Progress
-                    value={safePercentage(
-                      portfolioData.lockedShares + portfolioData.claimableShares,
-                      portfolioData.totalValue,
-                    )}
-                    className="h-2"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Vesting Efficiency</span>
-                    <span>85.2%</span>
-                  </div>
-                  <Progress value={85.2} className="h-2" />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Claim Rate</span>
-                    <span>92.7%</span>
-                  </div>
-                  <Progress value={92.7} className="h-2" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   )
 }
