@@ -1,162 +1,103 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import * as z from "zod"
-
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { useToast } from "@/components/ui/use-toast"
-import { Checkbox } from "../ui/checkbox"
-import { supabase } from "@/lib/supabase"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { doLogin } from "@/app/actions/doLogin"
+import Link from "next/link"
 
-const formSchema = z.object({
-  email: z.string().email({
-    message: "Please enter a valid email address.",
-  }),
-  password: z.string().min(1, {
-    message: "Password is required.",
-  }),
-  remember: z.boolean().default(false),
-})
-
-export function LoginForm({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+export function LoginForm() {
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const { toast } = useToast()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const registered = searchParams.get("registered")
+  const [error, setError] = useState("")
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-      remember: false,
-    },
-  })
-
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+  const handleSubmit = async (formData: FormData) => {
     setIsLoading(true)
+    setError("")
 
     try {
-      // Direct Supabase authentication call instead of using the login function
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: values.email,
-        password: values.password,
-      })
-
-      if (error) {
-        toast({
-          title: "Login failed",
-          description: error.message || "Invalid credentials. Please try again.",
-          variant: "destructive",
-        })
-        setIsLoading(false)
-        return
+      const result = await doLogin(formData)
+      if (result?.error) {
+        setError(result.error)
       }
-
-      if (!data.user) {
-        toast({
-          title: "Login failed",
-          description: "Invalid credentials. Please try again.",
-          variant: "destructive",
-        })
-        setIsLoading(false)
-        return
-      }
-
-      toast({
-        title: "Login successful!",
-        description: "You are now logged in.",
-      })
-
-      // Force a hard redirect to dashboard
-      window.location.href = "/dashboard"
-    } catch (error: any) {
-      toast({
-        title: "Something went wrong.",
-        description: error.message || "Failed to login. Please try again.",
-        variant: "destructive",
-      })
+    } catch (err) {
+      setError("An unexpected error occurred")
+    } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className={cn("grid gap-6", className)} {...props}>
-      {registered && (
-        <div className="bg-green-500/20 border border-green-500 text-green-300 px-4 py-2 rounded-md text-sm">
-          Registration successful! Please login with your credentials.
-        </div>
-      )}
-
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField
-            control={form.control}
-            name="email"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email</FormLabel>
-                <FormControl>
-                  <Input placeholder="Your email address" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="password"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Password</FormLabel>
-                <FormControl>
-                  <Input type="password" placeholder="Your password" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <div className="flex items-center justify-between">
-            <FormField
-              control={form.control}
-              name="remember"
-              render={({ field }) => (
-                <FormItem className="flex items-center space-x-2">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <FormLabel className="text-sm font-normal">Remember me</FormLabel>
-                </FormItem>
-              )}
-            />
-            <a href="/forgot-password" className="text-sm text-blue-500 hover:underline">
-              Forgot password?
-            </a>
+    <Card className="w-full max-w-md mx-auto">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl font-bold text-center">Sign In</CardTitle>
+        <CardDescription className="text-center">Enter your credentials to access your account</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" name="email" type="email" placeholder="Enter your email" required disabled={isLoading} />
           </div>
-          <Button disabled={isLoading} className="w-full bg-green-600 hover:bg-green-700 text-white">
-            {isLoading && (
-              <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                required
+                disabled={isLoading}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={isLoading}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white" disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              "Sign In"
             )}
-            Sign in
           </Button>
+
+          <div className="text-center space-y-2">
+            <Link href="/forgot-password" className="text-sm text-purple-600 hover:text-purple-700 hover:underline">
+              Forgot your password?
+            </Link>
+            <div className="text-sm text-gray-600">
+              Don't have an account?{" "}
+              <Link href="/register" className="text-purple-600 hover:text-purple-700 hover:underline font-medium">
+                Sign up
+              </Link>
+            </div>
+          </div>
         </form>
-      </Form>
-    </div>
+      </CardContent>
+    </Card>
   )
 }
