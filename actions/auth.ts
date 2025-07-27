@@ -4,7 +4,7 @@
 
 import { z } from "zod"
 import { AuthError } from "next-auth/providers/credentials"
-
+import { createServerSupabaseClient } from "@/lib/supabase"
 import { signIn } from "@/auth"
 import { sql } from "@vercel/postgres"
 import { revalidatePath } from "next/cache"
@@ -122,6 +122,40 @@ export async function authenticate(prevState: string | undefined, formData: Form
     }
     throw error
   }
+}
+
+export async function login(formData: FormData) {
+  const supabase = createServerSupabaseClient()
+
+  const data = {
+    email: formData.get("email") as string,
+    password: formData.get("password") as string,
+  }
+
+  const { error } = await supabase.auth.signInWithPassword(data)
+
+  if (error) {
+    redirect("/error")
+  }
+
+  redirect("/dashboard")
+}
+
+export async function signup(formData: FormData) {
+  const supabase = createServerSupabaseClient()
+
+  const data = {
+    email: formData.get("email") as string,
+    password: formData.get("password") as string,
+  }
+
+  const { error } = await supabase.auth.signUp(data)
+
+  if (error) {
+    redirect("/error")
+  }
+
+  redirect("/dashboard")
 }
 
 // New code for register action

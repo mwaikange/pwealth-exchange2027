@@ -1,5 +1,6 @@
 "use server"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { redirect } from "next/navigation"
 
 export async function registerUser(formData: FormData) {
   console.log("Starting registration process...")
@@ -246,12 +247,41 @@ export async function loginUser(formData: FormData) {
 }
 
 export async function logoutUser() {
+  const supabase = createServerSupabaseClient()
+
   try {
-    const supabase = await createServerSupabaseClient()
-    await supabase.auth.signOut()
-    return { success: true }
-  } catch (error: any) {
-    return { success: false, message: error.message || "Logout failed" }
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      console.error("Sign out error:", error)
+      throw error
+    }
+  } catch (error) {
+    console.error("Sign out failed:", error)
+    throw error
+  }
+
+  redirect("/login")
+}
+
+export async function getUser() {
+  const supabase = createServerSupabaseClient()
+
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+
+    if (error) {
+      console.error("Get user error:", error)
+      return null
+    }
+
+    return user
+  } catch (error) {
+    console.error("Get user failed:", error)
+    return null
   }
 }
 
