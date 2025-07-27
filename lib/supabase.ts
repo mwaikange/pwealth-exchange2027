@@ -2,11 +2,9 @@ import { createClient } from "@supabase/supabase-js"
 import { env } from "./env"
 
 // Use the actual environment variables from the workspace
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL || "https://vqdfhgjhptklwogjadxy.supabase.co"
-
-const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-
-const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY || ""
+const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY
 
 // Validate required variables
 if (!supabaseUrl || supabaseUrl.trim() === "") {
@@ -25,18 +23,60 @@ console.log("Supabase initialized with:", {
   serviceKeyPresent: !!supabaseServiceKey,
 })
 
-// Client-side Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Create client instance
+let supabaseInstance: ReturnType<typeof createClient> | null = null
 
-// Server-side Supabase client
-export function createServerSupabaseClient() {
-  return createClient(supabaseUrl, supabaseServiceKey)
+export const getSupabaseClient = () => {
+  if (typeof window !== "undefined") {
+    // Client-side: maintain singleton
+    if (!supabaseInstance) {
+      console.log("Creating NEW Supabase client instance (client-side)")
+      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          storageKey: "supabase_auth_token",
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      })
+    }
+    return supabaseInstance
+  }
+
+  // Server-side: always create new instance
+  console.log("Creating NEW Supabase client instance (server-side)")
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+    },
+  })
 }
 
-// Admin client for server-side operations
-export function createAdminClient() {
-  return createClient(supabaseUrl, supabaseServiceKey)
+// Export the client
+export const supabase = getSupabaseClient()
+
+// Create server-side client (for server components and server actions)
+export const createServerSupabaseClient = () => {
+  console.log("Creating NEW Supabase server client instance")
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
 }
 
-// Default export for backward compatibility
+// Create admin client (alias for createServerSupabaseClient)
+export const createAdminClient = () => {
+  console.log("Creating NEW Supabase admin client instance")
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}
+
 export default supabase
