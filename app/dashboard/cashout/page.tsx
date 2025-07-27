@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { TransactionTable } from "@/components/transaction-table"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/auth-context"
 
 export default function Cashout() {

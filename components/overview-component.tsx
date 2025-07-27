@@ -6,7 +6,7 @@ import { ChevronRight, ArrowUpRight, ArrowDownLeft, Coins, Loader2 } from "lucid
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useVesting } from "@/contexts/vesting-context"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/auth-context"
 
 interface MetricCard {

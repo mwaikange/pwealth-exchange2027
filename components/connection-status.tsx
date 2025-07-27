@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Wifi, WifiOff, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 
 export function ConnectionStatus() {
   const [isOnline, setIsOnline] = useState(true)
