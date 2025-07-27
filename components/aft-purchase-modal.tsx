@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { getFriendlyErrorMessage } from "@/utils/error-handling"
 import { useMobilePaymentForm } from "@/hooks/use-mobile-payment-form"
 import { refreshUserSession } from "@/actions/mobile-payment-actions"
-import { supabase } from "@/lib/supabase"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 interface AFTPurchaseModalProps {
   isOpen: boolean
@@ -31,6 +31,7 @@ export function AFTPurchaseModal({ isOpen, onClose }: AFTPurchaseModalProps) {
   const [screenshotUploaded, setScreenshotUploaded] = useState(false)
   const [isRefreshingSession, setIsRefreshingSession] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
+  const supabase = createClientComponentClient()
 
   // Use the mobile payment form hook with the token amount
   const {

@@ -1,13 +1,13 @@
 "use server"
 
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { createServerClient } from "@/lib/supabase-server-app"
 import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
 import { revalidatePath } from "next/cache"
 
 // Get countries from the database
 export async function getCountries(): Promise<PayCountry[]> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Getting countries...")
@@ -29,7 +29,7 @@ export async function getCountries(): Promise<PayCountry[]> {
 // Get banks for a specific country
 export async function getBanksForCountry(countryId: string): Promise<PayBank[]> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Getting banks for country:", countryId)
@@ -51,7 +51,7 @@ export async function getBanksForCountry(countryId: string): Promise<PayBank[]> 
 // Get networks for a specific country
 export async function getNetworksForCountry(countryId: string): Promise<PayNetwork[]> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Getting networks for country:", countryId)
@@ -73,7 +73,7 @@ export async function getNetworksForCountry(countryId: string): Promise<PayNetwo
 // Get payment configuration for a country and bank
 export async function getPaymentConfig(countryId: string, bankId?: string): Promise<PayConfig | null> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Getting payment config for country:", countryId, "and bank:", bankId || "null")
@@ -104,7 +104,7 @@ export async function getPaymentConfig(countryId: string, bankId?: string): Prom
 // Get user's payment submissions (limited to 12)
 export async function getUserPaymentSubmissions(userId: string): Promise<PaySubmission[]> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Getting user payment submissions for user:", userId)
@@ -144,7 +144,7 @@ export async function submitPayment(
   formData: FormData,
 ): Promise<{ success: boolean; message: string }> {
   // Create a server client with service role
-  const supabase = createServerSupabaseClient()
+  const supabase = createServerClient()
 
   try {
     console.log("Submitting payment for user:", userId)
@@ -288,56 +288,5 @@ export async function submitPayment(
       success: false,
       message: error instanceof Error ? error.message : "An unknown error occurred",
     }
-  }
-}
-
-// Update payment status
-export async function updatePaymentStatus(paymentId: string, status: string) {
-  const supabase = createServerSupabaseClient()
-
-  try {
-    const { data, error } = await supabase
-      .from("pay_submissions")
-      .update({ status })
-      .eq("id", paymentId)
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Payment status update error:", error)
-      return { success: false, error: "Failed to update payment status" }
-    }
-
-    revalidatePath("/admin/payments")
-    return { success: true, data }
-  } catch (error) {
-    console.error("Payment status update failed:", error)
-    return { success: false, error: "An unexpected error occurred" }
-  }
-}
-
-// Get all payment submissions
-export async function getPaymentSubmissions() {
-  const supabase = createServerSupabaseClient()
-
-  try {
-    const { data, error } = await supabase
-      .from("pay_submissions")
-      .select(`
-        *,
-        pay_countries(name, currency_code),
-        pay_banks(name)
-      `)
-      .order("created_at", { ascending: false })
-
-    if (error) {
-      console.error("Get payment submissions error:", error)
-      return { success: false, error: "Failed to fetch payment submissions" }
-    }
-
-    return { success: true, data }
-  } catch (error) {
-    console.error("Get payment submissions failed:", error)
-    return { success: false, error: "An unexpected error occurred" }
   }
 }

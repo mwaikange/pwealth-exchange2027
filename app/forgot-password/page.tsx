@@ -5,7 +5,7 @@ import type React from "react"
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("")

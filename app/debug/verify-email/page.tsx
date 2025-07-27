@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 
 export default function VerifyEmailDebug() {
   const [email, setEmail] = useState("")

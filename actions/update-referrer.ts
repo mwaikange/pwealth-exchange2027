@@ -1,75 +1,118 @@
 "use server"
 
-import { createServerSupabaseClient } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
+import { createClient } from "@supabase/supabase-js"
+import { env } from "@/lib/env"
 
 export async function updateReferrer(formData: FormData) {
-  const supabase = createServerSupabaseClient()
+  const referrerEmail = formData.get("referrerEmail") as string
+  const sessionToken = formData.get("sessionToken") as string
+  const userId = formData.get("userId") as string
 
   try {
-    const referrerEmail = formData.get("referrerEmail") as string
-    const userId = formData.get("userId") as string
-    const sessionToken = formData.get("sessionToken") as string
+    console.log("Updating referrer for user:", userId)
 
-    if (!referrerEmail || !userId) {
-      return { success: false, message: "Missing required fields" }
+    if (!sessionToken || !userId) {
+      console.error("Missing session token or user ID")
+      return { success: false, message: "Authentication required. Please log in again." }
     }
 
-    // First, find the referrer by email
-    const { data: referrerData, error: referrerError } = await supabase
-      .from("app_users")
-      .select("user_uuid, email")
-      .eq("email", referrerEmail)
-      .single()
+    // Create a new Supabase client with the service role key
+    const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
-    if (referrerError || !referrerData) {
-      return { success: false, message: "Referrer not found" }
+    // Check if the user already has a referrer
+    const { data: existingReferral } = await supabase.from("referrals").select("*").eq("referred_uuid", userId).single()
+
+    if (existingReferral) {
+      return { success: false, message: "You already have a referrer and cannot change it" }
     }
 
-    // Get the referrer's referral code
-    const { data: referrerSettings, error: settingsError } = await supabase
+    // Get the referrer's information
+    let referrerQuery = supabase.from("app_users").select("user_uuid, email")
+
+    // Determine if input is an email or referral code
+    if (referrerEmail.includes("@")) {
+      referrerQuery = referrerQuery.eq("email", referrerEmail)
+    } else {
+      // If not an email, try to find by referral code
+      const { data: referrerByCode } = await supabase
+        .from("usersettings")
+        .select("user_uuid")
+        .eq("referral_code", referrerEmail)
+        .single()
+
+      if (referrerByCode) {
+        referrerQuery = supabase.from("app_users").select("user_uuid, email").eq("user_uuid", referrerByCode.user_uuid)
+      } else {
+        return { success: false, message: "Referrer not found with the provided referral code" }
+      }
+    }
+
+    const { data: referrer, error: referrerError } = await referrerQuery.single()
+
+    if (referrerError || !referrer) {
+      console.error("Referrer not found:", referrerError)
+      return { success: false, message: "Referrer email or code not found" }
+    }
+
+    // Get referrer's referral code
+    const { data: referrerSettings, error: referrerSettingsError } = await supabase
       .from("usersettings")
       .select("referral_code")
-      .eq("user_uuid", referrerData.user_uuid)
+      .eq("user_uuid", referrer.user_uuid)
       .single()
 
-    if (settingsError || !referrerSettings) {
+    if (referrerSettingsError || !referrerSettings) {
+      console.error("Referrer settings not found:", referrerSettingsError)
       return { success: false, message: "Referrer settings not found" }
     }
 
-    // Check if user already has a referrer
-    const { data: existingReferral, error: existingError } = await supabase
-      .from("referrals")
-      .select("*")
-      .eq("referred_uuid", userId)
+    // Get user's information
+    const { data: userData, error: userError } = await supabase
+      .from("app_users")
+      .select("display_id, email")
+      .eq("user_uuid", userId)
       .single()
 
-    if (existingReferral) {
-      return { success: false, message: "You already have a referrer" }
+    if (userError || !userData) {
+      console.error("User data not found:", userError)
+      return { success: false, message: "User data not found" }
     }
 
-    // Create the referral relationship
-    const { data, error } = await supabase
-      .from("referrals")
-      .insert({
-        referrer_uuid: referrerData.user_uuid,
-        referrer_email: referrerData.email,
-        referred_uuid: userId,
-        referral_code: referrerSettings.referral_code,
-        referred_referral_code: referrerSettings.referral_code,
-      })
-      .select()
+    // Get user's referral code
+    const { data: userSettings, error: userSettingsError } = await supabase
+      .from("usersettings")
+      .select("referral_code")
+      .eq("user_uuid", userId)
       .single()
 
+    if (userSettingsError || !userSettings) {
+      console.error("User settings not found:", userSettingsError)
+      return { success: false, message: "User settings not found" }
+    }
+
+    // Create the referral with both referral codes
+    const { error } = await supabase.from("referrals").insert({
+      user_uuid: referrer.user_uuid,
+      referred_uuid: userId,
+      referrer_email: referrer.email,
+      referred_email: userData.email,
+      referral_date: new Date().toISOString(),
+      status: "active",
+      display_id: userData.display_id,
+      referral_code: referrerSettings.referral_code,
+      referred_referral_code: userSettings.referral_code,
+    })
+
     if (error) {
-      console.error("Referral creation error:", error)
-      return { success: false, message: "Failed to create referral relationship" }
+      console.error("Error creating referral:", error)
+      throw new Error(error.message)
     }
 
     revalidatePath("/dashboard/settings")
     return { success: true, message: "Referrer updated successfully" }
-  } catch (error) {
-    console.error("Update referrer failed:", error)
-    return { success: false, message: "An unexpected error occurred" }
+  } catch (error: any) {
+    console.error("Referrer update error:", error.message)
+    return { success: false, message: error.message || "Failed to update referrer" }
   }
 }

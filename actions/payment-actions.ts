@@ -1,11 +1,14 @@
 "use server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+
+import { cookies } from "next/headers"
+import { createServerActionClient } from "@supabase/auth-helpers-nextjs"
 import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
 import { revalidatePath } from "next/cache"
 
 // Get countries from the database
 export async function getCountries(): Promise<PayCountry[]> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Getting countries...")
@@ -26,7 +29,8 @@ export async function getCountries(): Promise<PayCountry[]> {
 
 // Get banks for a specific country
 export async function getBanksForCountry(countryId: string): Promise<PayBank[]> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Getting banks for country:", countryId)
@@ -47,7 +51,8 @@ export async function getBanksForCountry(countryId: string): Promise<PayBank[]> 
 
 // Get networks for a specific country
 export async function getNetworksForCountry(countryId: string): Promise<PayNetwork[]> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Getting networks for country:", countryId)
@@ -68,7 +73,8 @@ export async function getNetworksForCountry(countryId: string): Promise<PayNetwo
 
 // Get payment configuration for a country and bank
 export async function getPaymentConfig(countryId: string, bankId?: string): Promise<PayConfig | null> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Getting payment config for country:", countryId, "and bank:", bankId || "null")
@@ -98,7 +104,8 @@ export async function getPaymentConfig(countryId: string, bankId?: string): Prom
 
 // Get user's payment submissions (limited to 12)
 export async function getUserPaymentSubmissions(): Promise<PaySubmission[]> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Getting user payment submissions...")
@@ -146,7 +153,8 @@ export async function getUserPaymentSubmissions(): Promise<PaySubmission[]> {
 
 // Submit a payment
 export async function submitPayment(formData: FormData): Promise<{ success: boolean; message: string }> {
-  const supabase = createServerSupabaseClient()
+  // Create a new Supabase client for each request with cookies
+  const supabase = createServerActionClient({ cookies })
 
   try {
     console.log("Submitting payment...")
@@ -305,58 +313,5 @@ export async function submitPayment(formData: FormData): Promise<{ success: bool
       success: false,
       message: error instanceof Error ? error.message : "An unknown error occurred",
     }
-  }
-}
-
-// Initiate a payment
-export async function initiatePayment(formData: FormData) {
-  const supabase = createServerSupabaseClient()
-
-  try {
-    const amount = Number.parseFloat(formData.get("amount") as string)
-    const email = formData.get("email") as string
-    const orderId = formData.get("orderId") as string
-
-    // Create payment record
-    const { data, error } = await supabase
-      .from("payment_transactions")
-      .insert({
-        order_id: orderId,
-        amount: amount,
-        email: email,
-        status: "pending",
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Payment initiation error:", error)
-      return { success: false, error: "Failed to initiate payment" }
-    }
-
-    revalidatePath("/dashboard")
-    return { success: true, data }
-  } catch (error) {
-    console.error("Payment initiation failed:", error)
-    return { success: false, error: "An unexpected error occurred" }
-  }
-}
-
-// Verify a payment
-export async function verifyPayment(orderId: string) {
-  const supabase = createServerSupabaseClient()
-
-  try {
-    const { data, error } = await supabase.from("payment_transactions").select("*").eq("order_id", orderId).single()
-
-    if (error) {
-      console.error("Payment verification error:", error)
-      return { success: false, error: "Failed to verify payment" }
-    }
-
-    return { success: true, data }
-  } catch (error) {
-    console.error("Payment verification failed:", error)
-    return { success: false, error: "An unexpected error occurred" }
   }
 }
