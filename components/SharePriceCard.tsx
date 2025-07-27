@@ -1,83 +1,96 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase-singleton"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { usePrice } from "@/contexts/price-context"
 
 export default function SharePriceCard() {
-  const [sharePrice, setSharePrice] = useState<number>(108.2)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { priceData, loading, error } = usePrice()
 
-  useEffect(() => {
-    const fetchSharePrice = async () => {
-      try {
-        setError(null)
+  // Format currency with NaN protection
+  const formatCurrency = (value: number): string => {
+    const safeValue = isNaN(value) ? 0 : value
+    return `N$${safeValue.toFixed(2)}`
+  }
 
-        // Try to get current share price using RPC function
-        let price = 108.2
-        try {
-          const { data, error } = await supabase.rpc("get_current_share_price")
-          if (!error && data !== null) {
-            price = Number(data)
-          } else {
-            // Fallback: get latest price from weekly_prices table
-            const { data: weeklyPrice, error: weeklyError } = await supabase
-              .from("weekly_prices")
-              .select("final_price")
-              .order("effective_date", { ascending: false })
-              .limit(1)
-              .single()
+  // Format percentage with NaN protection
+  const formatPercentage = (value: number): string => {
+    const safeValue = isNaN(value) ? 0 : value
+    return `${safeValue >= 0 ? "+" : ""}${safeValue.toFixed(2)}%`
+  }
 
-            if (!weeklyError && weeklyPrice) {
-              price = Number(weeklyPrice.final_price)
-            }
-          }
-        } catch (rpcError) {
-          console.warn("RPC function not available, using fallback:", rpcError)
-
-          // Direct table query fallback
-          const { data: weeklyPrice, error: weeklyError } = await supabase
-            .from("weekly_prices")
-            .select("final_price")
-            .order("effective_date", { ascending: false })
-            .limit(1)
-            .single()
-
-          if (!weeklyError && weeklyPrice) {
-            price = Number(weeklyPrice.final_price)
-          }
-        }
-
-        setSharePrice(price)
-      } catch (err: any) {
-        console.error("Error fetching share price:", err)
-        setError(err.message || "Failed to fetch share price")
-        setSharePrice(108.2) // Fallback price
-      } finally {
-        setLoading(false)
+  // Get trend icon and color
+  const getTrendInfo = () => {
+    const change = priceData.priceChangePercentage
+    if (isNaN(change) || change === 0) {
+      return {
+        icon: Minus,
+        color: "text-gray-500",
+        bgColor: "bg-gray-100",
+      }
+    } else if (change > 0) {
+      return {
+        icon: TrendingUp,
+        color: "text-green-600",
+        bgColor: "bg-green-100",
+      }
+    } else {
+      return {
+        icon: TrendingDown,
+        color: "text-red-600",
+        bgColor: "bg-red-100",
       }
     }
+  }
 
-    fetchSharePrice()
+  const trendInfo = getTrendInfo()
+  const TrendIcon = trendInfo.icon
 
-    // Refresh price every 5 minutes
-    const interval = setInterval(fetchSharePrice, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [])
+  if (loading) {
+    return (
+      <Card className="w-full">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+          <div className="h-4 w-4 animate-pulse bg-gray-300 rounded" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold animate-pulse bg-gray-300 h-8 w-24 rounded mb-1" />
+          <div className="animate-pulse bg-gray-300 h-4 w-16 rounded" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card className="w-full">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+          <TrendingDown className="h-4 w-4 text-red-500" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-red-600">N$108.20</div>
+          <p className="text-xs text-red-500">Error loading price data</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
-    <div className="border-l-4 border-gray-400 dark:border-gray-600 pl-4">
-      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-1">SHARE PRICE</h1>
-      <div className="text-5xl font-bold text-black dark:text-white mb-2">
-        {loading ? (
-          <div className="animate-pulse bg-gray-300 dark:bg-gray-700 h-12 w-48 rounded"></div>
-        ) : (
-          `N$${sharePrice.toFixed(2)}`
-        )}
-      </div>
-      <div className="text-gray-600 dark:text-gray-400">
-        {error ? <span className="text-red-500 text-sm">Using fallback price</span> : "this week"}
-      </div>
-    </div>
+    <Card className="w-full">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">Current Share Price</CardTitle>
+        <div className={`p-1 rounded-full ${trendInfo.bgColor}`}>
+          <TrendIcon className={`h-4 w-4 ${trendInfo.color}`} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{formatCurrency(priceData.currentPrice)}</div>
+        <div className="flex items-center space-x-2 text-xs">
+          <span className={trendInfo.color}>{formatCurrency(priceData.priceChange)}</span>
+          <span className={trendInfo.color}>({formatPercentage(priceData.priceChangePercentage)})</span>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

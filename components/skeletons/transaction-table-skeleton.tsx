@@ -1,33 +1,29 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Card } from "@/components/ui/card"
 
-export default function TransactionTableSkeleton() {
+export function TransactionTableSkeleton() {
   return (
-    <Card className="animate-pulse">
-      <CardHeader>
-        <Skeleton className="h-6 w-48" />
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {/* Table header */}
-          <div className="grid grid-cols-4 gap-4 pb-2 border-b">
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-4 w-18" />
-          </div>
-
-          {/* Table rows */}
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="grid grid-cols-4 gap-4 py-2">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-20" />
+    <Card className="bg-slate-800/50 border-slate-700">
+      <div className="p-4 border-b border-slate-700">
+        <Skeleton className="h-6 w-48 bg-slate-700" />
+      </div>
+      <div className="p-4 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex justify-between items-center py-2">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-8 rounded-full bg-slate-700" />
+              <div>
+                <Skeleton className="h-4 w-32 mb-1 bg-slate-700" />
+                <Skeleton className="h-3 w-24 bg-slate-700" />
+              </div>
             </div>
-          ))}
-        </div>
-      </CardContent>
+            <div className="text-right">
+              <Skeleton className="h-4 w-20 mb-1 bg-slate-700" />
+              <Skeleton className="h-3 w-16 bg-slate-700" />
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
   )
 }

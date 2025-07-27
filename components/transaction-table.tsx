@@ -1,235 +1,274 @@
 "use client"
 
-import type { Transaction } from "@/contexts/transaction-context"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
+import { TransactionTableSkeleton } from "@/components/skeletons/transaction-table-skeleton"
 
-interface TransactionTableProps {
-  transactions: Transaction[]
-  showRecipient?: boolean
-  showAccount?: boolean
-  showReference?: boolean
-  compact?: boolean
+interface Transaction {
+  id: string
+  user_uuid: string
+  transaction_type: string
+  shares?: number
+  total_amount: number
+  from_wallet?: string
+  to_wallet?: string
+  status: string
+  description: string
+  created_at: string
+  reference_id?: string
 }
 
-type TransactionType =
-  | "IN-PWT RECEIPT"
-  | "REFERRAL CLAIM"
-  | "BUY-AFT RECEIPT"
-  | "IN-AFT GIFT"
-  | "CLAIM"
-  | "AFT-TopUP"
-  | "OUT-TRANSFER"
-  | "OUT-AFT GIFT"
-  | "ACTIVATE FEE"
-  | "VESTING"
-  | string
+export function TransactionTable() {
+  const { user } = useAuth()
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
-export function TransactionTable({
-  transactions,
-  showRecipient = true,
-  showAccount = true,
-  showReference = true,
-  compact = false,
-}: TransactionTableProps) {
-  // Helper function to safely check if a transaction type is in a list
-  const isTypeInList = (type: string | undefined, list: string[]): boolean => {
-    return type ? list.includes(type) : false
+  useEffect(() => {
+    if (user) {
+      fetchTransactions()
+    }
+  }, [user])
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      console.log("🔄 Fetching transaction history...")
+
+      // Try to fetch from share_transactions table first
+      const { data: shareTransactions, error: shareError } = await supabase
+        .from("share_transactions")
+        .select("*")
+        .eq("user_uuid", user?.id)
+        .order("created_at", { ascending: false })
+        .limit(100)
+
+      if (shareError) {
+        console.error("Error fetching share transactions:", shareError)
+        // Fallback to generic transactions table if it exists
+        const { data: genericTransactions, error: genericError } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_uuid", user?.id)
+          .order("created_at", { ascending: false })
+          .limit(100)
+
+        if (genericError) {
+          throw new Error("Failed to fetch transactions: " + genericError.message)
+        }
+
+        setTransactions(genericTransactions || [])
+      } else {
+        // Format share transactions data
+        const formattedTransactions = (shareTransactions || []).map((tx: any) => ({
+          id: tx.id,
+          user_uuid: tx.user_uuid,
+          transaction_type: tx.transaction_type || "unknown",
+          shares: Number(tx.shares) || 0,
+          total_amount: Number(tx.total_amount) || 0,
+          from_wallet: tx.from_wallet,
+          to_wallet: tx.to_wallet,
+          status: tx.status || "completed",
+          description: tx.description || "No description",
+          created_at: tx.created_at,
+          reference_id: tx.reference_id,
+        }))
+
+        setTransactions(formattedTransactions)
+      }
+
+      console.log("✅ Transactions loaded:", transactions.length)
+    } catch (err: any) {
+      console.error("❌ Error fetching transactions:", err)
+      setError(err.message || "Failed to fetch transactions")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Helper function to format transaction type display
-  const formatTransactionType = (transaction: Transaction): string => {
-    const type = transaction.type || transaction.transaction_type || "Unknown"
-    const isPositive = isPositiveTransaction(transaction)
-    const prefix = isPositive ? "+ " : "- "
-
-    // Standardize display names
-    if (type === "AFT Gift" || type === "OUT-AFT GIFT") return `${prefix}OUT-AFT GIFT`
-    if (type === "PWT Transfer" || type === "OUT-PWT Transfer") return `${prefix}OUT-PWT Transfer`
-    if (type === "AFT-TopUP") return `${prefix}AFT-TopUP`
-    if (type === "IN-PWT RECEIPT") return `${prefix}IN-PWT RECEIPT`
-    if (type === "BUY-AFT RECEIPT") return `${prefix}BUY-AFT RECEIPT`
-    if (type === "IN-AFT GIFT") return `${prefix}IN-AFT GIFT`
-    // Handle CLAIM with level and schedule information
-    if (type === "CLAIM") {
-      // Try to extract level number and letter from description or reference
-      const levelMatch =
-        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
-        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
-
-      if (levelMatch) {
-        const levelNumber = levelMatch[1] || ""
-        const levelLetter = levelMatch[2] || ""
-        return `${prefix}CLAIM - LEVEL${levelNumber}${levelLetter ? `-${levelLetter}` : ""}`
-      }
-      return `${prefix}CLAIM`
-    }
-
-    // Handle VESTING with level and schedule information
-    if (type === "VESTING") {
-      // Try to extract level number and letter from description or reference
-      const levelMatch =
-        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
-        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
-
-      if (levelMatch) {
-        const levelNumber = levelMatch[1] || ""
-        const levelLetter = levelMatch[2] || ""
-        return `${prefix}VESTING - LEVEL${levelNumber}${levelLetter ? `-${levelLetter}` : ""}`
-      }
-      return `${prefix}VESTING`
-    }
-
-    // Handle ACTIVATE FEE with level information
-    if (type === "ACTIVATE FEE") {
-      // Try to extract level number and letter from description or reference
-      const levelMatch =
-        transaction.description?.match(/LEVEL(\d+)[-\s]*([A-Z])?/) ||
-        transaction.reference?.match(/LEVEL(\d+)[-\s]*([A-Z])?/)
-
-      if (levelMatch) {
-        const levelNumber = levelMatch[1] || "2"
-        const levelLetter = levelMatch[2] || "A"
-        return `${prefix}ACTIVATE FEE - LEVEL${levelNumber}-${levelLetter}`
-      }
-
-      // Default if no match found
-      return `${prefix}ACTIVATE FEE - LEVEL2-A`
-    }
-
-    // Handle REFERRAL CLAIM with level information
-    if (typeof type === "string" && type.startsWith("REFERRAL CLAIM")) {
-      // Check for the exact format we're using when creating transactions
-      if (type.includes("REFERRAL CLAIM-LvL1")) return `${prefix}REFERRAL CLAIM-LvL1`
-      if (type.includes("REFERRAL CLAIM-LvL2")) return `${prefix}REFERRAL CLAIM-LvL2`
-      if (type.includes("REFERRAL CLAIM-LvL3")) return `${prefix}REFERRAL CLAIM-LvL3`
-
-      // Also check description for level information (case insensitive)
-      if (transaction.description?.toUpperCase().includes("LVL1")) return `${prefix}REFERRAL CLAIM-LvL1`
-      if (transaction.description?.toUpperCase().includes("LVL2")) return `${prefix}REFERRAL CLAIM-LvL2`
-      if (transaction.description?.toUpperCase().includes("LVL3")) return `${prefix}REFERRAL CLAIM-LvL3`
-
-      // Extract level from type using our exact format
-      const levelMatchType = type.match(/REFERRAL CLAIM-LvL(\d+)/)
-      if (levelMatchType) {
-        return `${prefix}REFERRAL CLAIM-LvL${levelMatchType[1]}`
-      }
-
-      // Extract level from description as fallback
-      const levelMatchDesc = transaction.description?.match(/LVL(\d+)/i) || transaction.description?.match(/LvL(\d+)/i)
-      if (levelMatchDesc) {
-        return `${prefix}REFERRAL CLAIM-LvL${levelMatchDesc[1]}`
-      }
-
-      return `${prefix}REFERRAL CLAIM`
-    }
-
-    // Default case: use description or type
-    return `${prefix}${transaction.description || type}`
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
-  // List of transaction types that should show a plus sign (incoming transactions)
-  const positiveTypes = [
-    "IN-PWT RECEIPT",
-    "REFERRAL CLAIM-LvL1",
-    "REFERRAL CLAIM-LvL2",
-    "REFERRAL CLAIM-LvL3",
-    "REFERRAL CLAIM",
-    "BUY-AFT RECEIPT",
-    "IN-AFT GIFT",
-    "CLAIM",
-    "AFT-TopUP",
-  ]
-
-  // Check if a transaction is positive (incoming)
-  const isPositiveTransaction = (transaction: Transaction): boolean => {
-    const type = transaction.type || transaction.transaction_type
-
-    if (!type) return false
-
-    // Check if it's in our positive types list
-    if (positiveTypes.includes(type)) return true
-
-    // Check if it starts with any of our positive prefixes
-    if (
-      type.startsWith("REFERRAL CLAIM") ||
-      type.startsWith("IN-") ||
-      type === "CLAIM" ||
-      type === "BUY-AFT RECEIPT" ||
-      type === "AFT-TopUP"
-    ) {
-      return true
-    }
-
-    // Special case for AFT wallet incoming transactions
-    if (transaction.account === "AFT Wallet" && type.includes("AFT") && !type.includes("OUT-")) {
-      return true
-    }
-
-    return false
+  const formatShares = (shares: number) => {
+    return Number(shares).toFixed(4)
   }
 
-  // Helper function to check if a transaction is AFT-related
-  const isAftTransaction = (transaction: Transaction): boolean => {
-    const type = transaction.type || transaction.transaction_type || ""
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-NA", {
+      style: "currency",
+      currency: "NAD",
+      minimumFractionDigits: 2,
+    }).format(amount)
+  }
+
+  const getStatusBadge = (status: string) => {
+    const statusColors: Record<string, string> = {
+      completed: "bg-green-500",
+      pending: "bg-yellow-500",
+      failed: "bg-red-500",
+      cancelled: "bg-gray-500",
+    }
+
     return (
-      type.includes("AFT") || type === "ACTIVATE FEE" || (transaction.account && transaction.account.includes("AFT"))
+      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500"} text-white`}>
+        {status.toUpperCase()}
+      </Badge>
     )
   }
 
-  // Helper function to check if a transaction should trigger a notification
-  const shouldNotify = (transaction: Transaction): boolean => {
-    return isAftTransaction(transaction) && isPositiveTransaction(transaction)
+  const getTransactionTypeDisplay = (type: string) => {
+    const typeMap: Record<string, string> = {
+      purchase: "Purchase",
+      vesting: "Vesting",
+      claim: "Claim",
+      buy_order_placed: "Buy Order",
+      sell_order_placed: "Sell Order",
+      shares_purchased: "Shares Bought",
+      shares_sold: "Shares Sold",
+      transfer: "Transfer",
+      cashout: "Cashout",
+      aft_purchase: "AFT Purchase",
+    }
+    return typeMap[type] || type.replace(/_/g, " ").toUpperCase()
+  }
+
+  const getAmountDisplay = (transaction: Transaction) => {
+    // For AFT transactions, show AFT units
+    if (transaction.transaction_type === "aft_purchase" || transaction.description?.toLowerCase().includes("aft")) {
+      return `${formatShares(transaction.shares || 0)} AFT`
+    }
+    // For share transactions, show shares
+    if (transaction.shares && transaction.shares > 0) {
+      return `${formatShares(transaction.shares)} Shares`
+    }
+    // For monetary transactions, show currency
+    return formatCurrency(transaction.total_amount)
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(transactions.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentTransactions = transactions.slice(startIndex, endIndex)
+
+  if (loading) {
+    return <TransactionTableSkeleton />
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction History</CardTitle>
+          <CardDescription>Your recent transactions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <div className="text-red-500">Error: {error}</div>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-gray-700 bg-[#1c1e26]">
-            <th className="text-left py-2 px-4 text-[11px] font-medium">Description</th>
-            {showAccount && <th className="text-left py-2 px-4 text-[11px] font-medium">Account</th>}
-            <th className="text-left py-2 px-4 text-[11px] font-medium">Date</th>
-            {showReference && <th className="text-left py-2 px-4 text-[11px] font-medium">Reference</th>}
-            {showRecipient && <th className="text-left py-2 px-4 text-[11px] font-medium">Peer-Email</th>}
-            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (PWT)</th>
-            <th className="text-left py-2 px-4 text-[11px] font-medium">Amount (USD)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((transaction) => {
-            const isPositive = isPositiveTransaction(transaction)
-            const formattedType = formatTransactionType(transaction)
-            const signPart = formattedType.substring(0, 2) // Get the "+ " or "- " part
-            const descriptionPart = formattedType.substring(2) // Get the rest of the description
+    <Card>
+      <CardHeader>
+        <CardTitle>Transaction History</CardTitle>
+        <CardDescription>Your recent transactions and order activity</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {transactions.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-muted-foreground">No transactions found</div>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Value (N$)</TableHead>
+                    <TableHead>From</TableHead>
+                    <TableHead>To</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Description</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentTransactions.map((transaction) => (
+                    <TableRow key={transaction.id}>
+                      <TableCell className="font-medium">{formatDate(transaction.created_at)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getTransactionTypeDisplay(transaction.transaction_type)}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono">{getAmountDisplay(transaction)}</TableCell>
+                      <TableCell className="font-mono">{formatCurrency(transaction.total_amount)}</TableCell>
+                      <TableCell className="capitalize">{transaction.from_wallet?.replace(/_/g, " ") || "-"}</TableCell>
+                      <TableCell className="capitalize">{transaction.to_wallet?.replace(/_/g, " ") || "-"}</TableCell>
+                      <TableCell>{getStatusBadge(transaction.status)}</TableCell>
+                      <TableCell className="max-w-xs truncate">{transaction.description}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
 
-            return (
-              <tr key={transaction.id} className="border-b border-gray-700">
-                <td className="py-[6px] px-4 text-[10px]">
-                  <span className={isPositive ? "text-green-500" : "text-red-500"}>{signPart}</span>
-                  <span className="text-white">{descriptionPart}</span>
-                </td>
-                {showAccount && <td className="py-[6px] px-4 text-[10px]">{transaction.account}</td>}
-                <td className="py-[6px] px-4 text-[10px]">{transaction.date}</td>
-                {showReference && <td className="py-[6px] px-4 text-[10px]">{transaction.reference}</td>}
-                {showRecipient && (
-                  <td className="py-[6px] px-4 text-[10px]">
-                    {transaction.type === "IN-AFT GIFT"
-                      ? transaction.sender || "-"
-                      : isAftTransaction(transaction) && isPositiveTransaction(transaction)
-                        ? "system@peer-wealth.com"
-                        : isTypeInList(transaction.type || transaction.transaction_type, ["IN-PWT RECEIPT"])
-                          ? transaction.sender || "-"
-                          : transaction.recipient || "-"}
-                  </td>
-                )}
-                <td className="py-[6px] px-4 text-[10px]">
-                  {transaction.amount} {isAftTransaction(transaction) ? "AFT" : "PWT"}
-                </td>
-                <td className="py-[6px] px-4 text-[10px]">{transaction.amountUsd} USD</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Showing {startIndex + 1} to {Math.min(endIndex, transactions.length)} of {transactions.length}{" "}
+                  transactions
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <div className="text-sm">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }

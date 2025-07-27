@@ -1,130 +1,84 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { usePathname } from "next/navigation"
+import { useState, useEffect } from "react"
+import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react"
 
-type Notification = {
-  id: string
+interface SlidingNotificationProps {
+  type: "success" | "error" | "info" | "warning"
   message: string
-  created_at?: string
+  isVisible: boolean
+  onClose: () => void
+  duration?: number
 }
 
-export function SlidingNotification() {
-  const pathname = usePathname()
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-  const [isVisible, setIsVisible] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+export function SlidingNotification({ type, message, isVisible, onClose, duration = 3000 }: SlidingNotificationProps) {
+  const [isAnimating, setIsAnimating] = useState(false)
 
-  // Fetch notifications from the API
   useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        setIsLoading(true)
-        const response = await fetch("/api/notifications/active")
+    if (isVisible) {
+      setIsAnimating(true)
+      const timer = setTimeout(() => {
+        setIsAnimating(false)
+        setTimeout(onClose, 300) // Wait for slide-out animation
+      }, duration)
 
-        if (!response.ok) {
-          throw new Error(`API returned status ${response.status}`)
-        }
-
-        const data = await response.json()
-
-        if (Array.isArray(data) && data.length > 0) {
-          console.log(`Received ${data.length} active notifications at ${new Date().toLocaleTimeString()}`)
-          setNotifications(data)
-        } else {
-          console.log(`No active notifications found at ${new Date().toLocaleTimeString()}`)
-          setNotifications([])
-        }
-        setLastUpdated(new Date())
-      } catch (err) {
-        console.error("Error fetching notifications:", err)
-        setError(err instanceof Error ? err : new Error(String(err)))
-        setNotifications([])
-      } finally {
-        setIsLoading(false)
-      }
+      return () => clearTimeout(timer)
     }
+  }, [isVisible, duration, onClose])
 
-    // Initial fetch
-    fetchNotifications()
-
-    // Refresh notifications every 3 minutes (changed from 5 minutes)
-    const refreshInterval = setInterval(fetchNotifications, 3 * 60 * 1000)
-
-    // Cleanup interval on unmount
-    return () => clearInterval(refreshInterval)
-  }, [])
-
-  // Handle notification rotation with visibility timing
-  useEffect(() => {
-    if (notifications.length <= 0 || isLoading) return
-
-    // For a single notification, just show it continuously
-    if (notifications.length === 1) {
-      setIsVisible(true)
-      return
+  const getIcon = () => {
+    switch (type) {
+      case "success":
+        return <CheckCircle className="w-5 h-5 text-green-400" />
+      case "error":
+        return <AlertCircle className="w-5 h-5 text-red-400" />
+      case "warning":
+        return <AlertTriangle className="w-5 h-5 text-yellow-400" />
+      case "info":
+      default:
+        return <Info className="w-5 h-5 text-blue-400" />
     }
-
-    // Function to handle the rotation cycle for multiple notifications
-    const rotateNotifications = () => {
-      // Show the current notification
-      setIsVisible(true)
-
-      // After 25 seconds, hide the notification
-      const hideTimeout = setTimeout(() => {
-        setIsVisible(false)
-
-        // After 4 seconds of being hidden, show the next notification
-        const showNextTimeout = setTimeout(() => {
-          setCurrentIndex((prevIndex) => (prevIndex + 1) % notifications.length)
-          setIsVisible(true)
-        }, 4000) // 4 second gap
-
-        return () => clearTimeout(showNextTimeout)
-      }, 25000) // 25 seconds display time
-
-      return () => clearTimeout(hideTimeout)
-    }
-
-    // Start the rotation cycle
-    const cleanup = rotateNotifications()
-
-    // Set up an interval to continue the cycle
-    const interval = setInterval(() => {
-      cleanup()
-      rotateNotifications()
-    }, 29000) // 25 seconds display + 4 seconds gap
-
-    return () => {
-      cleanup()
-      clearInterval(interval)
-    }
-  }, [notifications.length, isLoading])
-
-  // If loading or no notifications, don't show anything
-  if (isLoading || notifications.length === 0) {
-    return null
   }
 
-  // Get current notification message
-  const currentMessage = notifications[currentIndex]?.message || ""
-
-  // If no message, don't show anything
-  if (!currentMessage) {
-    return null
+  const getBackgroundColor = () => {
+    switch (type) {
+      case "success":
+        return "bg-green-900/90 border-green-600/50"
+      case "error":
+        return "bg-red-900/90 border-red-600/50"
+      case "warning":
+        return "bg-yellow-900/90 border-yellow-600/50"
+      case "info":
+      default:
+        return "bg-blue-900/90 border-blue-600/50"
+    }
   }
 
-  // Return the notification component with the yellow bar always visible
+  if (!isVisible) return null
+
   return (
-    <div className="w-full bg-yellow-500 text-black px-4 py-2 text-sm font-semibold overflow-hidden relative h-[36px] flex items-center">
-      {isVisible ? (
-        <div className="animate-slide-message whitespace-nowrap">{currentMessage}</div>
-      ) : (
-        <div className="opacity-0 h-[20px]">Waiting for next message</div>
-      )}
+    <div
+      className={`fixed top-4 right-4 z-50 transform transition-transform duration-300 ease-in-out ${
+        isAnimating ? "translate-x-0" : "translate-x-full"
+      }`}
+    >
+      <div className={`${getBackgroundColor()} border rounded-lg shadow-lg p-4 min-w-80 max-w-96 backdrop-blur-sm`}>
+        <div className="flex items-start gap-3">
+          {getIcon()}
+          <div className="flex-1">
+            <p className="text-white text-sm font-medium">{message}</p>
+          </div>
+          <button
+            onClick={() => {
+              setIsAnimating(false)
+              setTimeout(onClose, 300)
+            }}
+            className="text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
