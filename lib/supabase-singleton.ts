@@ -1,7 +1,7 @@
-// This file exists for backward compatibility
-// All new code should import from @/lib/supabase instead
+import { createClient } from "@supabase/supabase-js"
+import { env } from "./env"
 
-import { supabase as supabaseClient } from "./supabase"
+// Singleton Supabase client for backward compatibility
+export const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
-export const supabase = supabaseClient
-export default supabaseClient
+export default supabase
