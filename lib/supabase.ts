@@ -72,4 +72,16 @@ export const createServerSupabaseClient = () => {
   })
 }
 
+// Create admin client (alias for createServerSupabaseClient)
+export const createAdminClient = () => {
+  console.log("Creating NEW Supabase admin client instance")
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}
+
 export default supabase

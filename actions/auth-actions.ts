@@ -1,6 +1,7 @@
 "use server"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { redirect } from "next/navigation"
+import { revalidatePath } from "next/cache"
 
 export async function registerUser(formData: FormData) {
   console.log("Starting registration process...")
@@ -246,7 +247,7 @@ export async function loginUser(formData: FormData) {
   }
 }
 
-export async function logoutUser() {
+export async function signOut() {
   const supabase = createServerSupabaseClient()
 
   try {
@@ -256,15 +257,16 @@ export async function logoutUser() {
       console.error("Sign out error:", error)
       throw error
     }
+
+    revalidatePath("/", "layout")
+    redirect("/login")
   } catch (error) {
     console.error("Sign out failed:", error)
     throw error
   }
-
-  redirect("/login")
 }
 
-export async function getUser() {
+export async function getCurrentUser() {
   const supabase = createServerSupabaseClient()
 
   try {
@@ -282,6 +284,40 @@ export async function getUser() {
   } catch (error) {
     console.error("Get user failed:", error)
     return null
+  }
+}
+
+export async function updateUserProfile(formData: FormData) {
+  const supabase = createServerSupabaseClient()
+
+  try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      throw new Error("User not authenticated")
+    }
+
+    const updates = {
+      full_name: formData.get("full_name") as string,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      data: updates,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    revalidatePath("/dashboard/settings")
+    return { success: true }
+  } catch (error) {
+    console.error("Update profile failed:", error)
+    throw error
   }
 }
 

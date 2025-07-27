@@ -3,108 +3,81 @@
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
 
-export async function updatePassword(formData: FormData) {
+export async function getUserProfile(userId: string) {
   const supabase = createServerSupabaseClient()
 
   try {
-    const oldPassword = formData.get("oldPassword") as string
-    const newPassword = formData.get("newPassword") as string
-    const sessionToken = formData.get("sessionToken") as string
-    const userId = formData.get("userId") as string
-
-    if (!oldPassword || !newPassword) {
-      return { success: false, message: "Both old and new passwords are required" }
-    }
-
-    if (newPassword.length < 8) {
-      return { success: false, message: "New password must be at least 8 characters long" }
-    }
-
-    // Update the user's password
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-    })
+    const { data, error } = await supabase.from("app_users").select("*").eq("id", userId).single()
 
     if (error) {
-      console.error("Password update error:", error)
-      return { success: false, message: "Failed to update password" }
+      console.error("Get user profile error:", error)
+      throw error
     }
 
-    revalidatePath("/dashboard/settings")
-    return { success: true, message: "Password updated successfully" }
+    return data
   } catch (error) {
-    console.error("Password update failed:", error)
-    return { success: false, message: "An unexpected error occurred" }
+    console.error("Get user profile failed:", error)
+    throw error
   }
 }
 
-export async function updateReferrerEmail(formData: FormData) {
+export async function updateUserReferrer(userId: string, referrerCode: string) {
   const supabase = createServerSupabaseClient()
 
   try {
-    const referrerEmail = formData.get("referrerEmail") as string
-    const userId = formData.get("userId") as string
-    const sessionToken = formData.get("sessionToken") as string
-
-    if (!referrerEmail || !userId) {
-      return { success: false, message: "Missing required fields" }
-    }
-
-    // First, find the referrer by email
-    const { data: referrerData, error: referrerError } = await supabase
-      .from("app_users")
-      .select("user_uuid, email")
-      .eq("email", referrerEmail)
-      .single()
-
-    if (referrerError || !referrerData) {
-      return { success: false, message: "Referrer not found" }
-    }
-
-    // Get the referrer's referral code
-    const { data: referrerSettings, error: settingsError } = await supabase
-      .from("usersettings")
-      .select("referral_code")
-      .eq("user_uuid", referrerData.user_uuid)
-      .single()
-
-    if (settingsError || !referrerSettings) {
-      return { success: false, message: "Referrer settings not found" }
-    }
-
-    // Check if user already has a referrer
-    const { data: existingReferral, error: existingError } = await supabase
-      .from("referrals")
-      .select("*")
-      .eq("referred_uuid", userId)
-      .single()
-
-    if (existingReferral) {
-      return { success: false, message: "You already have a referrer" }
-    }
-
-    // Create the referral relationship
     const { data, error } = await supabase
-      .from("referrals")
-      .insert({
-        referrer_uuid: referrerData.user_uuid,
-        referrer_email: referrerData.email,
-        referred_uuid: userId,
-        referral_code: referrerSettings.referral_code,
-        referred_referral_code: referrerSettings.referral_code,
-      })
+      .from("app_users")
+      .update({ referrer_code: referrerCode })
+      .eq("id", userId)
       .select()
       .single()
 
     if (error) {
-      console.error("Referral creation error:", error)
-      return { success: false, message: "Failed to create referral relationship" }
+      console.error("Update referrer error:", error)
+      throw error
     }
 
     revalidatePath("/dashboard/settings")
-    return { success: true, message: "Referrer updated successfully" }
+    return data
   } catch (error) {
-    console.error("Update referrer email failed:", error)
-    return { success: false, message: "An unexpected error occurred" }
+    console.error("Update referrer failed:", error)
+    throw error
+  }
+}
+
+export async function getUserStats(userId: string) {
+  const supabase = createServerSupabaseClient()
+
+  try {
+    // Get user's referral count
+    const { count: referralCount, error: referralError } = await supabase
+      .from("app_users")
+      .select("*", { count: "exact", head: true })
+      .eq("referrer_code", userId)
+
+    if (referralError) {
+      console.error("Get referral count error:", referralError)
+    }
+
+    // Get user's transaction count
+    const { count: transactionCount, error: transactionError } = await supabase
+      .from("payment_transactions")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+
+    if (transactionError) {
+      console.error("Get transaction count error:", transactionError)
+    }
+
+    return {
+      referralCount: referralCount || 0,
+      transactionCount: transactionCount || 0,
+    }
+  } catch (error) {
+    console.error("Get user stats failed:", error)
+    return {
+      referralCount: 0,
+      transactionCount: 0,
+    }
   }
 }
