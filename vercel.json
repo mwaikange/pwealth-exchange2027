@@ -1,4 +1,13 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install"
+  "crons": [
+    {
+      "path": "/api/cron/weekly-price",
+      "schedule": "20 9 * * 1"
+    }
+  ],
+  "functions": {
+    "app/api/cron/weekly-price/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }
