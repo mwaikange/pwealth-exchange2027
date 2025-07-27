@@ -5,7 +5,7 @@ import { Copy } from "lucide-react"
 import { useState, useEffect } from "react"
 import { updatePassword, updateReferrerEmail } from "@/actions/user-actions"
 import { useAuth } from "@/contexts/auth-context"
-import { supabase } from "@/lib/supabase-singleton"
+import { supabase } from "@/lib/supabase"
 // Import the updateReferrer action
 import { updateReferrer } from "@/actions/update-referrer"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
