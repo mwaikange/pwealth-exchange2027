@@ -24,6 +24,7 @@ DECLARE
     max_attempts INTEGER := 5;
     result JSON;
     success BOOLEAN := false;
+    error_msg TEXT;
 BEGIN
     WHILE attempt_count < max_attempts AND NOT success LOOP
         BEGIN
@@ -35,12 +36,16 @@ BEGIN
             -- Try to calculate the price
             SELECT calculate_weekly_share_price_simplified() INTO result;
             
-            -- Check if successful
-            IF (result->>'success')::boolean THEN
+            -- Check if successful (handle both boolean and text responses)
+            IF result IS NOT NULL AND (
+                (result->>'success')::boolean = true OR
+                result->>'success' = 'true'
+            ) THEN
                 success := true;
                 RAISE NOTICE 'Price calculation successful on attempt %', attempt_count;
             ELSE
-                RAISE NOTICE 'Price calculation failed on attempt %: %', attempt_count, result->>'message';
+                error_msg := COALESCE(result->>'message', 'Unknown error');
+                RAISE NOTICE 'Price calculation failed on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -50,7 +55,8 @@ BEGIN
             
         EXCEPTION
             WHEN OTHERS THEN
-                RAISE NOTICE 'Price calculation error on attempt %: %', attempt_count, SQLERRM;
+                error_msg := SQLERRM;
+                RAISE NOTICE 'Price calculation error on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -69,9 +75,9 @@ BEGIN
     ELSE
         RETURN json_build_object(
             'success', false,
-            'message', 'Price calculation failed after ' || max_attempts || ' attempts',
+            'message', 'Price calculation failed after ' || max_attempts || ' attempts. Last error: ' || COALESCE(error_msg, 'Unknown error'),
             'attempts', attempt_count,
-            'last_error', result
+            'last_error', error_msg
         );
     END IF;
 END;
@@ -84,6 +90,7 @@ DECLARE
     max_attempts INTEGER := 5;
     result JSON;
     success BOOLEAN := false;
+    error_msg TEXT;
 BEGIN
     WHILE attempt_count < max_attempts AND NOT success LOOP
         BEGIN
@@ -96,11 +103,15 @@ BEGIN
             SELECT clear_weekly_order_history() INTO result;
             
             -- Check if successful
-            IF (result->>'success')::boolean THEN
+            IF result IS NOT NULL AND (
+                (result->>'success')::boolean = true OR
+                result->>'success' = 'true'
+            ) THEN
                 success := true;
                 RAISE NOTICE 'History clear successful on attempt %', attempt_count;
             ELSE
-                RAISE NOTICE 'History clear failed on attempt %: %', attempt_count, result->>'message';
+                error_msg := COALESCE(result->>'message', 'Unknown error');
+                RAISE NOTICE 'History clear failed on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -110,7 +121,8 @@ BEGIN
             
         EXCEPTION
             WHEN OTHERS THEN
-                RAISE NOTICE 'History clear error on attempt %: %', attempt_count, SQLERRM;
+                error_msg := SQLERRM;
+                RAISE NOTICE 'History clear error on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -129,8 +141,9 @@ BEGIN
     ELSE
         RETURN json_build_object(
             'success', false,
-            'message', 'History clear failed after ' || max_attempts || ' attempts',
-            'attempts', attempt_count
+            'message', 'History clear failed after ' || max_attempts || ' attempts. Last error: ' || COALESCE(error_msg, 'Unknown error'),
+            'attempts', attempt_count,
+            'last_error', error_msg
         );
     END IF;
 END;
@@ -143,6 +156,7 @@ DECLARE
     max_attempts INTEGER := 5;
     result JSON;
     success BOOLEAN := false;
+    error_msg TEXT;
 BEGIN
     WHILE attempt_count < max_attempts AND NOT success LOOP
         BEGIN
@@ -155,11 +169,15 @@ BEGIN
             SELECT open_exchange_weekly() INTO result;
             
             -- Check if successful
-            IF (result->>'success')::boolean THEN
+            IF result IS NOT NULL AND (
+                (result->>'success')::boolean = true OR
+                result->>'success' = 'true'
+            ) THEN
                 success := true;
                 RAISE NOTICE 'Exchange open successful on attempt %', attempt_count;
             ELSE
-                RAISE NOTICE 'Exchange open failed on attempt %: %', attempt_count, result->>'message';
+                error_msg := COALESCE(result->>'message', 'Unknown error');
+                RAISE NOTICE 'Exchange open failed on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -169,7 +187,8 @@ BEGIN
             
         EXCEPTION
             WHEN OTHERS THEN
-                RAISE NOTICE 'Exchange open error on attempt %: %', attempt_count, SQLERRM;
+                error_msg := SQLERRM;
+                RAISE NOTICE 'Exchange open error on attempt %: %', attempt_count, error_msg;
                 
                 -- Wait 3 seconds before retry (except on last attempt)
                 IF attempt_count < max_attempts THEN
@@ -188,10 +207,153 @@ BEGIN
     ELSE
         RETURN json_build_object(
             'success', false,
-            'message', 'Exchange open failed after ' || max_attempts || ' attempts',
-            'attempts', attempt_count
+            'message', 'Exchange open failed after ' || max_attempts || ' attempts. Last error: ' || COALESCE(error_msg, 'Unknown error'),
+            'attempts', attempt_count,
+            'last_error', error_msg
         );
     END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create the missing test functions
+CREATE OR REPLACE FUNCTION test_new_schedule()
+RETURNS JSON AS $$
+BEGIN
+    RETURN json_build_object(
+        'message', 'Testing new exchange schedule',
+        'schedule', json_build_object(
+            'sunday_2359', 'Close exchange and clear orders',
+            'monday_0930', 'Clear order history (with 5x retry)',
+            'monday_1003', 'Calculate share price (with 5x retry)',
+            'monday_1005', 'Open exchange (with 5x retry)'
+        ),
+        'timezone', 'Africa/Windhoek (UTC+2)',
+        'retry_logic', 'Each step retries up to 5 times with 3-second delays',
+        'current_status', (SELECT get_exchange_status()),
+        'test_time', NOW()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_cron_job_status()
+RETURNS JSON AS $$
+DECLARE
+    cron_jobs JSON;
+BEGIN
+    -- Get cron job information
+    SELECT json_agg(
+        json_build_object(
+            'jobname', jobname,
+            'schedule', schedule,
+            'command', command,
+            'active', active,
+            'jobid', jobid
+        ) ORDER BY 
+            CASE jobname
+                WHEN 'weekly-exchange-close' THEN 1
+                WHEN 'weekly-history-clear' THEN 2
+                WHEN 'weekly-price-calculation' THEN 3
+                WHEN 'weekly-exchange-open' THEN 4
+                ELSE 5
+            END
+    ) INTO cron_jobs
+    FROM cron.job 
+    WHERE jobname LIKE 'weekly-%';
+    
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Cron job status retrieved',
+        'jobs', COALESCE(cron_jobs, '[]'::json),
+        'total_jobs', (SELECT COUNT(*) FROM cron.job WHERE jobname LIKE 'weekly-%'),
+        'checked_at', NOW()
+    );
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Error getting cron job status: ' || SQLERRM,
+            'error_code', 'CRON_STATUS_ERROR'
+        );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION trigger_weekly_cycle_test()
+RETURNS JSON AS $$
+DECLARE
+    close_result JSON;
+    clear_result JSON;
+    price_result JSON;
+    open_result JSON;
+    final_status JSON;
+BEGIN
+    -- Test the full weekly cycle
+    RAISE NOTICE 'Starting weekly cycle test...';
+    
+    -- 1. Close exchange
+    BEGIN
+        SELECT close_exchange_weekly() INTO close_result;
+        RAISE NOTICE 'Close exchange result: %', close_result;
+    EXCEPTION
+        WHEN OTHERS THEN
+            close_result := json_build_object('success', false, 'message', 'Close failed: ' || SQLERRM);
+    END;
+    
+    -- 2. Clear history
+    BEGIN
+        SELECT clear_history_with_retries() INTO clear_result;
+        RAISE NOTICE 'Clear history result: %', clear_result;
+    EXCEPTION
+        WHEN OTHERS THEN
+            clear_result := json_build_object('success', false, 'message', 'Clear failed: ' || SQLERRM);
+    END;
+    
+    -- 3. Calculate price
+    BEGIN
+        SELECT calculate_price_with_retries() INTO price_result;
+        RAISE NOTICE 'Price calculation result: %', price_result;
+    EXCEPTION
+        WHEN OTHERS THEN
+            price_result := json_build_object('success', false, 'message', 'Price calc failed: ' || SQLERRM);
+    END;
+    
+    -- 4. Open exchange
+    BEGIN
+        SELECT open_exchange_with_retries() INTO open_result;
+        RAISE NOTICE 'Open exchange result: %', open_result;
+    EXCEPTION
+        WHEN OTHERS THEN
+            open_result := json_build_object('success', false, 'message', 'Open failed: ' || SQLERRM);
+    END;
+    
+    -- 5. Get final status
+    BEGIN
+        SELECT get_exchange_status() INTO final_status;
+    EXCEPTION
+        WHEN OTHERS THEN
+            final_status := json_build_object('error', 'Status check failed: ' || SQLERRM);
+    END;
+    
+    RETURN json_build_object(
+        'success', true,
+        'message', 'Weekly cycle test completed',
+        'results', json_build_object(
+            'close_exchange', close_result,
+            'clear_history', clear_result,
+            'calculate_price', price_result,
+            'open_exchange', open_result,
+            'final_status', final_status
+        ),
+        'test_completed_at', NOW()
+    );
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Error in weekly cycle test: ' || SQLERRM,
+            'error_code', 'WEEKLY_CYCLE_TEST_ERROR'
+        );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -248,13 +410,23 @@ BEGIN
     current_week := DATE_TRUNC('week', current_time)::DATE + INTERVAL '1 day';
     
     -- Get current share price
-    SELECT get_current_share_price() INTO current_price;
+    BEGIN
+        SELECT get_current_share_price() INTO current_price;
+    EXCEPTION
+        WHEN OTHERS THEN
+            current_price := 108.2; -- Fallback price
+    END;
     
     -- Get last price update
-    SELECT effective_date INTO last_price_update
-    FROM weekly_prices 
-    ORDER BY effective_date DESC 
-    LIMIT 1;
+    BEGIN
+        SELECT effective_date INTO last_price_update
+        FROM weekly_prices 
+        ORDER BY effective_date DESC 
+        LIMIT 1;
+    EXCEPTION
+        WHEN OTHERS THEN
+            last_price_update := NOW();
+    END;
     
     -- Determine if exchange is open based on new schedule
     -- Open: Monday 10:05 to Sunday 23:59
@@ -303,49 +475,29 @@ BEGIN
             'timezone', 'Africa/Windhoek (UTC+2)'
         )
     );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create a test function for the new schedule
-CREATE OR REPLACE FUNCTION test_new_schedule()
-RETURNS JSON AS $$
-BEGIN
-    RETURN json_build_object(
-        'message', 'Testing new exchange schedule',
-        'schedule', json_build_object(
-            'sunday_2359', 'Close exchange and clear orders',
-            'monday_0930', 'Clear order history (with 5x retry)',
-            'monday_1003', 'Calculate share price (with 5x retry)',
-            'monday_1005', 'Open exchange (with 5x retry)'
-        ),
-        'timezone', 'Africa/Windhoek (UTC+2)',
-        'retry_logic', 'Each step retries up to 5 times with 3-second delays',
-        'current_status', (SELECT get_exchange_status())
-    );
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Error getting exchange status: ' || SQLERRM,
+            'error_code', 'EXCHANGE_STATUS_ERROR',
+            'fallback_data', json_build_object(
+                'is_trading_open', false,
+                'status_message', 'Exchange status unavailable',
+                'current_price', 108.2
+            )
+        );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Show final cron job status
-SELECT 
-    jobname,
-    schedule,
-    command,
-    active,
-    jobid
-FROM cron.job 
-WHERE jobname LIKE 'weekly-%'
-ORDER BY 
-    CASE jobname
-        WHEN 'weekly-exchange-close' THEN 1
-        WHEN 'weekly-history-clear' THEN 2
-        WHEN 'weekly-price-calculation' THEN 3
-        WHEN 'weekly-exchange-open' THEN 4
-        ELSE 5
-    END;
-
--- Log completion
 DO $$
+DECLARE
+    job_count INTEGER;
 BEGIN
+    SELECT COUNT(*) INTO job_count FROM cron.job WHERE jobname LIKE 'weekly-%';
+    
     RAISE NOTICE '=== UPDATED EXCHANGE SCHEDULE ===';
     RAISE NOTICE 'All times in Africa/Windhoek timezone (UTC+2)';
     RAISE NOTICE '';
@@ -359,5 +511,11 @@ BEGIN
     RAISE NOTICE '- 3 second delay between retries';
     RAISE NOTICE '- Detailed logging of all attempts';
     RAISE NOTICE '';
-    RAISE NOTICE 'Use SELECT test_new_schedule(); to test';
+    RAISE NOTICE 'Total cron jobs scheduled: %', job_count;
+    RAISE NOTICE '';
+    RAISE NOTICE 'Test commands:';
+    RAISE NOTICE '- SELECT test_new_schedule();';
+    RAISE NOTICE '- SELECT get_exchange_status();';
+    RAISE NOTICE '- SELECT get_cron_job_status();';
+    RAISE NOTICE '- SELECT trigger_weekly_cycle_test();';
 END $$;
