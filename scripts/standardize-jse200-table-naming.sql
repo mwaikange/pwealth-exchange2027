@@ -105,7 +105,7 @@ SELECT
         ) THEN '✅ EXISTS'
         ELSE '❌ NOT FOUND'
     END as status,
-    (
+    COALESCE((
         SELECT COUNT(*) 
         FROM JSE200_PriceUpdate_Mondays
-    ) as record_count;
+    ), 0) as record_count;

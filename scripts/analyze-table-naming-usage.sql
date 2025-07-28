@@ -1,65 +1,107 @@
--- Analyze current JSE200 table naming usage across the codebase
--- This will help determine which naming convention to standardize on
+-- Analyze current JSE200 table naming usage across the database
+-- This script checks for both naming conventions and their usage
 
 DO $$
 DECLARE
-    pascal_case_usage TEXT[] := ARRAY[
-        'JSE200_PriceUpdate_Mondays',
-        'calculate_weekly_share_price_simplified()',
-        'scripts/create-missing-core-functions.sql'
-    ];
-    lowercase_usage TEXT[] := ARRAY[
-        'jse200_priceupdate_mondays',
-        'Various SQL scripts',
-        'Potential duplicate table'
-    ];
+    pascal_exists BOOLEAN := FALSE;
+    lowercase_exists BOOLEAN := FALSE;
+    pascal_count INTEGER := 0;
+    lowercase_count INTEGER := 0;
+    function_refs TEXT[];
+    view_refs TEXT[];
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '█                                                                            █';
-    RAISE NOTICE '█                    📋 TABLE NAMING ANALYSIS                               █';
+    RAISE NOTICE '█                    🔍 JSE200 TABLE NAMING ANALYSIS                        █';
     RAISE NOTICE '█                                                                            █';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
     
-    RAISE NOTICE '🔍 CURRENT USAGE ANALYSIS:';
+    -- Check if PascalCase table exists
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'JSE200_PriceUpdate_Mondays'
+    ) INTO pascal_exists;
+    
+    -- Check if lowercase table exists
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'jse200_priceupdate_mondays'
+    ) INTO lowercase_exists;
+    
+    -- Get record counts if tables exist
+    IF pascal_exists THEN
+        EXECUTE 'SELECT COUNT(*) FROM JSE200_PriceUpdate_Mondays' INTO pascal_count;
+    END IF;
+    
+    IF lowercase_exists THEN
+        EXECUTE 'SELECT COUNT(*) FROM jse200_priceupdate_mondays' INTO lowercase_count;
+    END IF;
+    
+    RAISE NOTICE '📊 TABLE EXISTENCE STATUS:';
+    RAISE NOTICE '   JSE200_PriceUpdate_Mondays (PascalCase): %', 
+                 CASE WHEN pascal_exists THEN '✅ EXISTS (' || pascal_count || ' records)' ELSE '❌ NOT FOUND' END;
+    RAISE NOTICE '   jse200_priceupdate_mondays (lowercase): %', 
+                 CASE WHEN lowercase_exists THEN '⚠️  EXISTS (' || lowercase_count || ' records)' ELSE '✅ NOT FOUND (good!)' END;
     RAISE NOTICE '';
     
-    RAISE NOTICE '📝 PascalCase Usage (JSE200_PriceUpdate_Mondays):';
-    RAISE NOTICE '   ✓ sql/create-simplified-price-calculation.sql';
-    RAISE NOTICE '   ✓ scripts/create-missing-core-functions.sql';
-    RAISE NOTICE '   ✓ calculate_weekly_share_price_simplified() function';
-    RAISE NOTICE '   ✓ Most recent SQL scripts';
+    -- Check for function references
+    SELECT array_agg(p.proname) INTO function_refs
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public'
+    AND (
+        pg_get_functiondef(p.oid) ILIKE '%JSE200_PriceUpdate_Mondays%'
+        OR pg_get_functiondef(p.oid) ILIKE '%jse200_priceupdate_mondays%'
+    );
+    
+    IF function_refs IS NOT NULL THEN
+        RAISE NOTICE '🔧 FUNCTIONS REFERENCING JSE200 TABLE:';
+        FOR i IN 1..array_length(function_refs, 1) LOOP
+            RAISE NOTICE '   - %', function_refs[i];
+        END LOOP;
+    ELSE
+        RAISE NOTICE '🔧 FUNCTIONS: No functions found referencing JSE200 tables';
+    END IF;
+    
     RAISE NOTICE '';
     
-    RAISE NOTICE '📝 lowercase Usage (jse200_priceupdate_mondays):';
-    RAISE NOTICE '   ⚠️  Potentially in older scripts';
-    RAISE NOTICE '   ⚠️  May exist as duplicate table';
-    RAISE NOTICE '   ⚠️  Inconsistent references';
-    RAISE NOTICE '';
+    -- Check for view references
+    SELECT array_agg(v.viewname) INTO view_refs
+    FROM pg_views v
+    WHERE v.schemaname = 'public'
+    AND (
+        v.definition ILIKE '%JSE200_PriceUpdate_Mondays%'
+        OR v.definition ILIKE '%jse200_priceupdate_mondays%'
+    );
     
+    IF view_refs IS NOT NULL THEN
+        RAISE NOTICE '👁️  VIEWS REFERENCING JSE200 TABLE:';
+        FOR i IN 1..array_length(view_refs, 1) LOOP
+            RAISE NOTICE '   - %', view_refs[i];
+        END LOOP;
+    ELSE
+        RAISE NOTICE '👁️  VIEWS: No views found referencing JSE200 tables';
+    END IF;
+    
+    RAISE NOTICE '';
     RAISE NOTICE '🎯 RECOMMENDATION:';
-    RAISE NOTICE '   Use: JSE200_PriceUpdate_Mondays (PascalCase)';
-    RAISE NOTICE '';
-    RAISE NOTICE '📋 REASONS:';
-    RAISE NOTICE '   1. Already used in main price calculation function';
-    RAISE NOTICE '   2. More descriptive and readable';
-    RAISE NOTICE '   3. Matches business terminology (JSE200)';
-    RAISE NOTICE '   4. Consistent with recent codebase';
-    RAISE NOTICE '';
+    IF pascal_exists AND NOT lowercase_exists THEN
+        RAISE NOTICE '   ✅ Perfect! Only PascalCase table exists';
+        RAISE NOTICE '   ✅ Continue using: JSE200_PriceUpdate_Mondays';
+    ELSIF pascal_exists AND lowercase_exists THEN
+        RAISE NOTICE '   ⚠️  Both tables exist - drop lowercase duplicate';
+        RAISE NOTICE '   📝 Command: DROP TABLE jse200_priceupdate_mondays;';
+    ELSIF NOT pascal_exists AND lowercase_exists THEN
+        RAISE NOTICE '   🔧 Rename lowercase to PascalCase';
+        RAISE NOTICE '   📝 Command: ALTER TABLE jse200_priceupdate_mondays RENAME TO JSE200_PriceUpdate_Mondays;';
+    ELSE
+        RAISE NOTICE '   ❌ No JSE200 table found - need to create one';
+    END IF;
     
+    RAISE NOTICE '';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
 END $$;
-
--- Check which tables actually exist
-SELECT 
-    table_name,
-    CASE 
-        WHEN table_name = 'JSE200_PriceUpdate_Mondays' THEN '✅ PascalCase (RECOMMENDED)'
-        WHEN table_name = 'jse200_priceupdate_mondays' THEN '⚠️  lowercase (should be renamed)'
-        ELSE '❓ Other'
-    END as status
-FROM information_schema.tables 
-WHERE table_schema = 'public' 
-AND table_name ILIKE '%jse200%'
-ORDER BY table_name;
