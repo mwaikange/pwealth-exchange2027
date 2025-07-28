@@ -28,9 +28,12 @@ type ExchangeStatus = {
   current_week_start: string
   last_price_update: string
   last_updated: string
-  trading_hours: {
-    opens: string
-    closes: string
+  windhoek_time?: string
+  trading_schedule?: {
+    weekly_close: string
+    history_clear: string
+    price_calculation: string
+    weekly_open: string
     timezone: string
   }
 }
@@ -81,7 +84,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch exchange status with updated times
+  // Fetch exchange status with updated schedule information
   const fetchExchangeStatus = async () => {
     try {
       const { data, error } = await supabase.rpc("get_exchange_status")
@@ -98,10 +101,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         current_week_start: new Date().toISOString(),
         last_price_update: new Date().toISOString(),
         last_updated: new Date().toISOString(),
-        trading_hours: {
-          opens: "Monday 10:05 (Windhoek time)",
-          closes: "Sunday 23:59 (Windhoek time)",
-          timezone: "Africa/Windhoek",
+        trading_schedule: {
+          weekly_close: "Sunday 23:59",
+          history_clear: "Monday 09:30",
+          price_calculation: "Monday 10:03",
+          weekly_open: "Monday 10:05",
+          timezone: "Africa/Windhoek (UTC+2)",
         },
       })
     }
@@ -261,9 +266,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
     // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
+      const schedule = exchangeStatus?.trading_schedule
       return {
         success: false,
-        message: `Exchange is currently closed. Trading resumes ${exchangeStatus?.trading_hours?.opens || "Monday at 10:05 (Windhoek time)"}.`,
+        message: `Exchange is currently closed. Trading resumes Monday at ${schedule?.weekly_open || "10:05"} (${schedule?.timezone || "Windhoek time"}).`,
       }
     }
 
@@ -317,9 +323,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
     // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
+      const schedule = exchangeStatus?.trading_schedule
       return {
         success: false,
-        message: `Exchange is currently closed. Trading resumes ${exchangeStatus?.trading_hours?.opens || "Monday at 10:05 (Windhoek time)"}.`,
+        message: `Exchange is currently closed. Trading resumes Monday at ${schedule?.weekly_open || "10:05"} (${schedule?.timezone || "Windhoek time"}).`,
       }
     }
 
