@@ -307,8 +307,9 @@ BEGIN
         CASE WHEN jse_price IS NOT NULL THEN 'JSE200_based' ELSE 'fallback' END
     );
     
+    -- Fixed RAISE NOTICE with correct parameter count
     RAISE NOTICE 'New share price calculated: N$% (change: N$%, %% from JSE200: N$%)', 
-        new_price, price_change, ROUND(percentage_change, 2), jse_price;
+        new_price, price_change, ROUND(percentage_change, 2), COALESCE(jse_price, 0);
     
     RETURN json_build_object(
         'success', true,
