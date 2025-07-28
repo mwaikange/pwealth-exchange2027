@@ -50,6 +50,7 @@ export default function ExchangePage() {
     placeBuyOrder,
     placeSellOrder,
     currentSharePrice,
+    exchangeStatus,
     loading: exchangeLoading,
     error: exchangeError,
     refreshOrders,
@@ -209,13 +210,34 @@ export default function ExchangePage() {
 
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-      {/* Alert Banner */}
-      <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
-        <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-        <AlertDescription className="text-green-800 dark:text-green-100">
-          Share Exchange is now live! Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
-        </AlertDescription>
-      </Alert>
+      {/* Dynamic Exchange Status Banner */}
+      {exchangeStatus && (
+        <Alert
+          className={`${
+            exchangeStatus.is_trading_open
+              ? "bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100"
+              : "bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100"
+          }`}
+        >
+          <AlertCircle
+            className={`h-4 w-4 ${
+              exchangeStatus.is_trading_open ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            }`}
+          />
+          <AlertDescription
+            className={
+              exchangeStatus.is_trading_open ? "text-green-800 dark:text-green-100" : "text-red-800 dark:text-red-100"
+            }
+          >
+            {exchangeStatus.status_message}
+            {!exchangeStatus.is_trading_open && (
+              <div className="mt-1 text-sm">
+                Trading will resume Monday at 09:25 after the new share price is calculated.
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {message && (
         <Alert variant={message.type === "error" ? "destructive" : "default"}>
@@ -268,13 +290,21 @@ export default function ExchangePage() {
                 <Button
                   onClick={handleBuyOrder}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={loading || isProcessing.buy || !buyAmount || Number.parseFloat(buyAmount) <= 0}
+                  disabled={
+                    loading ||
+                    isProcessing.buy ||
+                    !buyAmount ||
+                    Number.parseFloat(buyAmount) <= 0 ||
+                    !exchangeStatus?.is_trading_open // Add this line
+                  }
                 >
                   {isProcessing.buy ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       Processing...
                     </>
+                  ) : !exchangeStatus?.is_trading_open ? (
+                    "Exchange Closed"
                   ) : (
                     "Buy Shares"
                   )}
@@ -317,7 +347,8 @@ export default function ExchangePage() {
                     isProcessing.sell ||
                     !sellShares ||
                     Number.parseFloat(sellShares) <= 0 ||
-                    Number.parseFloat(sellShares) > holdWalletPostHold
+                    Number.parseFloat(sellShares) > holdWalletPostHold ||
+                    !exchangeStatus?.is_trading_open // Add this line
                   }
                 >
                   {isProcessing.sell ? (
@@ -325,6 +356,8 @@ export default function ExchangePage() {
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       Processing...
                     </>
+                  ) : !exchangeStatus?.is_trading_open ? (
+                    "Exchange Closed"
                   ) : (
                     "Sell Shares"
                   )}
@@ -389,7 +422,15 @@ export default function ExchangePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            {!exchangeStatus?.is_trading_open && (
+              <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
+                <div className="text-center text-slate-300">
+                  <div className="text-lg font-semibold">Exchange Closed</div>
+                  <div className="text-sm">Trading resumes Monday 09:25</div>
+                </div>
+              </div>
+            )}
+            <div className={`space-y-2 ${!exchangeStatus?.is_trading_open ? "opacity-50" : ""}`}>
               {(marketBuyOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active buy orders</p>
               ) : (
@@ -428,7 +469,15 @@ export default function ExchangePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            {!exchangeStatus?.is_trading_open && (
+              <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
+                <div className="text-center text-slate-300">
+                  <div className="text-lg font-semibold">Exchange Closed</div>
+                  <div className="text-sm">Trading resumes Monday 09:25</div>
+                </div>
+              </div>
+            )}
+            <div className={`space-y-2 ${!exchangeStatus?.is_trading_open ? "opacity-50" : ""}`}>
               {(marketSellOrders ?? []).length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active sell orders</p>
               ) : (

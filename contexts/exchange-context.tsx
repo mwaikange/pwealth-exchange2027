@@ -21,17 +21,28 @@ type UserOrder = MarketOrder & {
   user_uuid: string
 }
 
+type ExchangeStatus = {
+  is_trading_open: boolean
+  status_message: string
+  current_price: number
+  current_week_start: string
+  last_price_update: string
+  last_updated: string
+}
+
 type ExchangeContextType = {
   marketSellOrders: MarketOrder[]
   marketBuyOrders: MarketOrder[]
   userSellOrders: UserOrder[]
   userBuyOrders: UserOrder[]
   currentSharePrice: number
+  exchangeStatus: ExchangeStatus | null
   loading: boolean
   error: string | null
   placeBuyOrder: (amount: number) => Promise<{ success: boolean; message: string }>
   placeSellOrder: (shares: number) => Promise<{ success: boolean; message: string }>
   refreshOrders: () => Promise<void>
+  refreshExchangeStatus: () => Promise<void>
 }
 
 const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined)
@@ -42,6 +53,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   const [userSellOrders, setUserSellOrders] = useState<UserOrder[]>([])
   const [userBuyOrders, setUserBuyOrders] = useState<UserOrder[]>([])
   const [currentSharePrice, setCurrentSharePrice] = useState<number>(108.2)
+  const [exchangeStatus, setExchangeStatus] = useState<ExchangeStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
@@ -61,6 +73,27 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error("Error fetching current price:", err)
       setCurrentSharePrice(108.2) // Fallback price
+    }
+  }
+
+  // Fetch exchange status
+  const fetchExchangeStatus = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_exchange_status")
+      if (error) throw error
+
+      setExchangeStatus(data)
+      console.log("Exchange status fetched:", data)
+    } catch (err) {
+      console.error("Error fetching exchange status:", err)
+      setExchangeStatus({
+        is_trading_open: false,
+        status_message: "Exchange status unavailable",
+        current_price: 108.2,
+        current_week_start: new Date().toISOString(),
+        last_price_update: new Date().toISOString(),
+        last_updated: new Date().toISOString(),
+      })
     }
   }
 
@@ -190,13 +223,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Refresh all orders and price
+  // Refresh all orders, price, and exchange status
   const refreshOrders = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      await Promise.all([fetchCurrentPrice(), fetchMarketOrders(), fetchUserOrders()])
+      await Promise.all([fetchCurrentPrice(), fetchExchangeStatus(), fetchMarketOrders(), fetchUserOrders()])
     } catch (err: any) {
       console.error("Error refreshing orders:", err)
       setError(err.message || "Failed to refresh orders")
@@ -205,10 +238,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place buy order
+  // Add separate refresh function for exchange status
+  const refreshExchangeStatus = async () => {
+    await fetchExchangeStatus()
+  }
+
+  // Place buy order - check if exchange is open
   const placeBuyOrder = async (amount: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
+    }
+
+    // Check if exchange is open
+    if (!exchangeStatus?.is_trading_open) {
+      return { success: false, message: "Exchange is currently closed. Trading resumes Monday at 09:25." }
     }
 
     const safeAmount = isNaN(amount) ? 0 : amount
@@ -253,10 +296,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place sell order
+  // Place sell order - check if exchange is open
   const placeSellOrder = async (shares: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
+    }
+
+    // Check if exchange is open
+    if (!exchangeStatus?.is_trading_open) {
+      return { success: false, message: "Exchange is currently closed. Trading resumes Monday at 09:25." }
     }
 
     const safeShares = isNaN(shares) ? 0 : shares
@@ -356,11 +404,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     userSellOrders,
     userBuyOrders,
     currentSharePrice,
+    exchangeStatus,
     loading,
     error,
     placeBuyOrder,
     placeSellOrder,
     refreshOrders,
+    refreshExchangeStatus,
   }
 
   return <ExchangeContext.Provider value={value}>{children}</ExchangeContext.Provider>
