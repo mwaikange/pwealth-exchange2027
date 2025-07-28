@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useWallet } from "@/contexts/wallet-context"
 import { useExchange } from "@/contexts/exchange-context"
-import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2 } from "lucide-react"
+import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2, Clock } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ExchangePageSkeleton } from "@/components/skeletons/exchange-page-skeleton"
 
@@ -210,33 +210,65 @@ export default function ExchangePage() {
 
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-      {/* Dynamic Exchange Status Banner */}
+      {/* Dynamic Exchange Status Banner with Trading Hours */}
       {exchangeStatus && (
-        <Alert
-          className={`${
-            exchangeStatus.is_trading_open
-              ? "bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100"
-              : "bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100"
-          }`}
-        >
-          <AlertCircle
-            className={`h-4 w-4 ${
-              exchangeStatus.is_trading_open ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+        <div className="space-y-4">
+          <Alert
+            className={`${
+              exchangeStatus.is_trading_open
+                ? "bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100"
+                : "bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100"
             }`}
-          />
-          <AlertDescription
-            className={
-              exchangeStatus.is_trading_open ? "text-green-800 dark:text-green-100" : "text-red-800 dark:text-red-100"
-            }
           >
-            {exchangeStatus.status_message}
-            {!exchangeStatus.is_trading_open && (
-              <div className="mt-1 text-sm">
-                Trading will resume Monday at 09:25 after the new share price is calculated.
+            <AlertCircle
+              className={`h-4 w-4 ${
+                exchangeStatus.is_trading_open ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+              }`}
+            />
+            <AlertDescription
+              className={
+                exchangeStatus.is_trading_open ? "text-green-800 dark:text-green-100" : "text-red-800 dark:text-red-100"
+              }
+            >
+              <div className="font-semibold">{exchangeStatus.status_message}</div>
+              {!exchangeStatus.is_trading_open && (
+                <div className="mt-2 text-sm space-y-1">
+                  <div>Trading will resume {exchangeStatus.trading_hours?.opens}</div>
+                  <div className="text-xs opacity-75">
+                    Weekly Schedule: Opens {exchangeStatus.trading_hours?.opens} • Closes{" "}
+                    {exchangeStatus.trading_hours?.closes}
+                  </div>
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+
+          {/* Trading Hours Info Card */}
+          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+                <Clock className="h-4 w-4 mr-2" />
+                Trading Hours ({exchangeStatus.trading_hours?.timezone})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Opens:</span>
+                <span className="text-slate-100">{exchangeStatus.trading_hours?.opens}</span>
               </div>
-            )}
-          </AlertDescription>
-        </Alert>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Closes:</span>
+                <span className="text-slate-100">{exchangeStatus.trading_hours?.closes}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Status:</span>
+                <span className={exchangeStatus.is_trading_open ? "text-green-400" : "text-red-400"}>
+                  {exchangeStatus.is_trading_open ? "OPEN" : "CLOSED"}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {message && (
@@ -295,7 +327,7 @@ export default function ExchangePage() {
                     isProcessing.buy ||
                     !buyAmount ||
                     Number.parseFloat(buyAmount) <= 0 ||
-                    !exchangeStatus?.is_trading_open // Add this line
+                    !exchangeStatus?.is_trading_open
                   }
                 >
                   {isProcessing.buy ? (
@@ -348,7 +380,7 @@ export default function ExchangePage() {
                     !sellShares ||
                     Number.parseFloat(sellShares) <= 0 ||
                     Number.parseFloat(sellShares) > holdWalletPostHold ||
-                    !exchangeStatus?.is_trading_open // Add this line
+                    !exchangeStatus?.is_trading_open
                   }
                 >
                   {isProcessing.sell ? (
@@ -415,7 +447,7 @@ export default function ExchangePage() {
       {/* Order Books - ONLY ACTIVE ORDERS */}
       <div className="grid grid-cols-2 gap-6">
         {/* Market Buy Orders - ONLY pending and partial */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+        <Card className="bg-slate-800 border-slate-700 text-slate-100 relative">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
               Market Buy Orders ({(marketBuyOrders ?? []).length}) - Active Only
@@ -426,7 +458,7 @@ export default function ExchangePage() {
               <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
                 <div className="text-center text-slate-300">
                   <div className="text-lg font-semibold">Exchange Closed</div>
-                  <div className="text-sm">Trading resumes Monday 09:25</div>
+                  <div className="text-sm">Trading resumes {exchangeStatus?.trading_hours?.opens}</div>
                 </div>
               </div>
             )}
@@ -462,7 +494,7 @@ export default function ExchangePage() {
         </Card>
 
         {/* Market Sell Orders - ONLY available and partial */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+        <Card className="bg-slate-800 border-slate-700 text-slate-100 relative">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
               Market Sell Orders ({(marketSellOrders ?? []).length}) - Active Only
@@ -473,7 +505,7 @@ export default function ExchangePage() {
               <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
                 <div className="text-center text-slate-300">
                   <div className="text-lg font-semibold">Exchange Closed</div>
-                  <div className="text-sm">Trading resumes Monday 09:25</div>
+                  <div className="text-sm">Trading resumes {exchangeStatus?.trading_hours?.opens}</div>
                 </div>
               </div>
             )}

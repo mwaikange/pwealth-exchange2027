@@ -28,6 +28,11 @@ type ExchangeStatus = {
   current_week_start: string
   last_price_update: string
   last_updated: string
+  trading_hours: {
+    opens: string
+    closes: string
+    timezone: string
+  }
 }
 
 type ExchangeContextType = {
@@ -76,7 +81,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch exchange status
+  // Fetch exchange status with updated times
   const fetchExchangeStatus = async () => {
     try {
       const { data, error } = await supabase.rpc("get_exchange_status")
@@ -93,6 +98,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
         current_week_start: new Date().toISOString(),
         last_price_update: new Date().toISOString(),
         last_updated: new Date().toISOString(),
+        trading_hours: {
+          opens: "Monday 10:05 (Windhoek time)",
+          closes: "Sunday 23:59 (Windhoek time)",
+          timezone: "Africa/Windhoek",
+        },
       })
     }
   }
@@ -251,7 +261,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
     // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
-      return { success: false, message: "Exchange is currently closed. Trading resumes Monday at 09:25." }
+      return {
+        success: false,
+        message: `Exchange is currently closed. Trading resumes ${exchangeStatus?.trading_hours?.opens || "Monday at 10:05 (Windhoek time)"}.`,
+      }
     }
 
     const safeAmount = isNaN(amount) ? 0 : amount
@@ -304,7 +317,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
     // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
-      return { success: false, message: "Exchange is currently closed. Trading resumes Monday at 09:25." }
+      return {
+        success: false,
+        message: `Exchange is currently closed. Trading resumes ${exchangeStatus?.trading_hours?.opens || "Monday at 10:05 (Windhoek time)"}.`,
+      }
     }
 
     const safeShares = isNaN(shares) ? 0 : shares
