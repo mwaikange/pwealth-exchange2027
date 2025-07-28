@@ -27,8 +27,9 @@ export function SharePriceCard() {
     console.log("Price calculation result:", result)
   }
 
-  const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
-  const formatPercentage = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`
+  // Format currency to exactly 2 decimal places
+  const formatCurrency = (value: number) => `N$${Number(value).toFixed(2)}`
+  const formatPercentage = (value: number) => `${value >= 0 ? "+" : ""}${Number(value).toFixed(2)}%`
 
   if (loading) {
     return (

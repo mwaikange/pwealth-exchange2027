@@ -37,7 +37,7 @@ type WalletContextType = WalletState & {
   transferToCashout: (amount: number) => Promise<void>
 
   // Calculated values
-  getTotalAccountValue: () => number
+  getTotalAccountValue: () => Promise<number>
   getCurrentSharePrice: () => Promise<number>
 
   refreshBalances: (silent?: boolean) => Promise<void>
@@ -204,10 +204,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase.rpc("get_current_share_price")
       if (error) throw error
-      return safeNumber(data) || 108.2 // Fallback to current price
+      return safeNumber(data) || 100.0 // Updated fallback to match new default
     } catch (err) {
       console.error("Error fetching share price:", err)
-      return 108.2 // Fallback price
+      return 100.0 // Updated fallback price
     }
   }
 
@@ -313,9 +313,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await updateCashoutWallet(amount, "add")
   }
 
-  // Calculate total account value
-  const getTotalAccountValue = () => {
-    const sharePrice = 108.2 // Will be dynamic
+  // Calculate total account value using current share price
+  const getTotalAccountValue = async () => {
+    const sharePrice = await getCurrentSharePrice()
     const totalShares = walletState.holdWalletPreHold + walletState.holdWalletPostHold
     const totalNAD = walletState.buyWalletBalance + walletState.cashoutWalletBalance
     return totalShares * sharePrice + totalNAD

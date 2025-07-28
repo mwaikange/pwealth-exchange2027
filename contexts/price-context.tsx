@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase-singleton"
 
 type PriceData = {
   currentPrice: number
-  previousPrice: number
   priceChange: number
   percentageChange: number
   j200Growth: number
@@ -19,18 +18,17 @@ type PriceContextType = {
   loading: boolean
   error: string | null
   refreshPrice: () => Promise<void>
-  triggerPriceCalculation: () => Promise<{ success: boolean; message: string }>
+  triggerPriceCalculation: () => Promise<any>
 }
 
 const PriceContext = createContext<PriceContextType | undefined>(undefined)
 
 const DEFAULT_PRICE_DATA: PriceData = {
   currentPrice: 100.0,
-  previousPrice: 100.0,
   priceChange: 0,
   percentageChange: 0,
   j200Growth: 0,
-  effectiveDate: new Date().toISOString().split("T")[0],
+  effectiveDate: new Date().toISOString(),
   lastUpdated: new Date().toISOString(),
 }
 
@@ -43,55 +41,49 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null)
 
-      // Get current price
-      const { data: currentPriceData, error: currentPriceError } = await supabase.rpc("get_current_share_price")
+      // Get current share price
+      const { data: currentPrice, error: priceError } = await supabase.rpc("get_current_share_price")
 
-      if (currentPriceError) {
-        throw new Error(`Failed to fetch current price: ${currentPriceError.message}`)
+      if (priceError) {
+        throw new Error(`Failed to fetch current price: ${priceError.message}`)
       }
 
-      // Get price history (last 2 records to calculate change)
-      const { data: historyData, error: historyError } = await supabase.rpc("get_price_history", { limit_count: 2 })
+      // Get latest price history for additional data
+      const { data: priceHistory, error: historyError } = await supabase.rpc("get_price_history", { limit_count: 2 })
 
       if (historyError) {
         throw new Error(`Failed to fetch price history: ${historyError.message}`)
       }
 
-      const currentPrice = Number(currentPriceData) || 100.0
-      let previousPrice = 100.0
-      let priceChange = 0
-      let percentageChange = 0
-      let j200Growth = 0
-      let effectiveDate = new Date().toISOString().split("T")[0]
-      let lastUpdated = new Date().toISOString()
+      if (priceHistory && priceHistory.length > 0) {
+        const latest = priceHistory[0]
+        const previous = priceHistory[1]
 
-      if (historyData && historyData.length > 0) {
-        const latest = historyData[0]
-        const previous = historyData[1]
+        // Calculate percentage change from previous week
+        let percentageChange = 0
+        if (previous && previous.final_price > 0) {
+          percentageChange = ((latest.final_price - previous.final_price) / previous.final_price) * 100
+        }
 
-        previousPrice = previous ? Number(previous.final_price) : Number(latest.base_price)
-        priceChange = Number(latest.price_change) || 0
-        percentageChange = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0
-        j200Growth = Number(latest.j200_growth) || 0
-        effectiveDate = latest.effective_date
-        lastUpdated = latest.created_at
+        setPriceData({
+          currentPrice: Number(currentPrice) || 100.0,
+          priceChange: Number(latest.price_change) || 0,
+          percentageChange: percentageChange,
+          j200Growth: Number(latest.j200_growth) || 0,
+          effectiveDate: latest.effective_date,
+          lastUpdated: latest.created_at,
+        })
+      } else {
+        // Fallback to current price only
+        setPriceData({
+          ...DEFAULT_PRICE_DATA,
+          currentPrice: Number(currentPrice) || 100.0,
+        })
       }
-
-      const newPriceData: PriceData = {
-        currentPrice,
-        previousPrice,
-        priceChange,
-        percentageChange,
-        j200Growth,
-        effectiveDate,
-        lastUpdated,
-      }
-
-      setPriceData(newPriceData)
-      console.log("[PriceContext] Price data updated:", newPriceData)
     } catch (err: any) {
-      console.error("[PriceContext] Error fetching price data:", err)
+      console.error("Error fetching price data:", err)
       setError(err.message || "Failed to fetch price data")
+      // Keep existing data on error, don't reset to default
     } finally {
       setLoading(false)
     }
@@ -106,52 +98,34 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
 
       if (error) {
-        throw new Error(error.message)
+        throw new Error(`Price calculation failed: ${error.message}`)
       }
 
       // Refresh price data after calculation
       await fetchPriceData()
 
-      return {
-        success: data?.[0]?.success || false,
-        message: data?.[0]?.message || "Price calculation completed",
-      }
+      return data
     } catch (err: any) {
-      console.error("[PriceContext] Error triggering price calculation:", err)
-      return {
-        success: false,
-        message: err.message || "Failed to trigger price calculation",
-      }
+      console.error("Error triggering price calculation:", err)
+      throw err
     }
   }, [fetchPriceData])
 
-  // Initial load and setup realtime subscription
+  // Initial load
   useEffect(() => {
     fetchPriceData()
-
-    // Set up realtime subscription for price changes
-    const channel = supabase
-      .channel("price-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "weekly_prices",
-        },
-        () => {
-          console.log("[PriceContext] Price change detected, refreshing...")
-          fetchPriceData()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
   }, [fetchPriceData])
 
-  const value: PriceContextType = {
+  // Set up polling for price updates every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPriceData()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [fetchPriceData])
+
+  const value = {
     priceData,
     loading,
     error,
