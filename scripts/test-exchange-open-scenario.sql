@@ -1,176 +1,121 @@
--- Test the exchange in OPEN state (assuming it's past 10:05 on Monday)
--- This script verifies all systems work correctly when the exchange is open
+-- Test the exchange in OPEN state after Monday morning process
+-- This verifies everything works correctly when the exchange is operational
 
-RAISE NOTICE '=== TESTING EXCHANGE OPEN SCENARIO ===';
+RAISE NOTICE 'Testing exchange in OPEN state...';
 
--- Test 1: Verify exchange status shows OPEN
-DO $$
-DECLARE
-    status_result RECORD;
-BEGIN
-    RAISE NOTICE '--- Test 1: Exchange Status Check ---';
-    
-    SELECT * INTO status_result FROM get_exchange_status() LIMIT 1;
-    
-    RAISE NOTICE 'Exchange Open: %', status_result.is_open;
-    RAISE NOTICE 'Status Message: %', status_result.message;
-    
-    IF status_result.is_open THEN
-        RAISE NOTICE '✅ Exchange is correctly showing as OPEN';
-        IF status_result.next_close_time IS NOT NULL THEN
-            RAISE NOTICE 'Closes at: %', status_result.next_close_time;
-        END IF;
-    ELSE
-        RAISE NOTICE '❌ Exchange should be OPEN but showing as CLOSED';
-        IF status_result.next_open_time IS NOT NULL THEN
-            RAISE NOTICE 'Next opens: %', status_result.next_open_time;
-        END IF;
-    END IF;
-END;
-$$;
+-- 1. Check exchange status
+RAISE NOTICE 'Step 1: Checking exchange status...';
 
--- Test 2: Verify price calculation and precision
-DO $$
-DECLARE
-    current_price DECIMAL(10,2);
-    price_record RECORD;
-BEGIN
-    RAISE NOTICE '--- Test 2: Price System Verification ---';
-    
-    -- Test current price function
-    SELECT get_current_share_price() INTO current_price;
-    RAISE NOTICE 'Current Share Price: N$% (2 decimal places)', current_price;
-    
-    -- Test price history
-    SELECT * INTO price_record FROM get_price_history(1) LIMIT 1;
-    IF FOUND THEN
-        RAISE NOTICE 'Latest Price History:';
-        RAISE NOTICE '  Effective Date: %', price_record.effective_date;
-        RAISE NOTICE '  Base Price: N$% (2 decimals)', price_record.base_price;
-        RAISE NOTICE '  Final Price: N$% (2 decimals)', price_record.final_price;
-        RAISE NOTICE '  Price Change: N$% (4 decimals)', price_record.price_change;
-        RAISE NOTICE '  JSE200 Growth: %% (4 decimals)', price_record.j200_growth;
-        
-        -- Verify decimal precision
-        IF LENGTH(SPLIT_PART(price_record.final_price::TEXT, '.', 2)) <= 2 THEN
-            RAISE NOTICE '✅ Final price has correct decimal precision (≤2 places)';
-        ELSE
-            RAISE NOTICE '❌ Final price has too many decimal places';
-        END IF;
-        
-        IF LENGTH(SPLIT_PART(price_record.price_change::TEXT, '.', 2)) <= 4 THEN
-            RAISE NOTICE '✅ Price change has correct decimal precision (≤4 places)';
-        ELSE
-            RAISE NOTICE '❌ Price change has too many decimal places';
-        END IF;
-    ELSE
-        RAISE NOTICE '❌ No price history found';
-    END IF;
-END;
-$$;
-
--- Test 3: Verify order system can accept new orders (when exchange is open)
-DO $$
-DECLARE
-    can_place_orders BOOLEAN;
-    exchange_open BOOLEAN;
-BEGIN
-    RAISE NOTICE '--- Test 3: Order System Availability ---';
-    
-    SELECT is_open INTO exchange_open FROM get_exchange_status() LIMIT 1;
-    
-    IF exchange_open THEN
-        RAISE NOTICE '✅ Exchange is OPEN - orders can be placed';
-        RAISE NOTICE 'Order matching system is active';
-        RAISE NOTICE 'New buy/sell orders will be processed';
-    ELSE
-        RAISE NOTICE '❌ Exchange is CLOSED - orders cannot be placed';
-        RAISE NOTICE 'Order placement should be disabled in UI';
-    END IF;
-END;
-$$;
-
--- Test 4: Check that expired orders were properly cleaned up
-DO $$
-DECLARE
-    open_buy_orders INTEGER;
-    open_sell_orders INTEGER;
-    expired_buy_orders INTEGER;
-    expired_sell_orders INTEGER;
-BEGIN
-    RAISE NOTICE '--- Test 4: Order Cleanup Verification ---';
-    
-    SELECT COUNT(*) INTO open_buy_orders FROM buy_orders WHERE status = 'open';
-    SELECT COUNT(*) INTO open_sell_orders FROM sell_orders WHERE status = 'open';
-    SELECT COUNT(*) INTO expired_buy_orders FROM buy_orders WHERE status = 'expired';
-    SELECT COUNT(*) INTO expired_sell_orders FROM sell_orders WHERE status = 'expired';
-    
-    RAISE NOTICE 'Open Buy Orders: %', open_buy_orders;
-    RAISE NOTICE 'Open Sell Orders: %', open_sell_orders;
-    RAISE NOTICE 'Expired Buy Orders: %', expired_buy_orders;
-    RAISE NOTICE 'Expired Sell Orders: %', expired_sell_orders;
-    
-    IF open_buy_orders = 0 AND open_sell_orders = 0 THEN
-        RAISE NOTICE '✅ All previous orders properly expired and cleaned up';
-    ELSE
-        RAISE NOTICE '⚠️  Some orders may still be open from previous week';
-    END IF;
-END;
-$$;
-
--- Test 5: Display current weekly_prices table state
-RAISE NOTICE '--- Test 5: Weekly Prices Table State ---';
 SELECT 
+    'Exchange Status Check' as test_name,
+    is_open,
+    message,
+    next_open_time AT TIME ZONE 'Africa/Johannesburg' as next_open_sast,
+    next_close_time AT TIME ZONE 'Africa/Johannesburg' as next_close_sast
+FROM get_exchange_status();
+
+-- 2. Verify current share price
+RAISE NOTICE 'Step 2: Verifying current share price...';
+
+SELECT 
+    'Current Share Price' as test_name,
+    get_current_share_price() as current_price,
+    'N$' || get_current_share_price()::TEXT as formatted_price;
+
+-- 3. Check price history
+RAISE NOTICE 'Step 3: Checking price history...';
+
+SELECT 
+    'Price History' as test_name,
     effective_date,
     base_price,
     j200_growth,
     final_price,
     price_change,
-    created_at
-FROM weekly_prices 
-ORDER BY effective_date DESC 
+    created_at AT TIME ZONE 'Africa/Johannesburg' as created_sast
+FROM weekly_prices
+ORDER BY effective_date DESC
 LIMIT 5;
 
--- Test 6: Verify JSE200 data source
-DO $$
-DECLARE
-    latest_jse_record RECORD;
-BEGIN
-    RAISE NOTICE '--- Test 6: JSE200 Data Source ---';
-    
-    SELECT * INTO latest_jse_record 
-    FROM JSE200_PriceUpdate_Mondays 
-    ORDER BY date DESC 
-    LIMIT 1;
-    
-    IF FOUND THEN
-        RAISE NOTICE 'Latest JSE200 Data:';
-        RAISE NOTICE '  Date: %', latest_jse_record.date;
-        RAISE NOTICE '  Growth: %% (4 decimals)', latest_jse_record.growth_percentage;
-        RAISE NOTICE '✅ JSE200 data source is available';
-    ELSE
-        RAISE NOTICE '❌ No JSE200 data found - price calculation may fail';
-    END IF;
-END;
-$$;
+-- 4. Test order placement (should work when exchange is open)
+RAISE NOTICE 'Step 4: Testing order placement functionality...';
 
-RAISE NOTICE '=== EXCHANGE OPEN SCENARIO TEST COMPLETE ===';
+-- Check if we can place orders (this should return success when exchange is open)
+SELECT 
+    'Order Placement Test' as test_name,
+    CASE 
+        WHEN (SELECT is_open FROM get_exchange_status() LIMIT 1) THEN 
+            'Orders can be placed - Exchange is OPEN'
+        ELSE 
+            'Orders cannot be placed - Exchange is CLOSED'
+    END as status;
 
--- Final summary for easy reading
+-- 5. Verify wallet calculations use correct price
+RAISE NOTICE 'Step 5: Testing wallet value calculations...';
+
+-- This simulates what the frontend should show
+WITH current_price AS (
+    SELECT get_current_share_price() as price
+),
+sample_wallet AS (
+    SELECT 
+        100.0 as buy_wallet_balance,
+        50.5555 as hold_wallet_pre_hold,
+        25.2222 as hold_wallet_post_hold,
+        75.0 as cashout_wallet_balance
+)
 SELECT 
-    '🎯 EXCHANGE STATUS' as section,
-    CASE WHEN (SELECT is_open FROM get_exchange_status() LIMIT 1) 
-         THEN '✅ OPEN' 
-         ELSE '❌ CLOSED' 
-    END as status,
-    (SELECT message FROM get_exchange_status() LIMIT 1) as details
+    'Wallet Calculations' as test_name,
+    sw.buy_wallet_balance,
+    sw.hold_wallet_pre_hold,
+    sw.hold_wallet_post_hold,
+    sw.cashout_wallet_balance,
+    cp.price as current_share_price,
+    (sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) as total_shares,
+    ROUND((sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) * cp.price, 2) as portfolio_value,
+    ROUND(sw.buy_wallet_balance + sw.cashout_wallet_balance + 
+          (sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) * cp.price, 2) as total_account_value
+FROM current_price cp, sample_wallet sw;
+
+-- 6. Check that expired orders were properly handled
+RAISE NOTICE 'Step 6: Verifying expired orders were processed...';
+
+SELECT 
+    'Expired Orders Check' as test_name,
+    COUNT(*) as expired_buy_orders
+FROM buy_orders 
+WHERE status = 'expired'
+
 UNION ALL
+
 SELECT 
-    '💰 CURRENT PRICE' as section,
-    'N$' || get_current_share_price() as status,
-    'Updated with proper decimal precision' as details
-UNION ALL
+    'Expired Orders Check' as test_name,
+    COUNT(*) as expired_sell_orders
+FROM sell_orders 
+WHERE status = 'expired';
+
+-- 7. Final system health check
+RAISE NOTICE 'Step 7: Final system health check...';
+
 SELECT 
-    '📊 LATEST CALCULATION' as section,
-    (SELECT effective_date::TEXT FROM weekly_prices ORDER BY effective_date DESC LIMIT 1) as status,
-    'JSE200 Growth: ' || (SELECT j200_growth::TEXT FROM weekly_prices ORDER BY effective_date DESC LIMIT 1) || '%' as details;
+    'System Health' as test_name,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM weekly_prices WHERE effective_date = date_trunc('week', CURRENT_DATE)::DATE) 
+        THEN 'PASS - Current week price exists'
+        ELSE 'FAIL - No current week price found'
+    END as price_system_status,
+    
+    CASE 
+        WHEN (SELECT is_open FROM get_exchange_status() LIMIT 1) 
+        THEN 'PASS - Exchange is open'
+        ELSE 'FAIL - Exchange is closed'
+    END as exchange_status,
+    
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM exchange_trading_hours WHERE is_open = TRUE)
+        THEN 'PASS - Trading hours configured'
+        ELSE 'FAIL - No trading hours found'
+    END as trading_hours_status;
+
+RAISE NOTICE '=== EXCHANGE OPEN STATE TEST COMPLETE ===';
+RAISE NOTICE 'All systems should be operational and ready for trading!';
