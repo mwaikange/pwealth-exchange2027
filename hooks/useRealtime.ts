@@ -2,14 +2,15 @@
 
 import { useEffect } from "react"
 import { supabase } from "@/lib/supabase-singleton"
-import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"
+import { useWallet } from "@/contexts/wallet-context"
 
 export function useRealtime() {
   const { user } = useAuth()
-  const { refreshBalances } = useWallet()
   const { refreshTransactions } = useTransactions()
+  const wallet = useWallet()
+  const refreshBalances: (() => Promise<void>) | undefined = wallet?.refreshBalances
 
   useEffect(() => {
     if (!user) return
@@ -23,12 +24,14 @@ export function useRealtime() {
         {
           event: "*",
           schema: "public",
-          table: "balances",
+          table: "user_shares",
           filter: `user_uuid=eq.${user.id}`,
         },
         () => {
           console.log("[Realtime] Balance change detected, refreshing data...")
-          refreshBalances()
+          if (refreshBalances) {
+            refreshBalances()
+          }
         },
       )
       .on(

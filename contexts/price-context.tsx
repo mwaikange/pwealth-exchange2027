@@ -1,168 +1,137 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 
-interface PriceData {
+type PriceData = {
   currentPrice: number
+  previousPrice: number
   priceChange: number
-  priceChangePercentage: number
+  percentageChange: number
   j200Growth: number
-  lastUpdated: Date | null
+  effectiveDate: string
+  lastUpdated: string
 }
 
-interface PriceHistory {
-  date: string
-  price: number
-  j200_growth: number
-  price_change: number
-  created_at: string
-}
-
-interface PriceContextType {
+type PriceContextType = {
   priceData: PriceData
-  priceHistory: PriceHistory[]
   loading: boolean
   error: string | null
-  refreshPriceData: () => Promise<void>
+  refreshPrice: () => Promise<void>
+  triggerPriceCalculation: () => Promise<{ success: boolean; message: string }>
 }
 
 const PriceContext = createContext<PriceContextType | undefined>(undefined)
 
+const DEFAULT_PRICE_DATA: PriceData = {
+  currentPrice: 100.0,
+  previousPrice: 100.0,
+  priceChange: 0,
+  percentageChange: 0,
+  j200Growth: 0,
+  effectiveDate: new Date().toISOString().split("T")[0],
+  lastUpdated: new Date().toISOString(),
+}
+
 export function PriceProvider({ children }: { children: React.ReactNode }) {
-  const [priceData, setPriceData] = useState<PriceData>({
-    currentPrice: 108.2,
-    priceChange: 0,
-    priceChangePercentage: 0,
-    j200Growth: 0,
-    lastUpdated: null,
-  })
-  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([])
+  const [priceData, setPriceData] = useState<PriceData>(DEFAULT_PRICE_DATA)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const refreshPriceData = async () => {
+  const fetchPriceData = useCallback(async () => {
     try {
-      setLoading(true)
       setError(null)
 
-      console.log("🔄 Fetching simplified price data...")
+      // Get current price
+      const { data: currentPriceData, error: currentPriceError } = await supabase.rpc("get_current_share_price")
 
-      // Fetch current price using the new simplified function
-      const { data: currentPriceData, error: priceError } = await supabase.rpc("get_current_share_price")
-
-      if (priceError) {
-        console.error("❌ Price error:", priceError)
-        throw new Error(`Failed to fetch current price: ${priceError.message}`)
+      if (currentPriceError) {
+        throw new Error(`Failed to fetch current price: ${currentPriceError.message}`)
       }
 
-      // Ensure price is a valid number
-      const currentPrice = Number(currentPriceData) || 108.2
-      const safeCurrentPrice = isNaN(currentPrice) ? 108.2 : currentPrice
-
-      console.log("📊 Current price fetched:", safeCurrentPrice)
-
-      // Fetch latest weekly price data for additional info
-      const { data: latestWeeklyData, error: weeklyError } = await supabase
-        .from("weekly_prices")
-        .select("final_price, price_change, j200_growth, created_at")
-        .order("effective_date", { ascending: false })
-        .limit(1)
-        .single()
-
-      if (weeklyError && weeklyError.code !== "PGRST116") {
-        console.warn("⚠️ Weekly data error:", weeklyError)
-      }
-
-      // Fetch price history using the new simplified function
-      const { data: historyData, error: historyError } = await supabase.rpc("get_price_history", {
-        days_back: 30,
-      })
+      // Get price history (last 2 records to calculate change)
+      const { data: historyData, error: historyError } = await supabase.rpc("get_price_history", { limit_count: 2 })
 
       if (historyError) {
-        console.error("❌ Price history error:", historyError)
         throw new Error(`Failed to fetch price history: ${historyError.message}`)
       }
 
-      console.log("📈 Price history fetched:", historyData?.length || 0, "records")
-
-      // Process history data with NaN protection
-      const processedHistory = (historyData || []).map((item: any) => ({
-        date: item.date,
-        price: Number(item.price) || 108.2,
-        j200_growth: Number(item.j200_growth) || 0,
-        price_change: Number(item.price_change) || 0,
-        created_at: item.created_at,
-      }))
-
-      // Calculate price change and percentage
+      const currentPrice = Number(currentPriceData) || 100.0
+      let previousPrice = 100.0
       let priceChange = 0
-      let priceChangePercentage = 0
+      let percentageChange = 0
       let j200Growth = 0
+      let effectiveDate = new Date().toISOString().split("T")[0]
+      let lastUpdated = new Date().toISOString()
 
-      if (latestWeeklyData) {
-        priceChange = Number(latestWeeklyData.price_change) || 0
-        j200Growth = Number(latestWeeklyData.j200_growth) || 0
+      if (historyData && historyData.length > 0) {
+        const latest = historyData[0]
+        const previous = historyData[1]
 
-        // Calculate percentage change
-        const basePrice = safeCurrentPrice - priceChange
-        if (basePrice > 0) {
-          priceChangePercentage = (priceChange / basePrice) * 100
-        }
+        previousPrice = previous ? Number(previous.final_price) : Number(latest.base_price)
+        priceChange = Number(latest.price_change) || 0
+        percentageChange = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0
+        j200Growth = Number(latest.j200_growth) || 0
+        effectiveDate = latest.effective_date
+        lastUpdated = latest.created_at
       }
 
-      // Additional NaN protection
-      if (isNaN(priceChange)) priceChange = 0
-      if (isNaN(priceChangePercentage)) priceChangePercentage = 0
-      if (isNaN(j200Growth)) j200Growth = 0
-
-      setPriceData({
-        currentPrice: safeCurrentPrice,
+      const newPriceData: PriceData = {
+        currentPrice,
+        previousPrice,
         priceChange,
-        priceChangePercentage,
+        percentageChange,
         j200Growth,
-        lastUpdated: latestWeeklyData?.created_at ? new Date(latestWeeklyData.created_at) : null,
-      })
+        effectiveDate,
+        lastUpdated,
+      }
 
-      setPriceHistory(processedHistory)
-
-      console.log("✅ Simplified price data updated:", {
-        currentPrice: safeCurrentPrice,
-        priceChange,
-        priceChangePercentage,
-        j200Growth,
-        historyCount: processedHistory.length,
-      })
+      setPriceData(newPriceData)
+      console.log("[PriceContext] Price data updated:", newPriceData)
     } catch (err: any) {
-      console.error("❌ Error fetching simplified price data:", err)
+      console.error("[PriceContext] Error fetching price data:", err)
       setError(err.message || "Failed to fetch price data")
-
-      // Set fallback data on error
-      setPriceData({
-        currentPrice: 108.2,
-        priceChange: 0,
-        priceChangePercentage: 0,
-        j200Growth: 0,
-        lastUpdated: null,
-      })
-      setPriceHistory([])
     } finally {
       setLoading(false)
     }
-  }
-
-  // Load price data on mount
-  useEffect(() => {
-    refreshPriceData()
   }, [])
 
-  // Set up real-time subscription for price updates
-  useEffect(() => {
-    console.log("🔔 Setting up simplified price real-time subscription")
+  const refreshPrice = useCallback(async () => {
+    await fetchPriceData()
+  }, [fetchPriceData])
 
-    const priceSubscription = supabase
-      .channel("weekly_prices_changes")
+  const triggerPriceCalculation = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("trigger_weekly_price_calculation")
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      // Refresh price data after calculation
+      await fetchPriceData()
+
+      return {
+        success: data?.[0]?.success || false,
+        message: data?.[0]?.message || "Price calculation completed",
+      }
+    } catch (err: any) {
+      console.error("[PriceContext] Error triggering price calculation:", err)
+      return {
+        success: false,
+        message: err.message || "Failed to trigger price calculation",
+      }
+    }
+  }, [fetchPriceData])
+
+  // Initial load and setup realtime subscription
+  useEffect(() => {
+    fetchPriceData()
+
+    // Set up realtime subscription for price changes
+    const channel = supabase
+      .channel("price-changes")
       .on(
         "postgres_changes",
         {
@@ -170,25 +139,24 @@ export function PriceProvider({ children }: { children: React.ReactNode }) {
           schema: "public",
           table: "weekly_prices",
         },
-        (payload) => {
-          console.log("📡 Price change detected:", payload)
-          refreshPriceData()
+        () => {
+          console.log("[PriceContext] Price change detected, refreshing...")
+          fetchPriceData()
         },
       )
       .subscribe()
 
     return () => {
-      console.log("🔕 Cleaning up price subscription")
-      priceSubscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
-  }, [])
+  }, [fetchPriceData])
 
-  const value = {
+  const value: PriceContextType = {
     priceData,
-    priceHistory,
     loading,
     error,
-    refreshPriceData,
+    refreshPrice,
+    triggerPriceCalculation,
   }
 
   return <PriceContext.Provider value={value}>{children}</PriceContext.Provider>

@@ -1,61 +1,44 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react"
 import { usePrice } from "@/contexts/price-context"
+import { useState } from "react"
 
-export default function SharePriceCard() {
-  const { priceData, loading, error } = usePrice()
+export function SharePriceCard() {
+  const { priceData, loading, error, refreshPrice, triggerPriceCalculation } = usePrice()
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isCalculating, setIsCalculating] = useState(false)
 
-  // Format currency with NaN protection
-  const formatCurrency = (value: number): string => {
-    const safeValue = isNaN(value) ? 0 : value
-    return `N$${safeValue.toFixed(2)}`
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await refreshPrice()
+    setIsRefreshing(false)
   }
 
-  // Format percentage with NaN protection
-  const formatPercentage = (value: number): string => {
-    const safeValue = isNaN(value) ? 0 : value
-    return `${safeValue >= 0 ? "+" : ""}${safeValue.toFixed(2)}%`
+  const handleTriggerCalculation = async () => {
+    setIsCalculating(true)
+    const result = await triggerPriceCalculation()
+    setIsCalculating(false)
+
+    // You could show a toast notification here
+    console.log("Price calculation result:", result)
   }
 
-  // Get trend icon and color based on JSE200 growth
-  const getTrendInfo = () => {
-    const change = priceData.j200Growth
-    if (isNaN(change) || change === 0) {
-      return {
-        icon: Minus,
-        color: "text-gray-500",
-        bgColor: "bg-gray-100",
-      }
-    } else if (change > 0) {
-      return {
-        icon: TrendingUp,
-        color: "text-green-600",
-        bgColor: "bg-green-100",
-      }
-    } else {
-      return {
-        icon: TrendingDown,
-        color: "text-red-600",
-        bgColor: "bg-red-100",
-      }
-    }
-  }
-
-  const trendInfo = getTrendInfo()
-  const TrendIcon = trendInfo.icon
+  const formatCurrency = (value: number) => `N$${value.toFixed(2)}`
+  const formatPercentage = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`
 
   if (loading) {
     return (
-      <Card className="w-full">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Share Price</CardTitle>
-          <div className="h-4 w-4 animate-pulse bg-gray-300 rounded" />
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold animate-pulse bg-gray-300 h-8 w-24 rounded mb-1" />
-          <div className="animate-pulse bg-gray-300 h-4 w-16 rounded" />
+          <div className="text-2xl font-bold">Loading...</div>
         </CardContent>
       </Card>
     )
@@ -63,37 +46,74 @@ export default function SharePriceCard() {
 
   if (error) {
     return (
-      <Card className="w-full">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Share Price</CardTitle>
-          <TrendingDown className="h-4 w-4 text-red-500" />
+          <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold text-red-600">N$108.20</div>
-          <p className="text-xs text-red-500">Error loading price data</p>
+          <div className="text-sm text-red-500">Error: {error}</div>
+          <div className="text-2xl font-bold text-muted-foreground">N$100.00</div>
         </CardContent>
       </Card>
     )
   }
 
+  const isPositive = priceData.priceChange >= 0
+  const TrendIcon = isPositive ? TrendingUp : TrendingDown
+  const trendColor = isPositive ? "text-green-600" : "text-red-600"
+  const badgeVariant = isPositive ? "default" : "destructive"
+
   return (
-    <Card className="w-full">
+    <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">Share Price</CardTitle>
-        <div className={`p-1 rounded-full ${trendInfo.bgColor}`}>
-          <TrendIcon className={`h-4 w-4 ${trendInfo.color}`} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleTriggerCalculation}
+            disabled={isCalculating}
+            title="Trigger price calculation (for testing)"
+          >
+            {isCalculating ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            ) : (
+              "Calculate"
+            )}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{formatCurrency(priceData.currentPrice)}</div>
-        <div className="flex items-center space-x-2 text-xs">
-          <span className={trendInfo.color}>{formatCurrency(priceData.priceChange)}</span>
-          <span className={trendInfo.color}>({formatPercentage(priceData.priceChangePercentage)})</span>
+        <div className="flex items-center gap-2 mt-2">
+          <div className={`flex items-center gap-1 ${trendColor}`}>
+            <TrendIcon className="h-4 w-4" />
+            <span className="text-sm font-medium">{formatCurrency(Math.abs(priceData.priceChange))}</span>
+          </div>
+          <Badge variant={badgeVariant} className="text-xs">
+            {formatPercentage(priceData.percentageChange)}
+          </Badge>
         </div>
-        <div className="text-xs text-gray-500 mt-1">JSE200: {formatPercentage(priceData.j200Growth)}</div>
-        {priceData.lastUpdated && (
-          <div className="text-xs text-gray-400 mt-1">Updated: {priceData.lastUpdated.toLocaleDateString()}</div>
-        )}
+
+        {/* JSE200 Growth Indicator */}
+        <div className="mt-3 pt-3 border-t">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>JSE200 Growth:</span>
+            <span className={`font-medium ${priceData.j200Growth >= 0 ? "text-green-600" : "text-red-600"}`}>
+              {formatPercentage(priceData.j200Growth)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+            <span>Week of:</span>
+            <span>{new Date(priceData.effectiveDate).toLocaleDateString()}</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )
