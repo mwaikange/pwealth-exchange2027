@@ -1,192 +1,174 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import * as z from "zod"
+
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Loader2, Check } from "lucide-react"
-import { registerUser } from "@/actions/auth-actions"
-import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState } from "react"
+import { useToast } from "@/components/ui/use-toast"
+import { register } from "@/lib/auth"
+import { useRouter } from "next/navigation"
+import { Label } from "../ui/label"
 
-export function RegisterForm() {
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+const formSchema = z.object({
+  name: z.string().min(2, {
+    message: "Name must be at least 2 characters.",
+  }),
+  email: z.string().email({
+    message: "Please enter a valid email address.",
+  }),
+  password: z.string().min(8, {
+    message: "Password must be at least 8 characters.",
+  }),
+  referrerEmail: z
+    .string()
+    .email({
+      message: "Please enter a valid email address.",
+    })
+    .optional(),
+})
+
+export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState(false)
+  const { toast } = useToast()
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const referralCode = searchParams.get("ref")
+  const [error, setError] = useState<string>("")
 
-  const handleSubmit = async (formData: FormData) => {
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      referrerEmail: "",
+    },
+  })
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
     setError("")
 
-    const password = formData.get("password") as string
-    const confirmPassword = formData.get("confirmPassword") as string
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      setIsLoading(false)
-      return
-    }
-
-    if (referralCode) {
-      formData.append("referralCode", referralCode)
-    }
-
     try {
-      const result = await registerUser(formData)
-      if (result.success) {
-        setSuccess(true)
-        setTimeout(() => {
-          router.push("/login?message=Registration successful! Please check your email to verify your account.")
-        }, 2000)
-      } else {
-        setError(result.error || "Registration failed")
-      }
-    } catch (err) {
-      setError("An unexpected error occurred")
+      await register(values.name, values.email, values.password, values.referrerEmail)
+      toast({
+        title: "Registration successful!",
+        description: "You will be redirected to the login page.",
+      })
+      router.push("/login")
+    } catch (error: any) {
+      toast({
+        title: "Something went wrong.",
+        description: error.message,
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (success) {
-    return (
-      <Card className="w-full max-w-md mx-auto">
-        <CardContent className="pt-6">
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-              <Check className="w-8 h-8 text-green-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900">Registration Successful!</h2>
-            <p className="text-gray-600">Please check your email to verify your account before signing in.</p>
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600 mx-auto"></div>
-            <p className="text-sm text-gray-500">Redirecting to login...</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
+  async function handleSubmit(formData: FormData) {
+    setIsLoading(true)
+    setError("")
+
+    try {
+      // Assuming registerUser function exists and handles registration logic
+      // and returns { success: boolean, message?: string }
+      const name = formData.get("name") as string
+      const email = formData.get("email") as string
+      const password = formData.get("password") as string
+      const referrerEmail = formData.get("referrerEmail") as string | undefined
+
+      const result = await register(name, email, password, referrerEmail)
+
+      if (result) {
+        // Redirect to verification page with email
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+      } else {
+        setError("Registration failed")
+      }
+    } catch (error: any) {
+      setError(error.message || "Registration failed")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
-        <CardDescription className="text-center">
-          Join PeerWealth and start your investment journey
-          {referralCode && (
-            <div className="mt-2 p-2 bg-purple-50 rounded-md">
-              <span className="text-sm text-purple-700">
-                🎉 You're joining with referral code: <strong>{referralCode}</strong>
-              </span>
-            </div>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form action={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
-              <Input id="firstName" name="firstName" type="text" placeholder="John" required disabled={isLoading} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
-              <Input id="lastName" name="lastName" type="text" placeholder="Doe" required disabled={isLoading} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
-            <Input id="email" name="email" type="email" placeholder="john@example.com" required disabled={isLoading} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="Create a strong password"
-                required
-                disabled={isLoading}
-                minLength={8}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isLoading}
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <div className="relative">
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type={showConfirmPassword ? "text" : "password"}
-                placeholder="Confirm your password"
-                required
-                disabled={isLoading}
-                minLength={8}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                disabled={isLoading}
-              >
-                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <Button
-            type="submit"
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Account...
-              </>
-            ) : (
-              "Create Account"
+    <div className={cn("grid gap-6", className)} {...props}>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input placeholder="Enter your name" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
-          </Button>
-
-          <div className="text-center">
-            <div className="text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link href="/login" className="text-purple-600 hover:text-purple-700 hover:underline font-medium">
-                Sign in
-              </Link>
-            </div>
+          />
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email</FormLabel>
+                <FormControl>
+                  <Input placeholder="Enter your email" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Password</FormLabel>
+                <FormControl>
+                  <Input type="password" placeholder="Enter your password" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="space-y-2">
+            <Label htmlFor="referrerEmail">Referrer Email (Optional)</Label>
+            <Input
+              id="referrerEmail"
+              name="referrerEmail"
+              type="email"
+              placeholder="Enter referrer's email if you have one"
+              {...form.register("referrerEmail")}
+            />
+            <p className="text-xs text-muted-foreground">You can also add this later in settings</p>
           </div>
+          {error && <p className="text-red-500">{error}</p>}
+          <Button disabled={isLoading} className="w-full bg-purple-600 hover:bg-purple-700 text-white">
+            {isLoading && (
+              <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            )}
+            Register
+          </Button>
         </form>
-      </CardContent>
-    </Card>
+      </Form>
+    </div>
   )
 }
