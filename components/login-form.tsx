@@ -13,7 +13,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white font-medium transition-colors"
+      className="w-full py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-medium transition-colors"
     >
       {pending ? "Signing in..." : "Sign in"}
     </button>
@@ -87,7 +87,7 @@ export function LoginForm() {
               </label>
             </div>
 
-            <a href="/forgot-password" className="text-sm text-purple-400 hover:text-purple-300">
+            <a href="#" className="text-sm text-gray-300 hover:text-white">
               Forgot password?
             </a>
           </div>

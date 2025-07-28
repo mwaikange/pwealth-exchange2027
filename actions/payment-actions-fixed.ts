@@ -1,6 +1,6 @@
 "use server"
 
-import { createAdminClient } from "@/lib/supabase-admin"
+import { createAdminClient, createServerSupabaseClient } from "@/lib/supabase"
 import type { PayBank, PayConfig, PayCountry, PayNetwork, PaySubmission } from "@/types/payment-types"
 import { revalidatePath } from "next/cache"
 
@@ -283,5 +283,39 @@ export async function submitPayment(
       success: false,
       message: error instanceof Error ? error.message : "An unknown error occurred",
     }
+  }
+}
+
+// Process a payment
+export async function processPayment(formData: FormData) {
+  const supabase = createServerSupabaseClient()
+
+  try {
+    const amount = Number.parseFloat(formData.get("amount") as string)
+    const paymentMethod = formData.get("paymentMethod") as string
+    const userId = formData.get("userId") as string
+
+    // Process the payment logic here
+    const { data, error } = await supabase
+      .from("payment_transactions")
+      .insert({
+        user_id: userId,
+        amount: amount,
+        payment_method: paymentMethod,
+        status: "completed",
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Payment processing error:", error)
+      return { success: false, error: "Failed to process payment" }
+    }
+
+    revalidatePath("/dashboard")
+    return { success: true, data }
+  } catch (error) {
+    console.error("Payment processing failed:", error)
+    return { success: false, error: "An unexpected error occurred" }
   }
 }

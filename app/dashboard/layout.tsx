@@ -6,11 +6,10 @@ import { useRouter } from "next/navigation"
 import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { VestingProvider } from "@/contexts/vesting-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase-singleton"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { RealtimeWrapper } from "@/components/realtime-wrapper"
-import { NotificationSlider } from "@/components/NotificationSlider"
 
 export default function DashboardLayout({
   children,
@@ -104,13 +103,7 @@ export default function DashboardLayout({
               <DashboardHeader />
               <div className="flex flex-1 overflow-hidden">
                 <DashboardSidebar />
-                <main className="flex-1 overflow-auto p-4 relative">
-                  {children}
-                  {/* Notification Slider positioned inside the application */}
-                  <div className="fixed top-20 right-4 z-50">
-                    <NotificationSlider />
-                  </div>
-                </main>
+                <main className="flex-1 overflow-auto p-4">{children}</main>
               </div>
             </div>
           </RealtimeWrapper>

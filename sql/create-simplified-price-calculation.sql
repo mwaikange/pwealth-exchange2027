@@ -1,24 +1,27 @@
--- Drop existing functions that are no longer needed
-DROP FUNCTION IF EXISTS calculate_weekly_share_price();
-DROP FUNCTION IF EXISTS calculate_weekly_share_price_from_jse200();
+-- Drop existing functions to avoid conflicts
+DROP FUNCTION IF EXISTS calculate_weekly_share_price_simplified();
+DROP FUNCTION IF EXISTS get_current_share_price();
+DROP FUNCTION IF EXISTS get_price_history(integer);
 
--- Create simplified weekly share price calculation function
+-- Create simplified weekly price calculation function
 CREATE OR REPLACE FUNCTION calculate_weekly_share_price_simplified()
-RETURNS json AS $$
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
     latest_jse200 RECORD;
-    last_weekly_price RECORD;
-    new_base_price numeric;
-    new_j200_growth numeric;
-    new_final_price numeric;
-    new_price_change numeric;
-    current_monday date;
-    result json;
+    previous_weekly RECORD;
+    new_base_price NUMERIC := 100.00; -- Fallback base price
+    new_j200_growth NUMERIC;
+    new_final_price NUMERIC;
+    new_price_change NUMERIC;
+    result_data jsonb;
 BEGIN
-    -- Get current Monday date
-    current_monday := date_trunc('week', CURRENT_DATE)::date;
+    -- Log start of calculation
+    RAISE NOTICE 'Starting simplified weekly price calculation at %', NOW();
     
-    -- Get the latest JSE200 update
+    -- 1. Get the latest JSE200 update
     SELECT 
         price,
         percent_change,
@@ -34,40 +37,39 @@ BEGIN
         RAISE EXCEPTION 'No JSE200 data found in JSE200_PriceUpdate_Mondays table';
     END IF;
     
-    -- Get the last week's final price as base price
+    RAISE NOTICE 'Latest JSE200 data: price=%, percent_change=%, date=%', 
+        latest_jse200.price, latest_jse200.percent_change, latest_jse200.week_start_date;
+    
+    -- 2. Get the previous week's final price as base price
     SELECT 
         final_price,
         effective_date
-    INTO last_weekly_price
+    INTO previous_weekly
     FROM weekly_prices
     ORDER BY effective_date DESC
     LIMIT 1;
     
-    -- Set base price (fallback to 100.00 if no previous data)
-    IF last_weekly_price IS NULL THEN
-        new_base_price := 100.00;
-        RAISE NOTICE 'No previous weekly price found, using fallback base price: %', new_base_price;
+    -- Set base price (use previous final_price or fallback to 100.00)
+    IF previous_weekly IS NOT NULL THEN
+        new_base_price := previous_weekly.final_price;
+        RAISE NOTICE 'Using previous final_price as base: %', new_base_price;
     ELSE
-        new_base_price := last_weekly_price.final_price;
-        RAISE NOTICE 'Using previous final price as base: %', new_base_price;
+        RAISE NOTICE 'No previous weekly_prices found, using fallback base_price: %', new_base_price;
     END IF;
     
-    -- Use JSE200 percent change as j200_growth
-    new_j200_growth := latest_jse200.percent_change;
+    -- 3. Use JSE200 percent_change as j200_growth
+    new_j200_growth := COALESCE(latest_jse200.percent_change, 0);
     
-    -- Calculate new final price: base_price * (1 + (j200_growth / 100))
+    -- 4. Calculate new final_price: base_price * (1 + (j200_growth / 100))
     new_final_price := new_base_price * (1 + (new_j200_growth / 100));
     
-    -- Ensure minimum price of N$50
-    IF new_final_price < 50 THEN
-        new_final_price := 50;
-        RAISE NOTICE 'Applied minimum price floor of N$50';
-    END IF;
-    
-    -- Calculate price change
+    -- 5. Calculate price_change: final_price - base_price
     new_price_change := new_final_price - new_base_price;
     
-    -- Insert new weekly price record
+    RAISE NOTICE 'Calculated values: base_price=%, j200_growth=%, final_price=%, price_change=%',
+        new_base_price, new_j200_growth, new_final_price, new_price_change;
+    
+    -- 6. Insert new row into weekly_prices
     INSERT INTO weekly_prices (
         effective_date,
         base_price,
@@ -75,81 +77,81 @@ BEGIN
         final_price,
         price_change,
         created_at
-    )
-    VALUES (
-        current_monday,
+    ) VALUES (
+        CURRENT_DATE,
         new_base_price,
         new_j200_growth,
         new_final_price,
         new_price_change,
-        now()
-    )
-    ON CONFLICT (effective_date)
-    DO UPDATE SET
-        base_price = EXCLUDED.base_price,
-        j200_growth = EXCLUDED.j200_growth,
-        final_price = EXCLUDED.final_price,
-        price_change = EXCLUDED.price_change,
-        created_at = now();
-    
-    -- Prepare result
-    result := json_build_object(
-        'success', true,
-        'effective_date', current_monday,
-        'base_price', new_base_price,
-        'j200_growth', new_j200_growth,
-        'final_price', new_final_price,
-        'price_change', new_price_change,
-        'jse200_price', latest_jse200.price,
-        'jse200_date', latest_jse200.week_start_date,
-        'message', 'Weekly share price calculated successfully using simplified JSE200 method'
+        NOW()
     );
     
-    RAISE NOTICE 'Weekly price calculated: Date=%, BasePrice=%, JSE200Growth=%, FinalPrice=%, Change=%', 
-        current_monday, new_base_price, new_j200_growth, new_final_price, new_price_change;
+    -- Prepare result data
+    result_data := jsonb_build_object(
+        'success', true,
+        'calculation_date', CURRENT_DATE,
+        'jse200_data', jsonb_build_object(
+            'price', latest_jse200.price,
+            'percent_change', latest_jse200.percent_change,
+            'week_start_date', latest_jse200.week_start_date
+        ),
+        'price_calculation', jsonb_build_object(
+            'base_price', new_base_price,
+            'j200_growth', new_j200_growth,
+            'final_price', new_final_price,
+            'price_change', new_price_change
+        ),
+        'message', 'Weekly share price calculated successfully using JSE200 data'
+    );
     
-    RETURN result;
+    RAISE NOTICE 'Weekly price calculation completed successfully';
+    
+    RETURN result_data;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE 'Error in weekly price calculation: %', SQLERRM;
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'calculation_date', CURRENT_DATE
+        );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- Create helper function to get current share price
+-- Create function to get current share price
 CREATE OR REPLACE FUNCTION get_current_share_price()
-RETURNS numeric AS $$
+RETURNS NUMERIC
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
-    current_price numeric;
+    current_price NUMERIC;
 BEGIN
-    -- Get the latest final price from weekly_prices
-    SELECT final_price INTO current_price
+    -- Get the latest final_price from weekly_prices
+    SELECT final_price
+    INTO current_price
     FROM weekly_prices
-    ORDER BY effective_date DESC
+    ORDER BY effective_date DESC, created_at DESC
     LIMIT 1;
     
-    -- Return fallback price if no data found
-    IF current_price IS NULL THEN
-        current_price := 108.2;
-    END IF;
-    
-    RETURN current_price;
+    -- Return current price or fallback to 108.20
+    RETURN COALESCE(current_price, 108.20);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create helper function to get latest share price with metadata
-CREATE OR REPLACE FUNCTION get_latest_share_price()
-RETURNS numeric AS $$
-BEGIN
-    RETURN get_current_share_price();
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Create function to get price history
-CREATE OR REPLACE FUNCTION get_price_history(days_back integer DEFAULT 30)
+CREATE OR REPLACE FUNCTION get_price_history(days_back INTEGER DEFAULT 30)
 RETURNS TABLE(
-    date date,
-    price numeric,
-    j200_growth numeric,
-    price_change numeric,
-    created_at timestamptz
-) AS $$
+    date DATE,
+    price NUMERIC,
+    j200_growth NUMERIC,
+    price_change NUMERIC,
+    created_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 BEGIN
     RETURN QUERY
     SELECT 
@@ -159,13 +161,29 @@ BEGIN
         wp.price_change,
         wp.created_at
     FROM weekly_prices wp
-    WHERE wp.effective_date >= CURRENT_DATE - INTERVAL '1 day' * days_back
-    ORDER BY wp.effective_date DESC;
+    WHERE wp.effective_date >= (CURRENT_DATE - INTERVAL '1 day' * days_back)
+    ORDER BY wp.effective_date DESC, wp.created_at DESC
+    LIMIT 50;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+
+-- Create manual trigger function for testing
+CREATE OR REPLACE FUNCTION trigger_weekly_price_calculation()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RAISE NOTICE 'Manual trigger for weekly price calculation';
+    RETURN calculate_weekly_share_price_simplified();
+END;
+$$;
 
 -- Grant necessary permissions
-GRANT EXECUTE ON FUNCTION calculate_weekly_share_price_simplified() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_current_share_price() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_latest_share_price() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_price_history(integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION calculate_weekly_share_price_simplified() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION get_current_share_price() TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION get_price_history(INTEGER) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION trigger_weekly_price_calculation() TO authenticated, anon;
+
+-- Log completion
+SELECT 'Simplified price calculation functions created successfully' as status;

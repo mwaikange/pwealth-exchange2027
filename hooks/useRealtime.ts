@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase-singleton"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { useAuth } from "@/contexts/auth-context"

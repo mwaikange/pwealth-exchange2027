@@ -1,53 +1,37 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { CheckCircle2, XCircle, RefreshCw } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 export function SupabaseConnectionTest() {
-  const [isConnected, setIsConnected] = useState<boolean | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<"testing" | "connected" | "error">("testing")
   const [error, setError] = useState<string | null>(null)
-  const [userCount, setUserCount] = useState<number | null>(null)
+  const [testResults, setTestResults] = useState<any>(null)
 
   const testConnection = async () => {
-    setIsLoading(true)
+    setConnectionStatus("testing")
     setError(null)
+    setTestResults(null)
 
     try {
-      // Simple health check query
-      const { data, error } = await supabase.from("health_check").select("*").limit(1).maybeSingle()
+      // Test basic connection
+      const { data, error } = await supabase.from("app_users").select("count", { count: "exact", head: true })
 
       if (error) {
-        // If the health_check table doesn't exist, try a different approach
-        if (error.code === "PGRST116") {
-          // Try to get user count instead
-          const { count, error: countError } = await supabase
-            .from("app_users")
-            .select("*", { count: "exact", head: true })
-
-          if (countError) {
-            throw countError
-          }
-
-          setUserCount(count)
-          setIsConnected(true)
-          return
-        }
-
         throw error
       }
 
-      setIsConnected(true)
+      setTestResults({
+        userCount: data,
+        timestamp: new Date().toISOString(),
+      })
+      setConnectionStatus("connected")
     } catch (err: any) {
-      console.error("Connection test failed:", err)
-      setError(err.message || "Failed to connect to Supabase")
-      setIsConnected(false)
-    } finally {
-      setIsLoading(false)
+      setError(err.message)
+      setConnectionStatus("error")
     }
   }
 
@@ -56,47 +40,44 @@ export function SupabaseConnectionTest() {
   }, [])
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <Card className="w-full max-w-md">
       <CardHeader>
         <CardTitle>Supabase Connection Test</CardTitle>
-        <CardDescription>Verify that your application can connect to Supabase</CardDescription>
+        <CardDescription>Testing connection to Supabase database</CardDescription>
       </CardHeader>
-      <CardContent>
-        {isConnected === null ? (
-          <div className="flex items-center justify-center p-6">
-            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <span>Status:</span>
+          <Badge
+            variant={
+              connectionStatus === "connected" ? "default" : connectionStatus === "error" ? "destructive" : "secondary"
+            }
+          >
+            {connectionStatus === "testing" && "Testing..."}
+            {connectionStatus === "connected" && "Connected"}
+            {connectionStatus === "error" && "Error"}
+          </Badge>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600">{error}</p>
           </div>
-        ) : isConnected ? (
-          <Alert className="bg-green-50 border-green-200">
-            <CheckCircle2 className="h-5 w-5 text-green-600" />
-            <AlertTitle className="text-green-800">Connection Successful</AlertTitle>
-            <AlertDescription className="text-green-700">
-              Your application is successfully connected to Supabase.
-              {userCount !== null && <p className="mt-2">Found {userCount} users in your database.</p>}
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <Alert className="bg-red-50 border-red-200">
-            <XCircle className="h-5 w-5 text-red-600" />
-            <AlertTitle className="text-red-800">Connection Failed</AlertTitle>
-            <AlertDescription className="text-red-700">
-              {error || "Unable to connect to Supabase. Please check your environment variables."}
-            </AlertDescription>
-          </Alert>
         )}
-      </CardContent>
-      <CardFooter>
-        <Button onClick={testConnection} disabled={isLoading} className="w-full">
-          {isLoading ? (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Testing Connection...
-            </>
-          ) : (
-            "Test Connection Again"
-          )}
+
+        {testResults && (
+          <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-sm text-green-600">Connection successful! Database accessible.</p>
+            <p className="text-xs text-gray-500 mt-1">Tested at: {new Date(testResults.timestamp).toLocaleString()}</p>
+          </div>
+        )}
+
+        <Button onClick={testConnection} disabled={connectionStatus === "testing"} className="w-full">
+          {connectionStatus === "testing" ? "Testing..." : "Test Again"}
         </Button>
-      </CardFooter>
+      </CardContent>
     </Card>
   )
 }
+
+export default SupabaseConnectionTest

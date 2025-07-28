@@ -154,7 +154,7 @@ export function RegisterForm({ className, ...props }: React.HTMLAttributes<HTMLD
             <p className="text-xs text-muted-foreground">You can also add this later in settings</p>
           </div>
           {error && <p className="text-red-500">{error}</p>}
-          <Button disabled={isLoading} className="w-full bg-purple-600 hover:bg-purple-700 text-white">
+          <Button disabled={isLoading}>
             {isLoading && (
               <svg className="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
