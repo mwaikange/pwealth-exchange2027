@@ -71,8 +71,6 @@ export function DashboardSidebar() {
     <aside className="w-[200px] bg-[#1e2130] border-r border-gray-800 flex flex-col h-full">
       <div className="p-3 text-base font-bold">
         PEER WEALTH
-        <br />
-        TOKEN
       </div>
 
       <nav className="flex-1 py-1">
