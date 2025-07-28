@@ -96,33 +96,37 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create a function to check cron job status
+-- FIXED: Create a function to check cron job status (removed ORDER BY from aggregate)
 CREATE OR REPLACE FUNCTION get_cron_job_status()
 RETURNS JSON AS $$
 DECLARE
     job_status JSON;
+    job_count INTEGER;
 BEGIN
-    SELECT json_agg(
-        json_build_object(
+    -- Get job count first
+    SELECT COUNT(*) INTO job_count
+    FROM cron.job 
+    WHERE jobname LIKE 'weekly-%';
+    
+    -- Get job details without ORDER BY in aggregate
+    SELECT json_agg(job_info) INTO job_status
+    FROM (
+        SELECT json_build_object(
             'job_name', jobname,
             'schedule', schedule,
             'command', command,
             'active', active,
             'job_id', jobid
-        )
-    ) INTO job_status
-    FROM cron.job 
-    WHERE jobname LIKE 'weekly-%'
-    ORDER BY jobname;
+        ) as job_info
+        FROM cron.job 
+        WHERE jobname LIKE 'weekly-%'
+        ORDER BY jobname
+    ) ordered_jobs;
     
     RETURN json_build_object(
         'success', true,
         'cron_jobs', COALESCE(job_status, '[]'::json),
-        'total_jobs', (
-            SELECT COUNT(*) 
-            FROM cron.job 
-            WHERE jobname LIKE 'weekly-%'
-        ),
+        'total_jobs', job_count,
         'checked_at', NOW()
     );
 END;
