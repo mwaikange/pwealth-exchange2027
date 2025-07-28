@@ -8,13 +8,8 @@ DECLARE
     record_count INTEGER := 0;
     latest_date DATE;
 BEGIN
-    RAISE NOTICE '';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                            █';
-    RAISE NOTICE '█                    🔄 RENAME TABLE AND FIX FUNCTIONS                      █';
-    RAISE NOTICE '█                                                                            █';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
+    RAISE NOTICE 'RENAME TABLE AND FIX FUNCTIONS';
+    RAISE NOTICE '==============================';
     
     -- Check current table existence
     SELECT EXISTS (
@@ -29,65 +24,43 @@ BEGIN
         AND table_name = 'jse200_priceupdate_mondays'
     ) INTO lowercase_table_exists;
     
-    RAISE NOTICE '🔍 CURRENT STATE:';
-    RAISE NOTICE '   JSE200_PriceUpdate_Mondays exists: %', pascal_table_exists;
-    RAISE NOTICE '   jse200_priceupdate_mondays exists: %', lowercase_table_exists;
-    RAISE NOTICE '';
+    RAISE NOTICE 'PascalCase table exists: %', pascal_table_exists;
+    RAISE NOTICE 'Lowercase table exists: %', lowercase_table_exists;
     
     -- Step 1: Rename table if needed
     IF pascal_table_exists AND NOT lowercase_table_exists THEN
-        RAISE NOTICE '🔄 RENAMING TABLE: JSE200_PriceUpdate_Mondays → jse200_priceupdate_mondays';
+        RAISE NOTICE 'Renaming JSE200_PriceUpdate_Mondays to jse200_priceupdate_mondays';
         
         -- Get current data info before rename
         SELECT COUNT(*) INTO record_count FROM "JSE200_PriceUpdate_Mondays";
         SELECT MAX(week_start_date) INTO latest_date FROM "JSE200_PriceUpdate_Mondays";
         
-        RAISE NOTICE '   📊 Preserving % existing records', record_count;
-        RAISE NOTICE '   📅 Latest data: %', latest_date;
+        RAISE NOTICE 'Preserving % existing records', record_count;
+        RAISE NOTICE 'Latest data: %', latest_date;
         
         -- Rename the table
         ALTER TABLE "JSE200_PriceUpdate_Mondays" RENAME TO jse200_priceupdate_mondays;
         
-        RAISE NOTICE '   ✅ Table renamed successfully!';
+        RAISE NOTICE 'Table renamed successfully';
         
     ELSIF lowercase_table_exists AND NOT pascal_table_exists THEN
-        RAISE NOTICE '✅ Table already has correct lowercase name';
+        RAISE NOTICE 'Table already has correct lowercase name';
         SELECT COUNT(*) INTO record_count FROM jse200_priceupdate_mondays;
         SELECT MAX(week_start_date) INTO latest_date FROM jse200_priceupdate_mondays;
         
     ELSIF pascal_table_exists AND lowercase_table_exists THEN
-        RAISE NOTICE '⚠️  WARNING: Both tables exist!';
-        RAISE NOTICE '   This script will keep the lowercase one and drop the PascalCase one';
-        RAISE NOTICE '   Manual intervention may be needed to merge data';
-        
-        -- Get counts from both
-        DECLARE
-            pascal_count INTEGER;
-            lower_count INTEGER;
-        BEGIN
-            SELECT COUNT(*) INTO pascal_count FROM "JSE200_PriceUpdate_Mondays";
-            SELECT COUNT(*) INTO lower_count FROM jse200_priceupdate_mondays;
-            
-            RAISE NOTICE '   PascalCase table records: %', pascal_count;
-            RAISE NOTICE '   Lowercase table records: %', lower_count;
-            
-            -- For now, just use the lowercase one
-            record_count := lower_count;
-            SELECT MAX(week_start_date) INTO latest_date FROM jse200_priceupdate_mondays;
-        END;
+        RAISE NOTICE 'WARNING: Both tables exist - using lowercase one';
+        SELECT COUNT(*) INTO record_count FROM jse200_priceupdate_mondays;
+        SELECT MAX(week_start_date) INTO latest_date FROM jse200_priceupdate_mondays;
         
     ELSE
-        RAISE NOTICE '❌ ERROR: No JSE200 table found!';
-        RAISE NOTICE '   Expected to find JSE200_PriceUpdate_Mondays table';
+        RAISE NOTICE 'ERROR: No JSE200 table found';
         RETURN;
     END IF;
     
-    RAISE NOTICE '';
-    RAISE NOTICE '📊 FINAL TABLE STATUS:';
-    RAISE NOTICE '   Table name: jse200_priceupdate_mondays';
-    RAISE NOTICE '   Records: %', record_count;
-    RAISE NOTICE '   Latest data: %', latest_date;
-    RAISE NOTICE '';
+    RAISE NOTICE 'Final table: jse200_priceupdate_mondays';
+    RAISE NOTICE 'Records: %', record_count;
+    RAISE NOTICE 'Latest data: %', latest_date;
     
 END $$;
 
@@ -257,8 +230,6 @@ GRANT EXECUTE ON FUNCTION trigger_weekly_price_calculation() TO authenticated;
 
 DO $$
 BEGIN
-    RAISE NOTICE '';
-    RAISE NOTICE '✅ ALL FUNCTIONS UPDATED TO USE: jse200_priceupdate_mondays';
-    RAISE NOTICE '';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE 'ALL FUNCTIONS UPDATED TO USE: jse200_priceupdate_mondays';
+    RAISE NOTICE 'Functions ready for use';
 END $$;
