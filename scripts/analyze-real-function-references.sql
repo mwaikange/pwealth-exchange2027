@@ -1,5 +1,5 @@
 -- Analyze how JSE200 table is actually referenced in existing functions
--- This will tell us if we need quoted identifiers or should use lowercase
+-- This will tell us if we need to update function definitions
 
 DO $$
 DECLARE
@@ -9,6 +9,7 @@ DECLARE
     lowercase_refs INTEGER := 0;
     quoted_refs INTEGER := 0;
     unquoted_pascal_refs INTEGER := 0;
+    functions_to_update TEXT[] := ARRAY[]::TEXT[];
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
@@ -31,7 +32,9 @@ BEGIN
             p.proname LIKE '%price%' OR 
             p.proname LIKE '%jse%' OR
             p.proname LIKE '%weekly%' OR
-            p.proname = 'calculate_weekly_share_price_simplified'
+            p.proname = 'calculate_weekly_share_price_simplified' OR
+            p.proname = 'get_current_share_price' OR
+            p.proname = 'trigger_weekly_price_calculation'
         )
         ORDER BY p.proname
     LOOP
@@ -46,25 +49,25 @@ BEGIN
         -- Check for different reference patterns
         IF func_def ILIKE '%"JSE200_PriceUpdate_Mondays"%' THEN
             quoted_refs := quoted_refs + 1;
-            RAISE NOTICE '   ✅ Uses QUOTED PascalCase: "JSE200_PriceUpdate_Mondays"';
+            functions_to_update := array_append(functions_to_update, func_name);
+            RAISE NOTICE '   🔧 NEEDS UPDATE: Uses QUOTED PascalCase: "JSE200_PriceUpdate_Mondays"';
             
         ELSIF func_def ILIKE '%JSE200_PriceUpdate_Mondays%' THEN
             unquoted_pascal_refs := unquoted_pascal_refs + 1;
-            RAISE NOTICE '   ⚠️  Uses UNQUOTED PascalCase: JSE200_PriceUpdate_Mondays';
-            RAISE NOTICE '      🔧 This will be converted to lowercase by PostgreSQL!';
+            functions_to_update := array_append(functions_to_update, func_name);
+            RAISE NOTICE '   🔧 NEEDS UPDATE: Uses UNQUOTED PascalCase: JSE200_PriceUpdate_Mondays';
+            RAISE NOTICE '      (PostgreSQL converts this to lowercase anyway)';
             
         ELSIF func_def ILIKE '%jse200_priceupdate_mondays%' THEN
             lowercase_refs := lowercase_refs + 1;
-            RAISE NOTICE '   📝 Uses lowercase: jse200_priceupdate_mondays';
+            RAISE NOTICE '   ✅ CORRECT: Already uses lowercase: jse200_priceupdate_mondays';
             
         ELSE
             RAISE NOTICE '   ❌ No JSE200 table reference found';
         END IF;
         
-        -- Show relevant parts of function definition
+        -- Show relevant parts of function definition that need updating
         IF func_def ILIKE '%jse200%' OR func_def ILIKE '%JSE200%' THEN
-            RAISE NOTICE '   📄 Relevant code snippet:';
-            -- Extract lines containing JSE200 references
             DECLARE
                 line TEXT;
                 lines TEXT[];
@@ -74,7 +77,7 @@ BEGIN
                 FOR i IN 1..array_length(lines, 1) LOOP
                     line := lines[i];
                     IF line ILIKE '%jse200%' OR line ILIKE '%JSE200%' THEN
-                        RAISE NOTICE '      %', trim(line);
+                        RAISE NOTICE '      📄 Code: %', trim(line);
                     END IF;
                 END LOOP;
             END;
@@ -86,31 +89,19 @@ BEGIN
     RAISE NOTICE '📊 REFERENCE SUMMARY:';
     RAISE NOTICE '   🔤 Quoted PascalCase ("JSE200_PriceUpdate_Mondays"): %', quoted_refs;
     RAISE NOTICE '   ⚠️  Unquoted PascalCase (JSE200_PriceUpdate_Mondays): %', unquoted_pascal_refs;
-    RAISE NOTICE '   📝 Lowercase (jse200_priceupdate_mondays): %', lowercase_refs;
+    RAISE NOTICE '   ✅ Lowercase (jse200_priceupdate_mondays): %', lowercase_refs;
     RAISE NOTICE '';
     
-    -- Provide recommendation
-    IF quoted_refs > 0 THEN
-        RAISE NOTICE '🎯 RECOMMENDATION: Keep PascalCase table, use quoted identifiers';
-        RAISE NOTICE '   ✅ Table name: JSE200_PriceUpdate_Mondays';
-        RAISE NOTICE '   ✅ Query format: SELECT * FROM "JSE200_PriceUpdate_Mondays";';
-        RAISE NOTICE '   🔧 Update unquoted references to use quotes';
-        
-    ELSIF unquoted_pascal_refs > 0 THEN
-        RAISE NOTICE '🎯 RECOMMENDATION: Either fix quotes OR rename to lowercase';
-        RAISE NOTICE '   Option A: Keep PascalCase, add quotes everywhere';
-        RAISE NOTICE '   Option B: Rename table to lowercase for simplicity';
-        RAISE NOTICE '   ⚠️  Current unquoted PascalCase will NOT work!';
-        
-    ELSIF lowercase_refs > 0 THEN
-        RAISE NOTICE '🎯 RECOMMENDATION: Use lowercase table name';
-        RAISE NOTICE '   ✅ Table name: jse200_priceupdate_mondays';
-        RAISE NOTICE '   ✅ Query format: SELECT * FROM jse200_priceupdate_mondays;';
-        RAISE NOTICE '   🔧 Functions already expect lowercase';
-        
+    -- Show functions that need updating
+    IF array_length(functions_to_update, 1) > 0 THEN
+        RAISE NOTICE '🔧 FUNCTIONS THAT NEED UPDATING:';
+        FOR i IN 1..array_length(functions_to_update, 1) LOOP
+            RAISE NOTICE '   - %', functions_to_update[i];
+        END LOOP;
+        RAISE NOTICE '';
+        RAISE NOTICE '   These functions will be updated to use: jse200_priceupdate_mondays';
     ELSE
-        RAISE NOTICE '🎯 RECOMMENDATION: Create table and functions consistently';
-        RAISE NOTICE '   💡 Suggest: lowercase for simplicity (jse200_priceupdate_mondays)';
+        RAISE NOTICE '✅ All functions already use correct lowercase references!';
     END IF;
     
     RAISE NOTICE '';
