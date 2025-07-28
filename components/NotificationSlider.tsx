@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { X, Bell, ChevronDown, ChevronUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Bell, ChevronDown, ChevronUp, X } from "lucide-react"
 
 interface Notification {
   id: string
@@ -108,7 +107,7 @@ export function NotificationSlider() {
 
       {/* Notification Panel */}
       {isOpen && (
-        <Card className="absolute top-12 right-0 w-80 max-h-96 shadow-xl border-0 bg-white z-50">
+        <div className="absolute top-12 right-0 w-80 max-h-96 shadow-xl border bg-white rounded-lg z-50">
           <div className="flex items-center justify-between p-4 border-b">
             <h3 className="font-semibold text-gray-900">Notifications</h3>
             <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)} className="h-6 w-6 p-0">
@@ -116,7 +115,7 @@ export function NotificationSlider() {
             </Button>
           </div>
 
-          <CardContent className="p-0 max-h-80 overflow-y-auto">
+          <div className="p-0 max-h-80 overflow-y-auto">
             {isLoading ? (
               <div className="p-4 text-center text-gray-500">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600 mx-auto"></div>
@@ -157,7 +156,7 @@ export function NotificationSlider() {
                 ))}
               </div>
             )}
-          </CardContent>
+          </div>
 
           {notifications.length > 0 && (
             <div className="p-3 border-t bg-gray-50">
@@ -176,7 +175,7 @@ export function NotificationSlider() {
               </Button>
             </div>
           )}
-        </Card>
+        </div>
       )}
     </div>
   )
