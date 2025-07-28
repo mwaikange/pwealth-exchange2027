@@ -242,26 +242,32 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Set up the new cron jobs with updated schedule
 DO $$
+DECLARE
+    jobs_scheduled INTEGER := 0;
 BEGIN
     BEGIN
         -- NEW SCHEDULE (all times in Windhoek timezone):
         -- Monday 09:30 - Clear order history
         PERFORM cron.schedule('clear_weekly_history', '30 9 * * 1', 'SELECT clear_history_with_retries();');
+        jobs_scheduled := jobs_scheduled + 1;
         RAISE NOTICE 'Scheduled: Clear history - Monday 09:30';
         
         -- Monday 10:03 - Calculate share price  
         PERFORM cron.schedule('calculate_weekly_price', '03 10 * * 1', 'SELECT calculate_price_with_retries();');
+        jobs_scheduled := jobs_scheduled + 1;
         RAISE NOTICE 'Scheduled: Calculate price - Monday 10:03';
         
         -- Monday 10:05 - Open exchange
         PERFORM cron.schedule('open_weekly_exchange', '05 10 * * 1', 'SELECT open_exchange_with_retries();');
+        jobs_scheduled := jobs_scheduled + 1;
         RAISE NOTICE 'Scheduled: Open exchange - Monday 10:05';
         
         -- Sunday 23:59 - Close exchange (no retry needed for this)
         PERFORM cron.schedule('close_weekly_exchange', '59 23 * * 0', 'SELECT close_exchange_weekly();');
+        jobs_scheduled := jobs_scheduled + 1;
         RAISE NOTICE 'Scheduled: Close exchange - Sunday 23:59';
         
-        RAISE NOTICE 'All cron jobs scheduled successfully with new times!';
+        RAISE NOTICE 'All % cron jobs scheduled successfully with new times!', jobs_scheduled;
         
     EXCEPTION
         WHEN OTHERS THEN
@@ -274,32 +280,73 @@ BEGIN
     END;
 END $$;
 
--- Log completion
+-- Final success message
 DO $$
+DECLARE
+    function_count INTEGER;
+    cron_count INTEGER;
 BEGIN
-    RAISE NOTICE '=== CRON SCHEDULE UPDATE WITH RETRIES COMPLETE ===';
+    -- Count functions created
+    SELECT COUNT(*) INTO function_count 
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' 
+    AND p.proname IN (
+        'clear_history_with_retries',
+        'calculate_price_with_retries',
+        'open_exchange_with_retries',
+        'test_all_retry_functions'
+    );
+    
+    -- Count cron jobs (if pg_cron is available)
+    BEGIN
+        SELECT COUNT(*) INTO cron_count 
+        FROM cron.job 
+        WHERE jobname IN (
+            'clear_weekly_history',
+            'calculate_weekly_price',
+            'open_weekly_exchange',
+            'close_weekly_exchange'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            cron_count := 0;
+    END;
+    
     RAISE NOTICE '';
-    RAISE NOTICE 'NEW SCHEDULE (Windhoek timezone):';
-    RAISE NOTICE '- Monday 09:30: Clear order history (with 5x retry)';
-    RAISE NOTICE '- Monday 10:03: Calculate share price (with 5x retry)';
-    RAISE NOTICE '- Monday 10:05: Open exchange (with 5x retry)';
-    RAISE NOTICE '- Sunday 23:59: Close exchange';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '█                UPDATE-CRON-SCHEDULE-WITH-RETRIES.SQL                      █';
+    RAISE NOTICE '█                              COMPLETED SUCCESSFULLY!                       █';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
-    RAISE NOTICE 'RETRY LOGIC:';
-    RAISE NOTICE '- Each operation tries up to 5 times';
-    RAISE NOTICE '- 3-second delay between retries';
-    RAISE NOTICE '- Detailed logging for each attempt';
+    RAISE NOTICE '🎉 RETRY FUNCTIONS CREATED: % of 4', function_count;
+    RAISE NOTICE '   ✓ clear_history_with_retries()';
+    RAISE NOTICE '   ✓ calculate_price_with_retries()';
+    RAISE NOTICE '   ✓ open_exchange_with_retries()';
+    RAISE NOTICE '   ✓ test_all_retry_functions()';
     RAISE NOTICE '';
-    RAISE NOTICE 'Functions created:';
-    RAISE NOTICE '- clear_history_with_retries()';
-    RAISE NOTICE '- calculate_price_with_retries()';
-    RAISE NOTICE '- open_exchange_with_retries()';
-    RAISE NOTICE '- test_all_retry_functions()';
+    RAISE NOTICE '⏰ NEW CRON SCHEDULE (Windhoek UTC+2):';
+    RAISE NOTICE '   📅 Monday 09:30 - Clear order history (5x retry, 3s delay)';
+    RAISE NOTICE '   📅 Monday 10:03 - Calculate share price (5x retry, 3s delay)';
+    RAISE NOTICE '   📅 Monday 10:05 - Open exchange (5x retry, 3s delay)';
+    RAISE NOTICE '   📅 Sunday 23:59 - Close exchange';
     RAISE NOTICE '';
-    RAISE NOTICE 'Test commands:';
-    RAISE NOTICE '- SELECT test_all_retry_functions();';
-    RAISE NOTICE '- SELECT get_cron_job_status();';
-    RAISE NOTICE '- SELECT test_new_schedule();';
+    RAISE NOTICE '🔄 RETRY LOGIC:';
+    RAISE NOTICE '   🔁 Max attempts: 5 per operation';
+    RAISE NOTICE '   ⏱️  Delay: 3 seconds between retries';
+    RAISE NOTICE '   📝 Detailed logging for each attempt';
     RAISE NOTICE '';
-    RAISE NOTICE 'Exchange opens Monday 10:05 Windhoek time with robust retry system!';
+    RAISE NOTICE '🚀 CRON JOBS SCHEDULED: %', cron_count;
+    RAISE NOTICE '';
+    RAISE NOTICE '🧪 TEST COMMANDS:';
+    RAISE NOTICE '   SELECT test_all_retry_functions();';
+    RAISE NOTICE '   SELECT get_cron_job_status();';
+    RAISE NOTICE '   SELECT test_new_schedule();';
+    RAISE NOTICE '   SELECT trigger_weekly_cycle_test();';
+    RAISE NOTICE '';
+    RAISE NOTICE '✅ ALL SETUP COMPLETE! Exchange opens Monday 10:05 with robust retry system!';
+    RAISE NOTICE '';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
 END $$;

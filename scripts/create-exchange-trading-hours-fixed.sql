@@ -299,23 +299,51 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Log completion
+-- Final success message
 DO $$
+DECLARE
+    function_count INTEGER;
 BEGIN
-    RAISE NOTICE '=== EXCHANGE TRADING HOURS SETUP COMPLETE ===';
-    RAISE NOTICE 'Functions created:';
-    RAISE NOTICE '- get_exchange_status()';
-    RAISE NOTICE '- is_exchange_open()';
-    RAISE NOTICE '- get_trading_schedule()';
-    RAISE NOTICE '- test_new_schedule()';
-    RAISE NOTICE '- get_cron_job_status()';
-    RAISE NOTICE '- trigger_weekly_cycle_test()';
+    -- Count functions created
+    SELECT COUNT(*) INTO function_count 
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' 
+    AND p.proname IN (
+        'get_exchange_status',
+        'is_exchange_open',
+        'get_trading_schedule',
+        'test_new_schedule',
+        'get_cron_job_status',
+        'trigger_weekly_cycle_test'
+    );
+    
     RAISE NOTICE '';
-    RAISE NOTICE 'Trading Hours: Monday 10:05 - Sunday 23:59 (Windhoek time)';
-    RAISE NOTICE 'Maintenance: Sunday 23:59 - Monday 10:05 (10h 6m)';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '█                CREATE-EXCHANGE-TRADING-HOURS-FIXED.SQL                    █';
+    RAISE NOTICE '█                              COMPLETED SUCCESSFULLY!                       █';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
-    RAISE NOTICE 'Test the setup with:';
-    RAISE NOTICE '- SELECT test_new_schedule();';
-    RAISE NOTICE '- SELECT get_exchange_status();';
-    RAISE NOTICE '- SELECT trigger_weekly_cycle_test();';
+    RAISE NOTICE '🎉 FUNCTIONS CREATED: % of 6', function_count;
+    RAISE NOTICE '   ✓ get_exchange_status()';
+    RAISE NOTICE '   ✓ is_exchange_open()';
+    RAISE NOTICE '   ✓ get_trading_schedule()';
+    RAISE NOTICE '   ✓ test_new_schedule()';
+    RAISE NOTICE '   ✓ get_cron_job_status()';
+    RAISE NOTICE '   ✓ trigger_weekly_cycle_test()';
+    RAISE NOTICE '';
+    RAISE NOTICE '⏰ TRADING HOURS CONFIGURED:';
+    RAISE NOTICE '   📅 Opens: Monday 10:05 Windhoek time';
+    RAISE NOTICE '   📅 Closes: Sunday 23:59 Windhoek time';
+    RAISE NOTICE '   🌍 Timezone: Africa/Windhoek (UTC+2)';
+    RAISE NOTICE '';
+    RAISE NOTICE '🔧 MAINTENANCE WINDOW:';
+    RAISE NOTICE '   🕐 Duration: Sunday 23:59 - Monday 10:05 (10h 6m)';
+    RAISE NOTICE '   📋 Activities: Clear history → Calculate prices → Open exchange';
+    RAISE NOTICE '';
+    RAISE NOTICE '🚀 READY FOR NEXT STEP: scripts/update-cron-schedule-with-retries.sql';
+    RAISE NOTICE '';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
 END $$;

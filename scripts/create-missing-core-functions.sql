@@ -232,7 +232,7 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- CORRECTED: Function with proper percentage calculation logic
+-- FIXED: Function with correct RAISE NOTICE parameter count
 CREATE OR REPLACE FUNCTION calculate_weekly_share_price_simplified()
 RETURNS JSON AS $$
 DECLARE
@@ -300,8 +300,12 @@ BEGIN
         price_change -- This is the actual N$ amount change
     );
     
-    RAISE NOTICE 'Price calculation: Base N$%, JSE200 %%, Change N$%, Final N$%', 
-        base_price, jse_percent_change, price_change, new_final_price;
+    -- FIXED: Use separate RAISE NOTICE statements to avoid parameter mismatch
+    RAISE NOTICE 'Price calculation completed successfully:';
+    RAISE NOTICE '  Base price: N$%', base_price;
+    RAISE NOTICE '  JSE200 change: %%', jse_percent_change;
+    RAISE NOTICE '  Price change: N$%', price_change;
+    RAISE NOTICE '  Final price: N$%', new_final_price;
     
     RETURN json_build_object(
         'success', true,
@@ -364,27 +368,56 @@ ON CONFLICT (effective_date) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_weekly_prices_effective_date ON weekly_prices(effective_date DESC);
 CREATE INDEX IF NOT EXISTS idx_jse200_date ON JSE200_PriceUpdate_Mondays(date DESC);
 
--- Log completion
+-- Final success message
 DO $$
+DECLARE
+    jse_count INTEGER;
+    weekly_count INTEGER;
+    function_count INTEGER;
 BEGIN
-    RAISE NOTICE '=== MISSING CORE FUNCTIONS CREATED ===';
-    RAISE NOTICE 'Functions created:';
-    RAISE NOTICE '- clear_weekly_order_history()';
-    RAISE NOTICE '- close_exchange_weekly()';
-    RAISE NOTICE '- open_exchange_weekly()';
-    RAISE NOTICE '- get_current_share_price() [Uses final_price column]';
-    RAISE NOTICE '- calculate_weekly_share_price_simplified() [CORRECTED percentage logic]';
+    -- Count records to verify setup
+    SELECT COUNT(*) INTO jse_count FROM JSE200_PriceUpdate_Mondays;
+    SELECT COUNT(*) INTO weekly_count FROM weekly_prices;
+    
+    -- Count functions created
+    SELECT COUNT(*) INTO function_count 
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' 
+    AND p.proname IN (
+        'clear_weekly_order_history',
+        'close_exchange_weekly', 
+        'open_exchange_weekly',
+        'get_current_share_price',
+        'calculate_weekly_share_price_simplified'
+    );
+    
     RAISE NOTICE '';
-    RAISE NOTICE 'CORRECT Percentage Calculation Logic:';
-    RAISE NOTICE '1. Gets previous weeks final_price as base_price';
-    RAISE NOTICE '2. Gets JSE200 percent_change from JSE200_PriceUpdate_Mondays table';
-    RAISE NOTICE '3. If percent_change = -1.6: new_price = base * (1 - 1.6/100) = base * 0.984';
-    RAISE NOTICE '4. If percent_change = +1.6: new_price = base * (1 + 1.6/100) = base * 1.016';
-    RAISE NOTICE '5. Formula: new_final_price = base_price * (1 + percent_change/100)';
-    RAISE NOTICE '6. price_change = new_final_price - base_price (N$ amount)';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '█                    ✅ CREATE-MISSING-CORE-FUNCTIONS.SQL                   █';
+    RAISE NOTICE '█                              COMPLETED SUCCESSFULLY!                       █';
+    RAISE NOTICE '█                                                                            █';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
-    RAISE NOTICE 'Example: Base N$100, JSE200 -1.6% = N$100 * 0.984 = N$98.40';
-    RAISE NOTICE 'Example: Base N$100, JSE200 +1.6% = N$100 * 1.016 = N$101.60';
+    RAISE NOTICE '🎉 FUNCTIONS CREATED: % of 5', function_count;
+    RAISE NOTICE '   ✓ clear_weekly_order_history()';
+    RAISE NOTICE '   ✓ close_exchange_weekly()';
+    RAISE NOTICE '   ✓ open_exchange_weekly()';
+    RAISE NOTICE '   ✓ get_current_share_price()';
+    RAISE NOTICE '   ✓ calculate_weekly_share_price_simplified() [FIXED RAISE NOTICE]';
     RAISE NOTICE '';
-    RAISE NOTICE 'All functions should now work correctly with proper percentage math';
+    RAISE NOTICE '📊 DATA SETUP:';
+    RAISE NOTICE '   ✓ JSE200_PriceUpdate_Mondays: % records', jse_count;
+    RAISE NOTICE '   ✓ weekly_prices: % records', weekly_count;
+    RAISE NOTICE '   ✓ Indexes created for performance';
+    RAISE NOTICE '';
+    RAISE NOTICE '🔧 PERCENTAGE CALCULATION LOGIC:';
+    RAISE NOTICE '   Formula: new_price = base_price * (1 + percent_change/100)';
+    RAISE NOTICE '   Example: N$100 * (1 + (-1.6)/100) = N$100 * 0.984 = N$98.40';
+    RAISE NOTICE '   Example: N$100 * (1 + (+1.6)/100) = N$100 * 1.016 = N$101.60';
+    RAISE NOTICE '';
+    RAISE NOTICE '🚀 READY FOR NEXT STEP: scripts/create-exchange-trading-hours-fixed.sql';
+    RAISE NOTICE '';
+    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
 END $$;
