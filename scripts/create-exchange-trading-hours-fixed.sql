@@ -1,80 +1,81 @@
--- Create exchange trading hours and status management system
+-- Create exchange trading hours and status functions
 
--- Drop existing functions to avoid conflicts
-DROP FUNCTION IF EXISTS get_exchange_status() CASCADE;
-DROP FUNCTION IF EXISTS is_exchange_open() CASCADE;
-DROP FUNCTION IF EXISTS get_trading_schedule() CASCADE;
-DROP FUNCTION IF EXISTS test_new_schedule() CASCADE;
-DROP FUNCTION IF EXISTS get_cron_job_status() CASCADE;
-DROP FUNCTION IF EXISTS trigger_weekly_cycle_test() CASCADE;
+-- Create exchange_status table if it doesn't exist
+CREATE TABLE IF NOT EXISTS exchange_status (
+    id SERIAL PRIMARY KEY,
+    is_open BOOLEAN NOT NULL DEFAULT false,
+    current_week DATE,
+    last_opened_at TIMESTAMP WITH TIME ZONE,
+    last_closed_at TIMESTAMP WITH TIME ZONE,
+    next_opening_time TEXT DEFAULT 'Monday 10:05 Windhoek time',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
--- Create exchange status function
+-- Insert initial exchange status if table is empty
+INSERT INTO exchange_status (is_open, current_week, next_opening_time)
+SELECT 
+    false,
+    DATE_TRUNC('week', NOW() AT TIME ZONE 'Africa/Windhoek')::DATE + INTERVAL '1 day',
+    'Monday 10:05 Windhoek time'
+WHERE NOT EXISTS (SELECT 1 FROM exchange_status);
+
+-- Function to get exchange status
 CREATE OR REPLACE FUNCTION get_exchange_status()
 RETURNS JSON AS $$
 DECLARE
-    current_time TIMESTAMP WITH TIME ZONE;
-    windhoek_time TIMESTAMP;
-    current_day INTEGER;
+    status_record RECORD;
+    current_week DATE;
+    windhoek_time TIMESTAMP WITH TIME ZONE;
+    is_monday BOOLEAN;
     current_hour INTEGER;
     current_minute INTEGER;
-    is_open BOOLEAN := false;
-    status_message TEXT;
-    next_opening TEXT;
-    current_price NUMERIC;
+    is_trading_hours BOOLEAN;
 BEGIN
-    -- Get current time in Windhoek timezone (UTC+2)
-    current_time := NOW() AT TIME ZONE 'Africa/Windhoek';
-    windhoek_time := current_time;
+    -- Get current Windhoek time
+    windhoek_time := NOW() AT TIME ZONE 'Africa/Windhoek';
+    current_week := DATE_TRUNC('week', windhoek_time)::DATE + INTERVAL '1 day';
     
-    -- Extract day of week (1=Monday, 7=Sunday)
-    current_day := EXTRACT(ISODOW FROM current_time);
-    current_hour := EXTRACT(HOUR FROM current_time);
-    current_minute := EXTRACT(MINUTE FROM current_time);
+    -- Check if it's Monday and within trading hours (10:05-23:59)
+    is_monday := EXTRACT(DOW FROM windhoek_time) = 1; -- Monday = 1
+    current_hour := EXTRACT(HOUR FROM windhoek_time);
+    current_minute := EXTRACT(MINUTE FROM windhoek_time);
     
-    -- Get current share price
-    SELECT get_current_share_price() INTO current_price;
+    is_trading_hours := is_monday AND (
+        current_hour > 10 OR 
+        (current_hour = 10 AND current_minute >= 5)
+    );
     
-    -- Determine if exchange is open
-    -- Open: Monday 10:05 - Sunday 23:59
-    IF current_day = 1 AND (current_hour > 10 OR (current_hour = 10 AND current_minute >= 5)) THEN
-        is_open := true;
-        status_message := 'Exchange is OPEN for trading';
-        next_opening := 'Currently open until Sunday 23:59';
-    ELSIF current_day BETWEEN 2 AND 6 THEN
-        is_open := true;
-        status_message := 'Exchange is OPEN for trading';
-        next_opening := 'Currently open until Sunday 23:59';
-    ELSIF current_day = 7 AND current_hour < 23 THEN
-        is_open := true;
-        status_message := 'Exchange is OPEN for trading';
-        next_opening := 'Closes tonight at 23:59, reopens Monday 10:05';
-    ELSE
-        is_open := false;
-        IF current_day = 1 AND current_hour < 10 THEN
-            status_message := 'Exchange opens today at 10:05 Windhoek time';
-            next_opening := format('Opens today at 10:05 (in %s hours %s minutes)', 
-                10 - current_hour - CASE WHEN current_minute > 5 THEN 1 ELSE 0 END,
-                CASE WHEN current_minute <= 5 THEN 5 - current_minute ELSE 65 - current_minute END);
-        ELSIF current_day = 1 AND current_hour = 10 AND current_minute < 5 THEN
-            status_message := format('Exchange opens in %s minutes', 5 - current_minute);
-            next_opening := format('Opens in %s minutes', 5 - current_minute);
-        ELSE
-            status_message := 'Exchange is CLOSED';
-            next_opening := 'Opens Monday 10:05 Windhoek time';
-        END IF;
+    -- Get current status
+    SELECT * INTO status_record
+    FROM exchange_status
+    ORDER BY id DESC
+    LIMIT 1;
+    
+    -- If no status record, create one
+    IF status_record IS NULL THEN
+        INSERT INTO exchange_status (is_open, current_week, next_opening_time)
+        VALUES (false, current_week, 'Monday 10:05 Windhoek time')
+        RETURNING * INTO status_record;
     END IF;
     
     RETURN json_build_object(
-        'is_open', is_open,
-        'status_message', status_message,
-        'next_opening', next_opening,
+        'is_open', status_record.is_open,
+        'current_week', status_record.current_week,
+        'is_trading_hours', is_trading_hours,
+        'is_monday', is_monday,
         'current_time_windhoek', windhoek_time,
-        'current_price', current_price,
-        'timezone', 'Africa/Windhoek (UTC+2)',
-        'trading_hours', 'Monday 10:05 - Sunday 23:59',
-        'current_day', current_day,
         'current_hour', current_hour,
-        'current_minute', current_minute
+        'current_minute', current_minute,
+        'last_opened_at', status_record.last_opened_at,
+        'last_closed_at', status_record.last_closed_at,
+        'next_opening_time', status_record.next_opening_time,
+        'timezone', 'Africa/Windhoek (UTC+2)',
+        'trading_schedule', json_build_object(
+            'monday_open', '10:05',
+            'sunday_close', '23:59',
+            'weekly_cycle', 'Monday 10:05 - Sunday 23:59'
+        )
     );
     
 EXCEPTION
@@ -82,189 +83,87 @@ EXCEPTION
         RETURN json_build_object(
             'success', false,
             'message', 'Error getting exchange status: ' || SQLERRM,
-            'error_code', 'EXCHANGE_STATUS_ERROR'
-        );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create simple is_exchange_open function
-CREATE OR REPLACE FUNCTION is_exchange_open()
-RETURNS BOOLEAN AS $$
-DECLARE
-    status_result JSON;
-BEGIN
-    SELECT get_exchange_status() INTO status_result;
-    RETURN (status_result->>'is_open')::BOOLEAN;
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN false;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trading schedule function
-CREATE OR REPLACE FUNCTION get_trading_schedule()
-RETURNS JSON AS $$
-BEGIN
-    RETURN json_build_object(
-        'weekly_schedule', json_build_object(
-            'monday', json_build_object(
-                'history_clear', '09:30',
-                'price_calculation', '10:03', 
-                'exchange_opens', '10:05',
-                'trading_until', '23:59'
-            ),
-            'tuesday_to_saturday', 'Open all day (00:00 - 23:59)',
-            'sunday', json_build_object(
-                'trading_until', '23:59',
-                'exchange_closes', '23:59',
-                'orders_cleared', '23:59'
-            )
-        ),
-        'timezone', 'Africa/Windhoek (UTC+2)',
-        'cron_jobs', json_build_object(
-            'clear_history', '30 9 * * 1',
-            'calculate_price', '03 10 * * 1',
-            'open_exchange', '05 10 * * 1',
-            'close_exchange', '59 23 * * 0'
-        )
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create test function for new schedule
-CREATE OR REPLACE FUNCTION test_new_schedule()
-RETURNS JSON AS $$
-DECLARE
-    exchange_status JSON;
-    trading_schedule JSON;
-    test_results JSON;
-BEGIN
-    -- Get current exchange status
-    SELECT get_exchange_status() INTO exchange_status;
-    
-    -- Get trading schedule
-    SELECT get_trading_schedule() INTO trading_schedule;
-    
-    -- Test core functions exist
-    PERFORM clear_weekly_order_history();
-    PERFORM calculate_weekly_share_price_simplified();
-    PERFORM open_exchange_weekly();
-    PERFORM close_exchange_weekly();
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'All schedule functions working correctly',
-        'exchange_status', exchange_status,
-        'trading_schedule', trading_schedule,
-        'functions_tested', json_build_array(
-            'clear_weekly_order_history',
-            'calculate_weekly_share_price_simplified', 
-            'open_exchange_weekly',
-            'close_exchange_weekly'
-        ),
-        'test_time', NOW()
-    );
-    
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Error testing schedule: ' || SQLERRM,
-            'error_code', 'SCHEDULE_TEST_ERROR'
-        );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create cron job status function
-CREATE OR REPLACE FUNCTION get_cron_job_status()
-RETURNS JSON AS $$
-DECLARE
-    cron_jobs JSON;
-BEGIN
-    -- Get cron job information from pg_cron if available
-    SELECT json_agg(
-        json_build_object(
-            'jobname', jobname,
-            'schedule', schedule,
-            'command', command,
-            'active', active
-        )
-    ) INTO cron_jobs
-    FROM cron.job 
-    WHERE jobname LIKE '%weekly%' OR jobname LIKE '%exchange%' OR jobname LIKE '%price%';
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'Cron job status retrieved',
-        'cron_jobs', COALESCE(cron_jobs, '[]'::json),
-        'expected_jobs', json_build_array(
-            'clear_history_with_retries_weekly',
-            'calculate_price_with_retries_weekly', 
-            'open_exchange_with_retries_weekly',
-            'close_exchange_weekly'
-        ),
-        'checked_at', NOW()
-    );
-    
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Error getting cron status (pg_cron may not be available): ' || SQLERRM,
-            'error_code', 'CRON_STATUS_ERROR',
-            'note', 'This is normal if pg_cron extension is not installed'
-        );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create weekly cycle test function
-CREATE OR REPLACE FUNCTION trigger_weekly_cycle_test()
-RETURNS JSON AS $$
-DECLARE
-    clear_result JSON;
-    price_result JSON;
-    open_result JSON;
-    final_status JSON;
-BEGIN
-    RAISE NOTICE 'Starting weekly cycle test...';
-    
-    -- Step 1: Clear history
-    SELECT clear_weekly_order_history() INTO clear_result;
-    RAISE NOTICE 'Clear history result: %', clear_result;
-    
-    -- Step 2: Calculate price
-    SELECT calculate_weekly_share_price_simplified() INTO price_result;
-    RAISE NOTICE 'Price calculation result: %', price_result;
-    
-    -- Step 3: Open exchange
-    SELECT open_exchange_weekly() INTO open_result;
-    RAISE NOTICE 'Exchange open result: %', open_result;
-    
-    -- Step 4: Get final status
-    SELECT get_exchange_status() INTO final_status;
-    
-    RETURN json_build_object(
-        'success', true,
-        'message', 'Weekly cycle test completed successfully',
-        'steps', json_build_object(
-            'step_1_clear_history', clear_result,
-            'step_2_calculate_price', price_result,
-            'step_3_open_exchange', open_result,
-            'step_4_final_status', final_status
-        ),
-        'test_completed_at', NOW()
-    );
-    
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Error in weekly cycle test: ' || SQLERRM,
-            'error_code', 'WEEKLY_CYCLE_TEST_ERROR',
+            'error_code', 'EXCHANGE_STATUS_ERROR',
             'sql_state', SQLSTATE
         );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to update exchange status
+CREATE OR REPLACE FUNCTION update_exchange_status(new_status BOOLEAN, operation TEXT DEFAULT 'manual')
+RETURNS JSON AS $$
+DECLARE
+    current_week DATE;
+    windhoek_time TIMESTAMP WITH TIME ZONE;
+BEGIN
+    windhoek_time := NOW() AT TIME ZONE 'Africa/Windhoek';
+    current_week := DATE_TRUNC('week', windhoek_time)::DATE + INTERVAL '1 day';
+    
+    -- Update or insert exchange status
+    INSERT INTO exchange_status (is_open, current_week, last_opened_at, last_closed_at, updated_at)
+    VALUES (
+        new_status,
+        current_week,
+        CASE WHEN new_status THEN windhoek_time ELSE NULL END,
+        CASE WHEN NOT new_status THEN windhoek_time ELSE NULL END,
+        windhoek_time
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        is_open = EXCLUDED.is_open,
+        current_week = EXCLUDED.current_week,
+        last_opened_at = CASE WHEN EXCLUDED.is_open THEN windhoek_time ELSE exchange_status.last_opened_at END,
+        last_closed_at = CASE WHEN NOT EXCLUDED.is_open THEN windhoek_time ELSE exchange_status.last_closed_at END,
+        updated_at = windhoek_time;
+    
+    RAISE NOTICE 'Exchange status updated: % (operation: %)', 
+        CASE WHEN new_status THEN 'OPEN' ELSE 'CLOSED' END, operation;
+    
+    RETURN json_build_object(
+        'success', true,
+        'message', format('Exchange %s successfully', 
+            CASE WHEN new_status THEN 'opened' ELSE 'closed' END),
+        'is_open', new_status,
+        'current_week', current_week,
+        'operation', operation,
+        'updated_at', windhoek_time,
+        'timezone', 'Africa/Windhoek (UTC+2)'
+    );
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'message', 'Error updating exchange status: ' || SQLERRM,
+            'error_code', 'EXCHANGE_UPDATE_ERROR',
+            'sql_state', SQLSTATE
+        );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to check if exchange should be open
+CREATE OR REPLACE FUNCTION should_exchange_be_open()
+RETURNS BOOLEAN AS $$
+DECLARE
+    windhoek_time TIMESTAMP WITH TIME ZONE;
+    is_monday BOOLEAN;
+    current_hour INTEGER;
+    current_minute INTEGER;
+BEGIN
+    windhoek_time := NOW() AT TIME ZONE 'Africa/Windhoek';
+    is_monday := EXTRACT(DOW FROM windhoek_time) = 1; -- Monday = 1
+    current_hour := EXTRACT(HOUR FROM windhoek_time);
+    current_minute := EXTRACT(MINUTE FROM windhoek_time);
+    
+    -- Exchange should be open on Monday from 10:05 onwards
+    RETURN is_monday AND (
+        current_hour > 10 OR 
+        (current_hour = 10 AND current_minute >= 5)
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_exchange_status_updated_at ON exchange_status(updated_at DESC);
 
 -- Log completion
 DO $$
@@ -272,17 +171,14 @@ BEGIN
     RAISE NOTICE '=== EXCHANGE TRADING HOURS SETUP COMPLETE ===';
     RAISE NOTICE 'Functions created:';
     RAISE NOTICE '- get_exchange_status()';
-    RAISE NOTICE '- is_exchange_open()';
-    RAISE NOTICE '- get_trading_schedule()';
-    RAISE NOTICE '- test_new_schedule()';
-    RAISE NOTICE '- get_cron_job_status()';
-    RAISE NOTICE '- trigger_weekly_cycle_test()';
+    RAISE NOTICE '- update_exchange_status(boolean, text)';
+    RAISE NOTICE '- should_exchange_be_open()';
     RAISE NOTICE '';
-    RAISE NOTICE 'New Schedule:';
-    RAISE NOTICE '- Monday 09:30: Clear history';
-    RAISE NOTICE '- Monday 10:03: Calculate prices';
-    RAISE NOTICE '- Monday 10:05: Open exchange';
-    RAISE NOTICE '- Sunday 23:59: Close exchange';
+    RAISE NOTICE 'Table created:';
+    RAISE NOTICE '- exchange_status';
     RAISE NOTICE '';
-    RAISE NOTICE 'All functions ready for testing';
+    RAISE NOTICE 'Trading Schedule:';
+    RAISE NOTICE '- Opens: Monday 10:05 Windhoek time';
+    RAISE NOTICE '- Closes: Sunday 23:59 Windhoek time';
+    RAISE NOTICE '- Timezone: Africa/Windhoek (UTC+2)';
 END $$;

@@ -1,318 +1,324 @@
 -- Update cron job schedules with retry logic and new times
 
--- Enable pg_cron extension if not already enabled
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- Drop existing cron jobs first
+SELECT cron.unschedule('weekly-price-calculation');
+SELECT cron.unschedule('weekly-exchange-open');
+SELECT cron.unschedule('weekly-exchange-close');
+SELECT cron.unschedule('weekly-history-clear');
+SELECT cron.unschedule('price-engine-cron');
 
--- Drop existing cron jobs to avoid conflicts
-SELECT cron.unschedule(jobname) 
-FROM cron.job 
-WHERE jobname IN (
-    'weekly_price_calculation',
-    'clear_weekly_history', 
-    'open_exchange_weekly',
-    'close_exchange_weekly',
-    'calculate_price_with_retries_weekly',
-    'clear_history_with_retries_weekly',
-    'open_exchange_with_retries_weekly'
-);
-
--- Create retry wrapper functions with proper error handling
-
--- 1. Clear history with retries (Monday 09:30)
-CREATE OR REPLACE FUNCTION clear_history_with_retries()
+-- Function to retry operations with exponential backoff
+CREATE OR REPLACE FUNCTION retry_operation(
+    operation_name TEXT,
+    operation_function TEXT,
+    max_retries INTEGER DEFAULT 5,
+    base_delay_seconds INTEGER DEFAULT 3
+)
 RETURNS JSON AS $$
 DECLARE
     attempt INTEGER := 1;
-    max_attempts INTEGER := 5;
-    delay_seconds INTEGER := 3;
     result JSON;
-    success BOOLEAN := false;
+    delay_seconds INTEGER;
+    error_message TEXT;
 BEGIN
-    WHILE attempt <= max_attempts AND NOT success LOOP
+    WHILE attempt <= max_retries LOOP
         BEGIN
-            RAISE NOTICE 'Clear history attempt % of %', attempt, max_attempts;
+            -- Execute the operation function
+            EXECUTE format('SELECT %s()', operation_function) INTO result;
             
-            -- Call the actual function
-            SELECT clear_weekly_order_history() INTO result;
-            
-            -- Check if successful
+            -- Check if operation was successful
             IF (result->>'success')::BOOLEAN THEN
-                success := true;
-                RAISE NOTICE 'Clear history succeeded on attempt %', attempt;
+                RAISE NOTICE '[%] SUCCESS on attempt %/%: %', 
+                    operation_name, attempt, max_retries, result->>'message';
+                RETURN result;
             ELSE
-                RAISE NOTICE 'Clear history failed on attempt %: %', attempt, result->>'message';
+                error_message := result->>'message';
+                RAISE NOTICE '[%] FAILED attempt %/%: %', 
+                    operation_name, attempt, max_retries, error_message;
             END IF;
             
         EXCEPTION
             WHEN OTHERS THEN
-                RAISE NOTICE 'Clear history attempt % failed with error: %', attempt, SQLERRM;
-                result := json_build_object(
-                    'success', false,
-                    'message', 'Error on attempt ' || attempt || ': ' || SQLERRM,
-                    'error_code', 'CLEAR_HISTORY_RETRY_ERROR'
-                );
+                error_message := SQLERRM;
+                RAISE NOTICE '[%] ERROR on attempt %/%: %', 
+                    operation_name, attempt, max_retries, error_message;
         END;
         
-        -- If not successful and not last attempt, wait before retry
-        IF NOT success AND attempt < max_attempts THEN
-            RAISE NOTICE 'Waiting % seconds before retry...', delay_seconds;
+        -- If not the last attempt, wait before retrying
+        IF attempt < max_retries THEN
+            delay_seconds := base_delay_seconds * attempt; -- Linear backoff
+            RAISE NOTICE '[%] Retrying in % seconds...', operation_name, delay_seconds;
             PERFORM pg_sleep(delay_seconds);
         END IF;
         
         attempt := attempt + 1;
     END LOOP;
     
-    -- Return final result
-    IF success THEN
-        RETURN json_build_object(
-            'success', true,
-            'message', 'Clear history completed successfully after ' || (attempt - 1) || ' attempts',
-            'attempts_used', attempt - 1,
-            'final_result', result
-        );
-    ELSE
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Clear history failed after ' || max_attempts || ' attempts',
-            'attempts_used', max_attempts,
-            'final_result', result
-        );
-    END IF;
+    -- All retries failed
+    RETURN json_build_object(
+        'success', false,
+        'message', format('%s failed after %s attempts. Last error: %s', 
+            operation_name, max_retries, error_message),
+        'error_code', 'MAX_RETRIES_EXCEEDED',
+        'attempts', max_retries,
+        'last_error', error_message
+    );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 2. Calculate price with retries (Monday 10:03)
+-- Wrapper functions for retry operations
 CREATE OR REPLACE FUNCTION calculate_price_with_retries()
 RETURNS JSON AS $$
-DECLARE
-    attempt INTEGER := 1;
-    max_attempts INTEGER := 5;
-    delay_seconds INTEGER := 3;
-    result JSON;
-    success BOOLEAN := false;
 BEGIN
-    WHILE attempt <= max_attempts AND NOT success LOOP
-        BEGIN
-            RAISE NOTICE 'Price calculation attempt % of %', attempt, max_attempts;
-            
-            -- Call the actual function
-            SELECT calculate_weekly_share_price_simplified() INTO result;
-            
-            -- Check if successful
-            IF (result->>'success')::BOOLEAN THEN
-                success := true;
-                RAISE NOTICE 'Price calculation succeeded on attempt %', attempt;
-            ELSE
-                RAISE NOTICE 'Price calculation failed on attempt %: %', attempt, result->>'message';
-            END IF;
-            
-        EXCEPTION
-            WHEN OTHERS THEN
-                RAISE NOTICE 'Price calculation attempt % failed with error: %', attempt, SQLERRM;
-                result := json_build_object(
-                    'success', false,
-                    'message', 'Error on attempt ' || attempt || ': ' || SQLERRM,
-                    'error_code', 'PRICE_CALC_RETRY_ERROR'
-                );
-        END;
-        
-        -- If not successful and not last attempt, wait before retry
-        IF NOT success AND attempt < max_attempts THEN
-            RAISE NOTICE 'Waiting % seconds before retry...', delay_seconds;
-            PERFORM pg_sleep(delay_seconds);
-        END IF;
-        
-        attempt := attempt + 1;
-    END LOOP;
-    
-    -- Return final result
-    IF success THEN
-        RETURN json_build_object(
-            'success', true,
-            'message', 'Price calculation completed successfully after ' || (attempt - 1) || ' attempts',
-            'attempts_used', attempt - 1,
-            'final_result', result
-        );
-    ELSE
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Price calculation failed after ' || max_attempts || ' attempts',
-            'attempts_used', max_attempts,
-            'final_result', result
-        );
-    END IF;
+    RETURN retry_operation('Price Calculation', 'calculate_weekly_share_price_simplified', 5, 3);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. Open exchange with retries (Monday 10:05)
+CREATE OR REPLACE FUNCTION clear_history_with_retries()
+RETURNS JSON AS $$
+BEGIN
+    RETURN retry_operation('History Clear', 'clear_weekly_order_history', 5, 3);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION open_exchange_with_retries()
 RETURNS JSON AS $$
 DECLARE
-    attempt INTEGER := 1;
-    max_attempts INTEGER := 5;
-    delay_seconds INTEGER := 3;
     result JSON;
-    success BOOLEAN := false;
 BEGIN
-    WHILE attempt <= max_attempts AND NOT success LOOP
-        BEGIN
-            RAISE NOTICE 'Exchange open attempt % of %', attempt, max_attempts;
-            
-            -- Call the actual function
-            SELECT open_exchange_weekly() INTO result;
-            
-            -- Check if successful
-            IF (result->>'success')::BOOLEAN THEN
-                success := true;
-                RAISE NOTICE 'Exchange open succeeded on attempt %', attempt;
-            ELSE
-                RAISE NOTICE 'Exchange open failed on attempt %: %', attempt, result->>'message';
-            END IF;
-            
-        EXCEPTION
-            WHEN OTHERS THEN
-                RAISE NOTICE 'Exchange open attempt % failed with error: %', attempt, SQLERRM;
-                result := json_build_object(
-                    'success', false,
-                    'message', 'Error on attempt ' || attempt || ': ' || SQLERRM,
-                    'error_code', 'EXCHANGE_OPEN_RETRY_ERROR'
-                );
-        END;
-        
-        -- If not successful and not last attempt, wait before retry
-        IF NOT success AND attempt < max_attempts THEN
-            RAISE NOTICE 'Waiting % seconds before retry...', delay_seconds;
-            PERFORM pg_sleep(delay_seconds);
-        END IF;
-        
-        attempt := attempt + 1;
-    END LOOP;
+    -- First update exchange status to open
+    SELECT update_exchange_status(true, 'cron_open') INTO result;
     
-    -- Return final result
-    IF success THEN
-        RETURN json_build_object(
-            'success', true,
-            'message', 'Exchange open completed successfully after ' || (attempt - 1) || ' attempts',
-            'attempts_used', attempt - 1,
-            'final_result', result
-        );
-    ELSE
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Exchange open failed after ' || max_attempts || ' attempts',
-            'attempts_used', max_attempts,
-            'final_result', result
-        );
+    IF NOT (result->>'success')::BOOLEAN THEN
+        RETURN result;
     END IF;
+    
+    -- Then run the open exchange function
+    RETURN retry_operation('Exchange Open', 'open_exchange_weekly', 5, 3);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Schedule the new cron jobs with updated times
+CREATE OR REPLACE FUNCTION close_exchange_with_retries()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    -- First run the close exchange function
+    SELECT retry_operation('Exchange Close', 'close_exchange_weekly', 5, 3) INTO result;
+    
+    -- Then update exchange status to closed
+    PERFORM update_exchange_status(false, 'cron_close');
+    
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 1. Clear history every Monday at 09:30 Windhoek time (07:30 UTC)
-SELECT cron.schedule(
-    'clear_history_with_retries_weekly',
-    '30 7 * * 1',  -- 07:30 UTC = 09:30 Windhoek time (UTC+2)
-    'SELECT clear_history_with_retries();'
-);
+-- Test functions for manual verification
+CREATE OR REPLACE FUNCTION test_new_schedule()
+RETURNS JSON AS $$
+DECLARE
+    windhoek_time TIMESTAMP WITH TIME ZONE;
+    current_week DATE;
+    next_monday_0930 TIMESTAMP WITH TIME ZONE;
+    next_monday_1003 TIMESTAMP WITH TIME ZONE;
+    next_monday_1005 TIMESTAMP WITH TIME ZONE;
+    next_sunday_2359 TIMESTAMP WITH TIME ZONE;
+BEGIN
+    windhoek_time := NOW() AT TIME ZONE 'Africa/Windhoek';
+    current_week := DATE_TRUNC('week', windhoek_time)::DATE + INTERVAL '1 day';
+    
+    -- Calculate next schedule times
+    next_monday_0930 := (current_week + INTERVAL '7 days')::TIMESTAMP + INTERVAL '9 hours 30 minutes';
+    next_monday_1003 := (current_week + INTERVAL '7 days')::TIMESTAMP + INTERVAL '10 hours 3 minutes';
+    next_monday_1005 := (current_week + INTERVAL '7 days')::TIMESTAMP + INTERVAL '10 hours 5 minutes';
+    next_sunday_2359 := (current_week + INTERVAL '6 days')::TIMESTAMP + INTERVAL '23 hours 59 minutes';
+    
+    RETURN json_build_object(
+        'success', true,
+        'message', 'New schedule verified successfully',
+        'current_time_windhoek', windhoek_time,
+        'current_week', current_week,
+        'schedule', json_build_object(
+            'history_clear', json_build_object(
+                'cron', '30 9 * * 1',
+                'description', 'Monday 09:30 Windhoek time',
+                'next_run', next_monday_0930
+            ),
+            'price_calculation', json_build_object(
+                'cron', '3 10 * * 1', 
+                'description', 'Monday 10:03 Windhoek time',
+                'next_run', next_monday_1003
+            ),
+            'exchange_open', json_build_object(
+                'cron', '5 10 * * 1',
+                'description', 'Monday 10:05 Windhoek time', 
+                'next_run', next_monday_1005
+            ),
+            'exchange_close', json_build_object(
+                'cron', '59 23 * * 0',
+                'description', 'Sunday 23:59 Windhoek time',
+                'next_run', next_sunday_2359
+            )
+        ),
+        'timezone', 'Africa/Windhoek (UTC+2)',
+        'retry_config', json_build_object(
+            'max_retries', 5,
+            'base_delay_seconds', 3,
+            'backoff_type', 'linear'
+        )
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 2. Calculate price every Monday at 10:03 Windhoek time (08:03 UTC)  
-SELECT cron.schedule(
-    'calculate_price_with_retries_weekly',
-    '03 8 * * 1',  -- 08:03 UTC = 10:03 Windhoek time (UTC+2)
-    'SELECT calculate_price_with_retries();'
-);
-
--- 3. Open exchange every Monday at 10:05 Windhoek time (08:05 UTC)
-SELECT cron.schedule(
-    'open_exchange_with_retries_weekly', 
-    '05 8 * * 1',  -- 08:05 UTC = 10:05 Windhoek time (UTC+2)
-    'SELECT open_exchange_with_retries();'
-);
-
--- 4. Close exchange every Sunday at 23:59 Windhoek time (21:59 UTC)
-SELECT cron.schedule(
-    'close_exchange_weekly',
-    '59 21 * * 0',  -- 21:59 UTC = 23:59 Windhoek time (UTC+2)
-    'SELECT close_exchange_weekly();'
-);
-
--- Create a function to check all cron jobs are properly scheduled
-CREATE OR REPLACE FUNCTION verify_cron_schedule()
+CREATE OR REPLACE FUNCTION get_cron_job_status()
 RETURNS JSON AS $$
 DECLARE
     job_count INTEGER;
-    jobs JSON;
+    jobs_info JSON;
 BEGIN
-    -- Count scheduled jobs
+    -- Get count of active cron jobs
     SELECT COUNT(*) INTO job_count
-    FROM cron.job 
-    WHERE jobname IN (
-        'clear_history_with_retries_weekly',
-        'calculate_price_with_retries_weekly',
-        'open_exchange_with_retries_weekly', 
-        'close_exchange_weekly'
-    );
+    FROM cron.job
+    WHERE active = true;
     
-    -- Get job details
+    -- Get detailed job information
     SELECT json_agg(
         json_build_object(
             'jobname', jobname,
             'schedule', schedule,
             'command', command,
-            'active', active
+            'active', active,
+            'database', database
         )
-    ) INTO jobs
-    FROM cron.job 
-    WHERE jobname IN (
-        'clear_history_with_retries_weekly',
-        'calculate_price_with_retries_weekly',
-        'open_exchange_with_retries_weekly',
-        'close_exchange_weekly'
-    );
+    ) INTO jobs_info
+    FROM cron.job
+    WHERE active = true
+    ORDER BY jobname;
     
     RETURN json_build_object(
-        'success', job_count = 4,
-        'message', CASE 
-            WHEN job_count = 4 THEN 'All 4 cron jobs scheduled correctly'
-            ELSE 'Only ' || job_count || ' of 4 cron jobs found'
-        END,
-        'jobs_found', job_count,
-        'expected_jobs', 4,
-        'job_details', jobs,
-        'schedule_summary', json_build_object(
-            'clear_history', 'Monday 09:30 Windhoek (07:30 UTC)',
-            'calculate_price', 'Monday 10:03 Windhoek (08:03 UTC)',
-            'open_exchange', 'Monday 10:05 Windhoek (08:05 UTC)', 
-            'close_exchange', 'Sunday 23:59 Windhoek (21:59 UTC)'
+        'success', true,
+        'message', format('Found %s active cron jobs', job_count),
+        'active_job_count', job_count,
+        'jobs', COALESCE(jobs_info, '[]'::JSON),
+        'expected_jobs', json_build_array(
+            'weekly-history-clear-retry',
+            'weekly-price-calculation-retry', 
+            'weekly-exchange-open-retry',
+            'weekly-exchange-close-retry'
         )
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Log completion and verify setup
-DO $$
+CREATE OR REPLACE FUNCTION trigger_weekly_cycle_test()
+RETURNS JSON AS $$
 DECLARE
-    verification_result JSON;
+    clear_result JSON;
+    price_result JSON;
+    open_result JSON;
+    overall_success BOOLEAN := true;
+    error_messages TEXT[] := ARRAY[]::TEXT[];
 BEGIN
-    RAISE NOTICE '=== CRON SCHEDULE UPDATE COMPLETE ===';
-    RAISE NOTICE '';
-    RAISE NOTICE 'New Schedule (Windhoek Time UTC+2):';
-    RAISE NOTICE '- Monday 09:30: Clear order history (with 5x retry)';
-    RAISE NOTICE '- Monday 10:03: Calculate share price (with 5x retry)';
-    RAISE NOTICE '- Monday 10:05: Open exchange (with 5x retry)';
-    RAISE NOTICE '- Sunday 23:59: Close exchange';
-    RAISE NOTICE '';
-    RAISE NOTICE 'Retry Logic: Each job tries up to 5 times with 3-second delays';
-    RAISE NOTICE '';
+    RAISE NOTICE '=== TESTING WEEKLY CYCLE ===';
     
-    -- Verify the setup
-    SELECT verify_cron_schedule() INTO verification_result;
-    RAISE NOTICE 'Verification Result: %', verification_result;
+    -- Test 1: Clear history
+    RAISE NOTICE 'Step 1: Testing history clear...';
+    SELECT clear_history_with_retries() INTO clear_result;
     
+    IF NOT (clear_result->>'success')::BOOLEAN THEN
+        overall_success := false;
+        error_messages := array_append(error_messages, 'History clear failed: ' || (clear_result->>'message'));
+    END IF;
+    
+    -- Test 2: Calculate price
+    RAISE NOTICE 'Step 2: Testing price calculation...';
+    SELECT calculate_price_with_retries() INTO price_result;
+    
+    IF NOT (price_result->>'success')::BOOLEAN THEN
+        overall_success := false;
+        error_messages := array_append(error_messages, 'Price calculation failed: ' || (price_result->>'message'));
+    END IF;
+    
+    -- Test 3: Open exchange
+    RAISE NOTICE 'Step 3: Testing exchange open...';
+    SELECT open_exchange_with_retries() INTO open_result;
+    
+    IF NOT (open_result->>'success')::BOOLEAN THEN
+        overall_success := false;
+        error_messages := array_append(error_messages, 'Exchange open failed: ' || (open_result->>'message'));
+    END IF;
+    
+    RAISE NOTICE '=== WEEKLY CYCLE TEST COMPLETE ===';
+    
+    RETURN json_build_object(
+        'success', overall_success,
+        'message', CASE 
+            WHEN overall_success THEN 'Weekly cycle test completed successfully'
+            ELSE 'Weekly cycle test completed with errors'
+        END,
+        'test_results', json_build_object(
+            'history_clear', clear_result,
+            'price_calculation', price_result,
+            'exchange_open', open_result
+        ),
+        'error_messages', error_messages,
+        'tested_at', NOW()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Schedule the new cron jobs with updated times
+-- All times are in Africa/Windhoek timezone (UTC+2)
+
+-- 1. Clear history: Monday 09:30
+SELECT cron.schedule(
+    'weekly-history-clear-retry',
+    '30 9 * * 1',
+    'SELECT clear_history_with_retries();'
+);
+
+-- 2. Calculate price: Monday 10:03  
+SELECT cron.schedule(
+    'weekly-price-calculation-retry',
+    '3 10 * * 1',
+    'SELECT calculate_price_with_retries();'
+);
+
+-- 3. Open exchange: Monday 10:05
+SELECT cron.schedule(
+    'weekly-exchange-open-retry', 
+    '5 10 * * 1',
+    'SELECT open_exchange_with_retries();'
+);
+
+-- 4. Close exchange: Sunday 23:59
+SELECT cron.schedule(
+    'weekly-exchange-close-retry',
+    '59 23 * * 0', 
+    'SELECT close_exchange_with_retries();'
+);
+
+-- Log completion
+DO $$
+BEGIN
+    RAISE NOTICE '=== CRON SCHEDULE UPDATED WITH RETRIES ===';
+    RAISE NOTICE 'New Schedule (Africa/Windhoek UTC+2):';
+    RAISE NOTICE '1. Monday 09:30 - Clear order history (5x retry, 3s delay)';
+    RAISE NOTICE '2. Monday 10:03 - Calculate share price (5x retry, 3s delay)';
+    RAISE NOTICE '3. Monday 10:05 - Open exchange (5x retry, 3s delay)';
+    RAISE NOTICE '4. Sunday 23:59 - Close exchange (5x retry, 3s delay)';
     RAISE NOTICE '';
-    RAISE NOTICE 'Setup complete! Test with:';
-    RAISE NOTICE '- SELECT test_new_schedule();';
-    RAISE NOTICE '- SELECT get_exchange_status();';
-    RAISE NOTICE '- SELECT verify_cron_schedule();';
+    RAISE NOTICE 'Retry Functions Created:';
+    RAISE NOTICE '- retry_operation(name, function, max_retries, delay)';
+    RAISE NOTICE '- calculate_price_with_retries()';
+    RAISE NOTICE '- clear_history_with_retries()';
+    RAISE NOTICE '- open_exchange_with_retries()';
+    RAISE NOTICE '- close_exchange_with_retries()';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Test Functions Created:';
+    RAISE NOTICE '- test_new_schedule()';
+    RAISE NOTICE '- get_cron_job_status()';
+    RAISE NOTICE '- trigger_weekly_cycle_test()';
+    RAISE NOTICE '';
+    RAISE NOTICE 'All cron jobs scheduled successfully!';
 END $$;

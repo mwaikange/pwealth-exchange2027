@@ -206,14 +206,14 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Ensure get_current_share_price function exists
+-- CORRECTED: Function to get current share price using actual table schema
 CREATE OR REPLACE FUNCTION get_current_share_price()
 RETURNS NUMERIC AS $$
 DECLARE
     current_price NUMERIC;
 BEGIN
-    -- Try to get the latest price from weekly_prices
-    SELECT price_per_share INTO current_price
+    -- Try to get the latest final_price from weekly_prices (using correct column name)
+    SELECT final_price INTO current_price
     FROM weekly_prices 
     ORDER BY effective_date DESC 
     LIMIT 1;
@@ -232,97 +232,94 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Ensure calculate_weekly_share_price_simplified function exists
+-- CORRECTED: Function to calculate weekly share price using actual table schema
 CREATE OR REPLACE FUNCTION calculate_weekly_share_price_simplified()
 RETURNS JSON AS $$
 DECLARE
-    jse_price NUMERIC;
-    new_price NUMERIC;
+    current_jse_price NUMERIC;
+    previous_jse_price NUMERIC;
+    jse_growth_rate NUMERIC;
+    base_price NUMERIC;
+    new_final_price NUMERIC;
     price_change NUMERIC;
-    percentage_change NUMERIC;
-    previous_price NUMERIC;
     current_week DATE;
 BEGIN
     current_week := DATE_TRUNC('week', NOW() AT TIME ZONE 'Africa/Windhoek')::DATE + INTERVAL '1 day';
     
-    -- Get the latest JSE200 price
-    SELECT price INTO jse_price
+    -- Get the latest JSE200 price (current week)
+    SELECT price INTO current_jse_price
     FROM JSE200_PriceUpdate_Mondays
     ORDER BY date DESC
     LIMIT 1;
     
-    -- If no JSE price, use fallback calculation
-    IF jse_price IS NULL THEN
-        RAISE NOTICE 'No JSE200 price found, using fallback calculation';
-        
-        -- Get previous price
-        SELECT price_per_share INTO previous_price
-        FROM weekly_prices
-        ORDER BY effective_date DESC
-        LIMIT 1;
-        
-        IF previous_price IS NULL THEN
-            previous_price := 108.2;
-        END IF;
-        
-        -- Apply small random change (±2%)
-        new_price := previous_price * (1 + (random() - 0.5) * 0.04);
-        new_price := ROUND(new_price, 2);
-    ELSE
-        -- Use JSE-based calculation
-        new_price := ROUND(jse_price * 0.1, 2); -- 10% of JSE200 price
-        
-        -- Get previous price for comparison
-        SELECT price_per_share INTO previous_price
-        FROM weekly_prices
-        ORDER BY effective_date DESC
-        LIMIT 1;
-        
-        IF previous_price IS NULL THEN
-            previous_price := 108.2;
-        END IF;
+    -- Get the previous JSE200 price for growth calculation
+    SELECT price INTO previous_jse_price
+    FROM JSE200_PriceUpdate_Mondays
+    ORDER BY date DESC
+    OFFSET 1 LIMIT 1;
+    
+    -- Get the previous week's final_price as base_price for this week
+    SELECT final_price INTO base_price
+    FROM weekly_prices
+    ORDER BY effective_date DESC
+    LIMIT 1;
+    
+    -- Set defaults if no data found
+    IF base_price IS NULL THEN
+        base_price := 108.2;
     END IF;
     
-    -- Calculate changes
-    price_change := new_price - previous_price;
-    percentage_change := CASE 
-        WHEN previous_price > 0 THEN (price_change / previous_price) * 100 
-        ELSE 0 
-    END;
+    IF current_jse_price IS NULL THEN
+        RAISE NOTICE 'No JSE200 price found, using minimal growth';
+        jse_growth_rate := (random() - 0.5) * 0.02; -- ±1% random growth
+        new_final_price := base_price * (1 + jse_growth_rate);
+    ELSE
+        -- Calculate JSE200 growth rate
+        IF previous_jse_price IS NOT NULL AND previous_jse_price > 0 THEN
+            jse_growth_rate := (current_jse_price - previous_jse_price) / previous_jse_price;
+        ELSE
+            jse_growth_rate := 0.01; -- Default 1% growth if no previous price
+        END IF;
+        
+        -- Apply JSE200 growth to base price
+        new_final_price := base_price * (1 + jse_growth_rate);
+    END IF;
     
-    -- Insert new price
+    -- Round to 2 decimal places
+    new_final_price := ROUND(new_final_price, 2);
+    price_change := new_final_price - base_price;
+    
+    -- Insert new price record using correct column names
     INSERT INTO weekly_prices (
         effective_date,
-        price_per_share,
-        jse200_price,
-        price_change,
-        percentage_change,
-        calculation_method
+        base_price,
+        j200_growth,
+        final_price,
+        price_change
     ) VALUES (
         current_week,
-        new_price,
-        jse_price,
-        price_change,
-        percentage_change,
-        CASE WHEN jse_price IS NOT NULL THEN 'JSE200_based' ELSE 'fallback' END
+        base_price,
+        ROUND(jse_growth_rate * 100, 4), -- Convert to percentage
+        new_final_price,
+        price_change
     );
     
-    -- FIXED: Correct parameter count matching placeholders
-    RAISE NOTICE 'New share price calculated: N$% (change: N$%, % percent, JSE200: N$%)', 
-        new_price, price_change, ROUND(percentage_change, 2), COALESCE(jse_price, 0);
+    RAISE NOTICE 'New share price calculated: N$% (base: N$%, growth: %, change: N$%)', 
+        new_final_price, base_price, ROUND(jse_growth_rate * 100, 2), price_change;
     
     RETURN json_build_object(
         'success', true,
         'message', format('Share price updated to N$%s (change: %s%s)', 
-            new_price, 
+            new_final_price, 
             CASE WHEN price_change >= 0 THEN '+' ELSE '' END,
-            ROUND(percentage_change, 2) || '%'
+            ROUND((price_change / base_price) * 100, 2) || '%'
         ),
-        'new_price', new_price,
-        'previous_price', previous_price,
+        'base_price', base_price,
+        'final_price', new_final_price,
         'price_change', price_change,
-        'percentage_change', ROUND(percentage_change, 2),
-        'jse200_price', jse_price,
+        'jse_growth_rate', ROUND(jse_growth_rate * 100, 2),
+        'current_jse_price', current_jse_price,
+        'previous_jse_price', previous_jse_price,
         'effective_date', current_week,
         'calculated_at', NOW()
     );
@@ -337,18 +334,6 @@ EXCEPTION
         );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create weekly_prices table if it doesn't exist
-CREATE TABLE IF NOT EXISTS weekly_prices (
-    id SERIAL PRIMARY KEY,
-    effective_date DATE NOT NULL UNIQUE,
-    price_per_share NUMERIC(10,2) NOT NULL,
-    jse200_price NUMERIC(10,2),
-    price_change NUMERIC(10,2),
-    percentage_change NUMERIC(5,2),
-    calculation_method TEXT DEFAULT 'JSE200_based',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
 
 -- Create JSE200_PriceUpdate_Mondays table if it doesn't exist
 CREATE TABLE IF NOT EXISTS JSE200_PriceUpdate_Mondays (
@@ -366,12 +351,14 @@ SELECT
 WHERE NOT EXISTS (SELECT 1 FROM JSE200_PriceUpdate_Mondays)
 ON CONFLICT (date) DO NOTHING;
 
--- Insert initial price if weekly_prices is empty
-INSERT INTO weekly_prices (effective_date, price_per_share, calculation_method)
+-- CORRECTED: Insert initial price using correct column names
+INSERT INTO weekly_prices (effective_date, base_price, j200_growth, final_price, price_change)
 SELECT 
     DATE_TRUNC('week', NOW())::DATE + INTERVAL '1 day',
-    108.2,
-    'initial'
+    108.2,  -- base_price
+    0,      -- j200_growth (0% for initial)
+    108.2,  -- final_price (same as base for initial)
+    0       -- price_change (0 for initial)
 WHERE NOT EXISTS (SELECT 1 FROM weekly_prices)
 ON CONFLICT (effective_date) DO NOTHING;
 
@@ -387,13 +374,17 @@ BEGIN
     RAISE NOTICE '- clear_weekly_order_history()';
     RAISE NOTICE '- close_exchange_weekly()';
     RAISE NOTICE '- open_exchange_weekly()';
-    RAISE NOTICE '- get_current_share_price()';
-    RAISE NOTICE '- calculate_weekly_share_price_simplified()';
+    RAISE NOTICE '- get_current_share_price() [CORRECTED for actual schema]';
+    RAISE NOTICE '- calculate_weekly_share_price_simplified() [CORRECTED for actual schema]';
     RAISE NOTICE '';
     RAISE NOTICE 'Tables ensured:';
-    RAISE NOTICE '- weekly_prices';
     RAISE NOTICE '- JSE200_PriceUpdate_Mondays';
     RAISE NOTICE '';
-    RAISE NOTICE 'Sample data inserted where needed';
-    RAISE NOTICE 'All functions should now work correctly';
+    RAISE NOTICE 'Initial price record inserted using correct columns:';
+    RAISE NOTICE '- base_price: 108.2';
+    RAISE NOTICE '- final_price: 108.2';
+    RAISE NOTICE '- j200_growth: 0';
+    RAISE NOTICE '- price_change: 0';
+    RAISE NOTICE '';
+    RAISE NOTICE 'All functions should now work correctly with your table schema';
 END $$;
