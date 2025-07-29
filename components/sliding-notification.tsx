@@ -1,83 +1,79 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react"
+import { useEffect, useState } from "react"
+import { CheckCircle, XCircle, AlertCircle, Info } from "lucide-react"
 
 interface SlidingNotificationProps {
-  type: "success" | "error" | "info" | "warning"
+  type: "success" | "error" | "warning" | "info"
   message: string
   isVisible: boolean
   onClose: () => void
   duration?: number
 }
 
-export function SlidingNotification({ type, message, isVisible, onClose, duration = 3000 }: SlidingNotificationProps) {
-  const [isAnimating, setIsAnimating] = useState(false)
+export function SlidingNotification({ type, message, isVisible, onClose, duration = 5000 }: SlidingNotificationProps) {
+  const [shouldRender, setShouldRender] = useState(false)
 
   useEffect(() => {
     if (isVisible) {
-      setIsAnimating(true)
+      setShouldRender(true)
       const timer = setTimeout(() => {
-        setIsAnimating(false)
-        setTimeout(onClose, 300) // Wait for slide-out animation
+        onClose()
       }, duration)
-
+      return () => clearTimeout(timer)
+    } else {
+      const timer = setTimeout(() => {
+        setShouldRender(false)
+      }, 300) // Wait for slide-out animation
       return () => clearTimeout(timer)
     }
-  }, [isVisible, duration, onClose])
+  }, [isVisible, onClose, duration])
+
+  if (!shouldRender) return null
 
   const getIcon = () => {
     switch (type) {
       case "success":
-        return <CheckCircle className="w-5 h-5 text-green-400" />
+        return <CheckCircle className="w-5 h-5" />
       case "error":
-        return <AlertCircle className="w-5 h-5 text-red-400" />
+        return <XCircle className="w-5 h-5" />
       case "warning":
-        return <AlertTriangle className="w-5 h-5 text-yellow-400" />
+        return <AlertCircle className="w-5 h-5" />
       case "info":
-      default:
-        return <Info className="w-5 h-5 text-blue-400" />
+        return <Info className="w-5 h-5" />
     }
   }
 
-  const getBackgroundColor = () => {
+  const getColors = () => {
     switch (type) {
       case "success":
-        return "bg-green-900/90 border-green-600/50"
+        return "bg-green-600 border-green-500 text-green-100"
       case "error":
-        return "bg-red-900/90 border-red-600/50"
+        return "bg-red-600 border-red-500 text-red-100"
       case "warning":
-        return "bg-yellow-900/90 border-yellow-600/50"
+        return "bg-yellow-600 border-yellow-500 text-yellow-100"
       case "info":
-      default:
-        return "bg-blue-900/90 border-blue-600/50"
+        return "bg-blue-600 border-blue-500 text-blue-100"
     }
   }
-
-  if (!isVisible) return null
 
   return (
     <div
-      className={`fixed top-4 right-4 z-50 transform transition-transform duration-300 ease-in-out ${
-        isAnimating ? "translate-x-0" : "translate-x-full"
+      className={`fixed top-4 right-4 z-50 max-w-sm w-full transform transition-transform duration-300 ease-in-out ${
+        isVisible ? "translate-x-0" : "translate-x-full"
       }`}
     >
-      <div className={`${getBackgroundColor()} border rounded-lg shadow-lg p-4 min-w-80 max-w-96 backdrop-blur-sm`}>
-        <div className="flex items-start gap-3">
-          {getIcon()}
-          <div className="flex-1">
-            <p className="text-white text-sm font-medium">{message}</p>
-          </div>
-          <button
-            onClick={() => {
-              setIsAnimating(false)
-              setTimeout(onClose, 300)
-            }}
-            className="text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      <div className={`${getColors()} border rounded-lg shadow-lg p-4 flex items-start space-x-3`}>
+        <div className="flex-shrink-0">{getIcon()}</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium break-words">{message}</p>
         </div>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 ml-2 text-current opacity-70 hover:opacity-100 transition-opacity"
+        >
+          <XCircle className="w-4 h-4" />
+        </button>
       </div>
     </div>
   )

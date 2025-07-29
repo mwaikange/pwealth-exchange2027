@@ -10,15 +10,21 @@ DECLARE
     orders_cleared INTEGER := 0;
     transactions_archived INTEGER := 0;
     vesting_reset INTEGER := 0;
+    reset_operations JSON;
 BEGIN
     reset_start := NOW();
     
     RAISE NOTICE 'Starting system reset at %', reset_start;
     
-    -- Reset exchange to closed state
+    -- Reset order statuses
+    UPDATE buy_orders SET ui_archived = false, ui_archived_at = NULL WHERE ui_archived = true;
+    UPDATE sell_orders SET ui_archived = false, ui_archived_at = NULL WHERE ui_archived = true;
+    
+    -- Reset exchange to closed state for next test
     UPDATE exchange_trading_hours 
-    SET is_open = false, updated_at = NOW()
-    WHERE is_open = true;
+    SET is_trading_open = false,
+        last_updated = NOW()
+    WHERE id = 1;
     
     RAISE NOTICE 'Exchange closed for reset';
     
