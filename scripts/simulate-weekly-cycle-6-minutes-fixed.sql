@@ -73,22 +73,22 @@ BEGIN
     PERFORM pg_sleep(1);
     RAISE NOTICE '';
     
-    -- MINUTE 2-3: MONDAY 09:30 - CLEAR ORDER HISTORY
-    RAISE NOTICE 'MINUTE 2-3: MONDAY 09:30 - CLEARING ORDER HISTORY';
-    RAISE NOTICE '===============================================';
-    RAISE NOTICE 'Simulating Monday 09:30 order history cleanup...';
+    -- MINUTE 2-3: MONDAY 09:30 - CLEAR ORDER HISTORY (UI ONLY - NOT DELETE FROM TABLES)
+    RAISE NOTICE 'MINUTE 2-3: MONDAY 09:30 - CLEARING ORDER HISTORY FROM UI';
+    RAISE NOTICE '========================================================';
+    RAISE NOTICE 'Simulating Monday 09:30 order history UI cleanup...';
+    RAISE NOTICE 'NOTE: This marks orders as "archived" for UI filtering - NO DATA DELETED';
     
-    SELECT clear_weekly_order_history() INTO clear_result;
+    SELECT clear_weekly_order_history_ui_only() INTO clear_result;
     
     IF (clear_result->>'success')::BOOLEAN THEN
-        RAISE NOTICE '✅ Order history cleared successfully';
+        RAISE NOTICE '✅ Order history UI cleared successfully';
         RAISE NOTICE 'Message: %', clear_result->>'message';
-        RAISE NOTICE 'Expired buy orders: %', COALESCE(clear_result->>'expired_buy_orders', '0');
-        RAISE NOTICE 'Expired sell orders: %', COALESCE(clear_result->>'expired_sell_orders', '0');
-        RAISE NOTICE 'Amount refunded: N$%', COALESCE(clear_result->>'refunded_amount', '0.00');
-        RAISE NOTICE 'Shares refunded: %', COALESCE(clear_result->>'refunded_shares', '0.00');
+        RAISE NOTICE 'Buy orders archived: %', COALESCE(clear_result->>'archived_buy_orders', '0');
+        RAISE NOTICE 'Sell orders archived: %', COALESCE(clear_result->>'archived_sell_orders', '0');
+        RAISE NOTICE 'NOTE: All data preserved in tables for transaction history';
     ELSE
-        RAISE NOTICE '❌ Order history clearing failed: %', clear_result->>'message';
+        RAISE NOTICE '❌ Order history UI clearing failed: %', clear_result->>'message';
     END IF;
     
     RAISE NOTICE '';
@@ -131,12 +131,14 @@ BEGIN
     IF (price_result->>'success')::BOOLEAN THEN
         RAISE NOTICE '✅ Price calculation successful';
         RAISE NOTICE 'Message: %', price_result->>'message';
-        RAISE NOTICE 'New price: N$%', price_result->>'new_price';
-        RAISE NOTICE 'Growth rate used: %%', price_result->>'growth_rate';
+        RAISE NOTICE 'Base price: N$%', price_result->>'base_price';
+        RAISE NOTICE 'Final price: N$%', price_result->>'final_price';
+        RAISE NOTICE 'Price change: N$%', price_result->>'price_change';
+        RAISE NOTICE 'JSE200 growth: %%', price_result->>'jse_percent_change';
         RAISE NOTICE 'Calculation: N$% × (1 + %%/100) = N$%', 
                      current_price_before, 
-                     price_result->>'growth_rate',
-                     price_result->>'new_price';
+                     price_result->>'jse_percent_change',
+                     price_result->>'final_price';
     ELSE
         RAISE NOTICE '❌ Price calculation failed: %', price_result->>'message';
     END IF;
@@ -156,7 +158,7 @@ BEGIN
     IF (open_result->>'success')::BOOLEAN THEN
         RAISE NOTICE '✅ Exchange opened successfully';
         RAISE NOTICE 'Message: %', open_result->>'message';
-        RAISE NOTICE 'Trading status: %', open_result->>'is_trading_open';
+        RAISE NOTICE 'Trading status: %', open_result->>'trading_open';
         RAISE NOTICE 'Current price: N$%', open_result->>'current_price';
     ELSE
         RAISE NOTICE '❌ Exchange opening failed: %', open_result->>'message';
@@ -193,7 +195,7 @@ BEGIN
                  latest_jse_data.percent_change,
                  current_price_after;
     RAISE NOTICE '🔄 Exchange closure: %', CASE WHEN (close_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
-    RAISE NOTICE '🧹 History clearing: %', CASE WHEN (clear_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
+    RAISE NOTICE '🧹 History UI clearing: %', CASE WHEN (clear_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
     RAISE NOTICE '💰 Price calculation: %', CASE WHEN (price_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
     RAISE NOTICE '🚀 Exchange opening: %', CASE WHEN (open_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
     RAISE NOTICE '';
@@ -206,6 +208,7 @@ BEGIN
         RAISE NOTICE '   All systems operational for new trading week';
         RAISE NOTICE '   Share price updated from N$% to N$% using real JSE200 data', 
                      current_price_before, current_price_after;
+        RAISE NOTICE '   All transaction history preserved in database tables';
     ELSE
         RAISE NOTICE '⚠️  WEEKLY CYCLE SIMULATION: PARTIAL SUCCESS';
         RAISE NOTICE '   Some operations failed - check logs above';
