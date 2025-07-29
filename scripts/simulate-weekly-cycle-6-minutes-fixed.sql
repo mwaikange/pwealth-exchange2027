@@ -1,121 +1,144 @@
--- Simulate weekly cycle in 6 minutes with proper Supabase compliance
--- This script creates a function that runs the complete weekly cycle simulation
+-- Simulate Weekly Cycle in 6 Minutes (Supabase-Compliant)
+-- This script simulates a complete weekly trading cycle compressed into 6 minutes
 
+-- Main simulation function
 CREATE OR REPLACE FUNCTION run_weekly_cycle_simulation()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
-    start_time TIMESTAMPTZ;
+    start_time TIMESTAMP;
     current_price NUMERIC;
-    jse200_change NUMERIC;
-    new_price NUMERIC;
-    simulation_status TEXT;
+    jse200_value NUMERIC;
+    simulation_steps JSON[];
+    step_result JSON;
 BEGIN
     start_time := NOW();
-    simulation_status := 'Starting 6-minute weekly cycle simulation';
+    simulation_steps := ARRAY[]::JSON[];
     
-    RAISE NOTICE '%', simulation_status;
-    RAISE NOTICE 'Simulation started at: %', start_time;
+    RAISE NOTICE 'Starting 6-minute weekly cycle simulation at %', start_time;
     
-    -- Step 1: Close current exchange (simulate Friday close)
-    simulation_status := 'Step 1: Closing exchange for weekly cycle';
-    RAISE NOTICE '%', simulation_status;
+    -- Step 1: Initialize JSE200 data (0-1 minute)
+    RAISE NOTICE 'Step 1: Initializing JSE200 data...';
     
-    UPDATE exchange_trading_hours 
-    SET is_open = false,
-        last_updated = NOW()
-    WHERE id = 1;
+    -- Insert sample JSE200 data for the week
+    INSERT INTO jse200_weekly_data (week_start, closing_value, percentage_change, created_at)
+    VALUES 
+        (DATE_TRUNC('week', NOW()), 75000.00, 2.5, NOW()),
+        (DATE_TRUNC('week', NOW()) - INTERVAL '1 week', 73170.73, 1.8, NOW() - INTERVAL '1 week')
+    ON CONFLICT (week_start) DO UPDATE SET
+        closing_value = EXCLUDED.closing_value,
+        percentage_change = EXCLUDED.percentage_change,
+        updated_at = NOW();
     
-    -- Step 2: Get current price
+    step_result := json_build_object(
+        'step', 1,
+        'description', 'JSE200 data initialized',
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
+    );
+    simulation_steps := array_append(simulation_steps, step_result);
+    
+    -- Step 2: Calculate new share price (1-2 minutes)
+    RAISE NOTICE 'Step 2: Calculating new share price...';
+    
+    PERFORM calculate_weekly_share_price();
+    
     SELECT price INTO current_price 
     FROM weekly_share_price 
     ORDER BY week DESC 
     LIMIT 1;
     
-    IF current_price IS NULL THEN
-        current_price := 108.20; -- Default starting price
-        RAISE NOTICE 'No existing price found, using default: %', current_price;
-    ELSE
-        RAISE NOTICE 'Current share price: %', current_price;
-    END IF;
-    
-    -- Step 3: Simulate JSE200 weekly change (random between -5% and +5%)
-    jse200_change := (RANDOM() * 10 - 5); -- Random between -5 and +5
-    RAISE NOTICE 'Simulated JSE200 weekly change: %% %', jse200_change;
-    
-    -- Step 4: Calculate new price based on JSE200 change
-    new_price := current_price * (1 + jse200_change / 100);
-    new_price := ROUND(new_price, 2);
-    
-    RAISE NOTICE 'Calculated new price: % (change: %% %)', 
-        new_price, ROUND(((new_price - current_price) / current_price * 100), 2);
-    
-    -- Step 5: Insert new weekly price
-    INSERT INTO weekly_share_price (week, price, jse200_change, created_at)
-    VALUES (
-        DATE_TRUNC('week', NOW()),
-        new_price,
-        jse200_change,
-        NOW()
-    )
-    ON CONFLICT (week) 
-    DO UPDATE SET 
-        price = EXCLUDED.price,
-        jse200_change = EXCLUDED.jse200_change,
-        created_at = NOW();
-    
-    simulation_status := 'Step 5: New weekly price inserted';
-    RAISE NOTICE '%', simulation_status;
-    
-    -- Step 6: Wait simulation (in real system this would be cron-based)
-    simulation_status := 'Step 6: Simulating weekend processing time...';
-    RAISE NOTICE '%', simulation_status;
-    
-    -- Simulate some processing time
-    PERFORM pg_sleep(2);
-    
-    -- Step 7: Reopen exchange (simulate Monday open)
-    simulation_status := 'Step 7: Reopening exchange for new week';
-    RAISE NOTICE '%', simulation_status;
-    
-    UPDATE exchange_trading_hours 
-    SET is_open = true,
-        last_updated = NOW()
-    WHERE id = 1;
-    
-    -- Step 8: Update exchange status
-    INSERT INTO exchange_status_log (
-        status, 
-        message, 
-        price_at_time, 
-        created_at
-    ) VALUES (
-        'cycle_completed',
-        'Weekly cycle simulation completed - Exchange reopened',
-        new_price,
-        NOW()
+    step_result := json_build_object(
+        'step', 2,
+        'description', 'Share price calculated',
+        'new_price', current_price,
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
     );
+    simulation_steps := array_append(simulation_steps, step_result);
     
-    simulation_status := 'Simulation completed successfully';
-    RAISE NOTICE '%', simulation_status;
-    RAISE NOTICE 'Total simulation time: % seconds', 
-        EXTRACT(EPOCH FROM (NOW() - start_time));
+    -- Step 3: Close exchange and expire orders (2-3 minutes)
+    RAISE NOTICE 'Step 3: Closing exchange and expiring orders...';
     
+    -- Close exchange
+    UPDATE exchange_trading_hours SET is_open = false, updated_at = NOW();
+    
+    -- Expire pending orders
+    UPDATE buy_orders SET status = 'expired' WHERE status IN ('pending', 'partial');
+    UPDATE sell_orders SET status = 'expired' WHERE status IN ('pending', 'partial');
+    
+    step_result := json_build_object(
+        'step', 3,
+        'description', 'Exchange closed, orders expired',
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
+    );
+    simulation_steps := array_append(simulation_steps, step_result);
+    
+    -- Step 4: Update vesting statuses (3-4 minutes)
+    RAISE NOTICE 'Step 4: Updating vesting statuses...';
+    
+    -- Update vesting slots that have completed their hold period
+    UPDATE pivot_vesting 
+    SET status = 'claimable', updated_at = NOW()
+    WHERE status = 'locked' 
+    AND end_time <= NOW();
+    
+    step_result := json_build_object(
+        'step', 4,
+        'description', 'Vesting statuses updated',
+        'claimable_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimable'),
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
+    );
+    simulation_steps := array_append(simulation_steps, step_result);
+    
+    -- Step 5: Process any automated claims (4-5 minutes)
+    RAISE NOTICE 'Step 5: Processing automated operations...';
+    
+    -- Simulate some automated processing time
+    PERFORM pg_sleep(1);
+    
+    step_result := json_build_object(
+        'step', 5,
+        'description', 'Automated operations processed',
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
+    );
+    simulation_steps := array_append(simulation_steps, step_result);
+    
+    -- Step 6: Reopen exchange for new week (5-6 minutes)
+    RAISE NOTICE 'Step 6: Reopening exchange for new week...';
+    
+    -- Open exchange
+    UPDATE exchange_trading_hours SET is_open = true, updated_at = NOW();
+    
+    step_result := json_build_object(
+        'step', 6,
+        'description', 'Exchange reopened for new week',
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time))
+    );
+    simulation_steps := array_append(simulation_steps, step_result);
+    
+    -- Build final result
     SELECT json_build_object(
         'success', true,
-        'message', 'Weekly cycle simulation completed',
-        'data', json_build_object(
-            'start_time', start_time,
-            'end_time', NOW(),
-            'duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time)),
-            'old_price', current_price,
-            'new_price', new_price,
-            'jse200_change_percent', jse200_change,
-            'price_change_percent', ROUND(((new_price - current_price) / current_price * 100), 2),
-            'exchange_reopened', true,
-            'simulation_status', simulation_status
+        'simulation', 'weekly_cycle_6_minutes',
+        'start_time', start_time,
+        'end_time', NOW(),
+        'total_duration_seconds', EXTRACT(EPOCH FROM (NOW() - start_time)),
+        'steps', simulation_steps,
+        'final_state', json_build_object(
+            'share_price', current_price,
+            'exchange_open', true,
+            'claimable_vesting_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimable'),
+            'active_buy_orders', (SELECT COUNT(*) FROM buy_orders WHERE status != 'expired'),
+            'active_sell_orders', (SELECT COUNT(*) FROM sell_orders WHERE status != 'expired')
         )
     ) INTO result;
+    
+    RAISE NOTICE 'Simulation completed in % seconds', EXTRACT(EPOCH FROM (NOW() - start_time));
     
     RETURN result;
     
@@ -123,24 +146,41 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'message', 'Error in weekly cycle simulation: ' || SQLERRM,
-            'simulation_status', simulation_status
+            'error', SQLERRM,
+            'simulation', 'weekly_cycle_6_minutes',
+            'failed_at', NOW(),
+            'duration_before_failure', EXTRACT(EPOCH FROM (NOW() - start_time))
         );
 END;
 $$ LANGUAGE plpgsql;
 
--- Create supporting table for exchange status logging if it doesn't exist
-CREATE TABLE IF NOT EXISTS exchange_status_log (
-    id SERIAL PRIMARY KEY,
-    status TEXT NOT NULL,
-    message TEXT,
-    price_at_time NUMERIC(10,2),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Helper function to get simulation status
+CREATE OR REPLACE FUNCTION get_simulation_status()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    SELECT json_build_object(
+        'timestamp', NOW(),
+        'exchange_status', (
+            SELECT CASE 
+                WHEN EXISTS(SELECT 1 FROM exchange_trading_hours WHERE is_open = true) 
+                THEN 'open' 
+                ELSE 'closed' 
+            END
+        ),
+        'current_share_price', (SELECT price FROM weekly_share_price ORDER BY week DESC LIMIT 1),
+        'jse200_latest', (SELECT closing_value FROM jse200_weekly_data ORDER BY week_start DESC LIMIT 1),
+        'system_health', json_build_object(
+            'vesting_slots_active', (SELECT COUNT(*) FROM pivot_vesting WHERE status IN ('vest', 'locked')),
+            'orders_pending', (SELECT COUNT(*) FROM buy_orders WHERE status = 'pending'),
+            'transactions_today', (SELECT COUNT(*) FROM share_transactions WHERE DATE(created_at) = CURRENT_DATE)
+        )
+    ) INTO result;
+    
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION run_weekly_cycle_simulation() TO authenticated;
-GRANT ALL ON TABLE exchange_status_log TO authenticated;
-
--- Test the function
+-- Run the simulation
 SELECT run_weekly_cycle_simulation();

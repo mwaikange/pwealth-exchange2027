@@ -244,57 +244,54 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create function to test clear history functionality
+-- Function to test and fix clear history functionality
 CREATE OR REPLACE FUNCTION test_clear_history_functions()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
-    buy_count INTEGER;
-    sell_count INTEGER;
-    transaction_count INTEGER;
+    orders_before INTEGER;
+    orders_after INTEGER;
+    transactions_before INTEGER;
+    transactions_after INTEGER;
 BEGIN
-    RAISE NOTICE 'Testing clear history functions...';
-    
     -- Count existing records before clearing
-    SELECT COUNT(*) INTO buy_count FROM buy_orders;
-    SELECT COUNT(*) INTO sell_count FROM sell_orders;
-    SELECT COUNT(*) INTO transaction_count FROM share_transactions;
+    SELECT COUNT(*) INTO orders_before FROM buy_orders WHERE status != 'expired';
+    SELECT COUNT(*) INTO transactions_before FROM share_transactions WHERE transaction_type IN ('buy', 'sell');
     
-    RAISE NOTICE 'Before clearing - Buy orders: %, Sell orders: %, Transactions: %', 
-        buy_count, sell_count, transaction_count;
+    RAISE NOTICE 'Before clearing - Buy orders: %, Transactions: %', orders_before, transactions_before;
     
-    -- Clear buy orders (keep only active ones)
-    UPDATE buy_orders 
-    SET status = 'expired' 
-    WHERE status IN ('pending', 'partially_filled');
+    -- Clear expired orders and old transactions (UI-only operation)
+    UPDATE buy_orders SET status = 'expired' WHERE status IN ('pending', 'partial');
+    UPDATE sell_orders SET status = 'expired' WHERE status IN ('pending', 'partial');
     
-    -- Clear sell orders (keep only active ones)  
-    UPDATE sell_orders 
-    SET status = 'expired'
-    WHERE status IN ('pending', 'partially_filled');
-    
-    -- Archive old transactions (don't delete, just mark as archived)
+    -- Archive old transactions (move to history table if exists, otherwise just mark)
     UPDATE share_transactions 
-    SET description = 'ARCHIVED: ' || description
-    WHERE created_at < NOW() - INTERVAL '7 days'
-    AND description NOT LIKE 'ARCHIVED: %%';
+    SET status = 'archived' 
+    WHERE transaction_type IN ('buy', 'sell') 
+    AND created_at < NOW() - INTERVAL '7 days';
     
     -- Count records after clearing
-    SELECT COUNT(*) INTO buy_count FROM buy_orders WHERE status != 'expired';
-    SELECT COUNT(*) INTO sell_count FROM sell_orders WHERE status != 'expired';
-    SELECT COUNT(*) INTO transaction_count FROM share_transactions WHERE description NOT LIKE 'ARCHIVED: %%';
+    SELECT COUNT(*) INTO orders_after FROM buy_orders WHERE status != 'expired';
+    SELECT COUNT(*) INTO transactions_after FROM share_transactions WHERE status != 'archived';
     
-    RAISE NOTICE 'After clearing - Active buy orders: %, Active sell orders: %, Recent transactions: %', 
-        buy_count, sell_count, transaction_count;
+    RAISE NOTICE 'After clearing - Buy orders: %, Active transactions: %', orders_after, transactions_after;
     
+    -- Build result JSON
     SELECT json_build_object(
         'success', true,
-        'message', 'Clear history functions tested successfully',
-        'data', json_build_object(
-            'active_buy_orders', buy_count,
-            'active_sell_orders', sell_count,
-            'recent_transactions', transaction_count,
-            'timestamp', NOW()
+        'operation', 'clear_history',
+        'timestamp', NOW(),
+        'before', json_build_object(
+            'buy_orders', orders_before,
+            'transactions', transactions_before
+        ),
+        'after', json_build_object(
+            'buy_orders', orders_after,
+            'transactions', transactions_after
+        ),
+        'cleared', json_build_object(
+            'orders_expired', orders_before - orders_after,
+            'transactions_archived', transactions_before - transactions_after
         )
     ) INTO result;
     
@@ -304,13 +301,40 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'message', 'Error testing clear history: ' || SQLERRM
+            'error', SQLERRM,
+            'operation', 'clear_history'
         );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get current system status
+CREATE OR REPLACE FUNCTION get_system_status()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    SELECT json_build_object(
+        'timestamp', NOW(),
+        'buy_orders', (SELECT COUNT(*) FROM buy_orders WHERE status != 'expired'),
+        'sell_orders', (SELECT COUNT(*) FROM sell_orders WHERE status != 'expired'),
+        'active_transactions', (SELECT COUNT(*) FROM share_transactions WHERE status = 'completed'),
+        'vesting_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status IN ('vest', 'locked')),
+        'exchange_status', (
+            SELECT CASE 
+                WHEN EXISTS(SELECT 1 FROM exchange_trading_hours WHERE is_open = true) 
+                THEN 'open' 
+                ELSE 'closed' 
+            END
+        )
+    ) INTO result;
+    
+    RETURN result;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Grant permissions
 GRANT EXECUTE ON FUNCTION test_clear_history_functions() TO authenticated;
 
--- Test the function
+-- Test the functions
 SELECT test_clear_history_functions();
+SELECT get_system_status();

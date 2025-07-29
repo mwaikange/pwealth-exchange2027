@@ -1,126 +1,115 @@
--- Verify weekly cycle results with comprehensive output for Supabase UI
--- This script creates a function that returns complete system status after simulation
+-- Verify Weekly Cycle Results (Supabase-Compliant)
+-- This script verifies the results of the weekly cycle simulation
 
+-- Main verification function
 CREATE OR REPLACE FUNCTION run_weekly_cycle_verification()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
-    exchange_open BOOLEAN;
-    current_price NUMERIC;
-    price_history JSON;
-    order_summary JSON;
-    system_status JSON;
-    verification_time TIMESTAMPTZ;
+    verification_start TIMESTAMP;
+    share_price_data JSON;
+    exchange_data JSON;
+    vesting_data JSON;
+    order_data JSON;
+    system_health JSON;
 BEGIN
-    verification_time := NOW();
-    RAISE NOTICE 'Starting weekly cycle verification at: %', verification_time;
+    verification_start := NOW();
     
-    -- Check exchange status
-    SELECT is_open INTO exchange_open 
-    FROM exchange_trading_hours 
-    WHERE id = 1;
+    RAISE NOTICE 'Starting weekly cycle verification at %', verification_start;
     
-    RAISE NOTICE 'Exchange is currently: %', 
-        CASE WHEN exchange_open THEN 'OPEN' ELSE 'CLOSED' END;
-    
-    -- Get current price
-    SELECT price INTO current_price 
-    FROM weekly_share_price 
-    ORDER BY week DESC 
-    LIMIT 1;
-    
-    RAISE NOTICE 'Current share price: %', COALESCE(current_price, 0);
-    
-    -- Get price history (last 5 weeks)
-    SELECT json_agg(
-        json_build_object(
-            'week', week,
-            'price', price,
-            'jse200_change', jse200_change,
-            'created_at', created_at
-        ) ORDER BY week DESC
-    ) INTO price_history
-    FROM (
-        SELECT week, price, jse200_change, created_at
-        FROM weekly_share_price 
-        ORDER BY week DESC 
-        LIMIT 5
-    ) recent_prices;
-    
-    -- Get order summary
+    -- Verify share price calculation
     SELECT json_build_object(
-        'active_buy_orders', (
-            SELECT COUNT(*) FROM buy_orders 
-            WHERE status IN ('pending', 'partially_filled')
-        ),
-        'active_sell_orders', (
-            SELECT COUNT(*) FROM sell_orders 
-            WHERE status IN ('pending', 'partially_filled')
-        ),
-        'completed_buy_orders', (
-            SELECT COUNT(*) FROM buy_orders 
-            WHERE status = 'filled'
-        ),
-        'completed_sell_orders', (
-            SELECT COUNT(*) FROM sell_orders 
-            WHERE status = 'filled'
-        ),
-        'expired_orders', (
-            SELECT COUNT(*) FROM buy_orders WHERE status = 'expired'
-        ) + (
-            SELECT COUNT(*) FROM sell_orders WHERE status = 'expired'
-        )
-    ) INTO order_summary;
+        'current_price', COALESCE((SELECT price FROM weekly_share_price ORDER BY week DESC LIMIT 1), 0),
+        'price_history_count', (SELECT COUNT(*) FROM weekly_share_price),
+        'latest_calculation', (SELECT created_at FROM weekly_share_price ORDER BY week DESC LIMIT 1),
+        'jse200_data_available', (SELECT COUNT(*) FROM jse200_weekly_data) > 0
+    ) INTO share_price_data;
     
-    -- Get system status
+    RAISE NOTICE 'Share price verification: Current price %', (share_price_data->>'current_price')::NUMERIC;
+    
+    -- Verify exchange status
     SELECT json_build_object(
-        'total_users', (SELECT COUNT(DISTINCT user_uuid) FROM user_shares),
-        'total_shares_in_circulation', (
-            SELECT COALESCE(SUM(shares), 0) FROM user_shares 
-            WHERE wallet_type IN ('trading_wallet', 'hold_wallet_post_hold')
-        ),
-        'total_vesting_shares', (
-            SELECT COALESCE(SUM(amount), 0) FROM pivot_vesting 
-            WHERE status IN ('locked', 'vest')
-        ),
-        'recent_transactions', (
-            SELECT COUNT(*) FROM share_transactions 
-            WHERE created_at > NOW() - INTERVAL '24 hours'
-        )
-    ) INTO system_status;
+        'is_open', COALESCE((SELECT is_open FROM exchange_trading_hours LIMIT 1), false),
+        'last_updated', (SELECT updated_at FROM exchange_trading_hours LIMIT 1),
+        'trading_hours_configured', (SELECT COUNT(*) FROM exchange_trading_hours) > 0
+    ) INTO exchange_data;
     
-    -- Log verification results
-    RAISE NOTICE 'Verification completed:';
-    RAISE NOTICE '- Exchange Open: %', exchange_open;
-    RAISE NOTICE '- Current Price: %', current_price;
-    RAISE NOTICE '- Active Buy Orders: %', (order_summary->>'active_buy_orders')::INTEGER;
-    RAISE NOTICE '- Active Sell Orders: %', (order_summary->>'active_sell_orders')::INTEGER;
-    RAISE NOTICE '- Total Users: %', (system_status->>'total_users')::INTEGER;
+    RAISE NOTICE 'Exchange status: %', CASE WHEN (exchange_data->>'is_open')::BOOLEAN THEN 'OPEN' ELSE 'CLOSED' END;
+    
+    -- Verify vesting system
+    SELECT json_build_object(
+        'total_slots', (SELECT COUNT(*) FROM pivot_vesting),
+        'locked_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'locked'),
+        'claimable_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimable'),
+        'claimed_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimed'),
+        'empty_slots', (SELECT COUNT(*) FROM pivot_vesting WHERE status IS NULL OR amount = 0)
+    ) INTO vesting_data;
+    
+    RAISE NOTICE 'Vesting verification: % total slots, % claimable', 
+        (vesting_data->>'total_slots')::INTEGER,
+        (vesting_data->>'claimable_slots')::INTEGER;
+    
+    -- Verify order system
+    SELECT json_build_object(
+        'active_buy_orders', (SELECT COUNT(*) FROM buy_orders WHERE status NOT IN ('expired', 'cancelled')),
+        'active_sell_orders', (SELECT COUNT(*) FROM sell_orders WHERE status NOT IN ('expired', 'cancelled')),
+        'expired_buy_orders', (SELECT COUNT(*) FROM buy_orders WHERE status = 'expired'),
+        'expired_sell_orders', (SELECT COUNT(*) FROM sell_orders WHERE status = 'expired'),
+        'total_transactions', (SELECT COUNT(*) FROM share_transactions)
+    ) INTO order_data;
+    
+    RAISE NOTICE 'Order verification: % active buy orders, % active sell orders',
+        (order_data->>'active_buy_orders')::INTEGER,
+        (order_data->>'active_sell_orders')::INTEGER;
+    
+    -- Overall system health check
+    SELECT json_build_object(
+        'database_responsive', true,
+        'all_tables_accessible', (
+            SELECT COUNT(*) = 6 FROM (
+                SELECT 1 FROM information_schema.tables WHERE table_name = 'weekly_share_price'
+                UNION SELECT 1 FROM information_schema.tables WHERE table_name = 'exchange_trading_hours'
+                UNION SELECT 1 FROM information_schema.tables WHERE table_name = 'pivot_vesting'
+                UNION SELECT 1 FROM information_schema.tables WHERE table_name = 'buy_orders'
+                UNION SELECT 1 FROM information_schema.tables WHERE table_name = 'sell_orders'
+                UNION SELECT 1 FROM information_schema.tables WHERE table_name = 'share_transactions'
+            ) t
+        ),
+        'functions_available', (
+            SELECT COUNT(*) >= 3 FROM information_schema.routines 
+            WHERE routine_name IN ('calculate_weekly_share_price', 'vest_shares', 'claim_shares')
+        ),
+        'verification_timestamp', NOW(),
+        'verification_duration_ms', EXTRACT(MILLISECONDS FROM (NOW() - verification_start))
+    ) INTO system_health;
     
     -- Build comprehensive result
     SELECT json_build_object(
         'success', true,
-        'message', 'Weekly cycle verification completed',
-        'verification_time', verification_time,
-        'data', json_build_object(
-            'exchange_status', json_build_object(
-                'is_open', exchange_open,
-                'status_text', CASE WHEN exchange_open THEN 'OPEN' ELSE 'CLOSED' END
-            ),
-            'pricing', json_build_object(
-                'current_price', current_price,
-                'price_history', price_history
-            ),
-            'orders', order_summary,
-            'system', system_status,
-            'verification_summary', json_build_object(
-                'exchange_operational', exchange_open IS NOT NULL,
-                'pricing_updated', current_price IS NOT NULL,
-                'orders_active', (order_summary->>'active_buy_orders')::INTEGER + (order_summary->>'active_sell_orders')::INTEGER > 0,
-                'system_healthy', (system_status->>'total_users')::INTEGER > 0
-            )
-        )
+        'verification_type', 'weekly_cycle_results',
+        'timestamp', NOW(),
+        'duration_ms', EXTRACT(MILLISECONDS FROM (NOW() - verification_start)),
+        'share_price_system', share_price_data,
+        'exchange_system', exchange_data,
+        'vesting_system', vesting_data,
+        'order_system', order_data,
+        'system_health', system_health,
+        'overall_status', CASE 
+            WHEN (share_price_data->>'current_price')::NUMERIC > 0 
+            AND (system_health->>'all_tables_accessible')::BOOLEAN 
+            AND (system_health->>'functions_available')::BOOLEAN
+            THEN 'HEALTHY'
+            ELSE 'NEEDS_ATTENTION'
+        END,
+        'recommendations', CASE
+            WHEN (share_price_data->>'current_price')::NUMERIC = 0 THEN ARRAY['Run price calculation']
+            WHEN NOT (exchange_data->>'is_open')::BOOLEAN THEN ARRAY['Open exchange for trading']
+            WHEN (vesting_data->>'claimable_slots')::INTEGER = 0 THEN ARRAY['Check vesting schedules']
+            ELSE ARRAY['System operating normally']
+        END
     ) INTO result;
+    
+    RAISE NOTICE 'Verification completed. Overall status: %', (result->>'overall_status');
     
     RETURN result;
     
@@ -128,14 +117,33 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'message', 'Error in weekly cycle verification: ' || SQLERRM,
-            'verification_time', verification_time
+            'error', SQLERRM,
+            'verification_type', 'weekly_cycle_results',
+            'failed_at', NOW(),
+            'partial_results', json_build_object(
+                'share_price_data', share_price_data,
+                'exchange_data', exchange_data,
+                'vesting_data', vesting_data,
+                'order_data', order_data
+            )
         );
 END;
 $$ LANGUAGE plpgsql;
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION run_weekly_cycle_verification() TO authenticated;
+-- Quick status check function
+CREATE OR REPLACE FUNCTION quick_system_check()
+RETURNS JSON AS $$
+BEGIN
+    RETURN json_build_object(
+        'timestamp', NOW(),
+        'share_price', (SELECT price FROM weekly_share_price ORDER BY week DESC LIMIT 1),
+        'exchange_open', (SELECT is_open FROM exchange_trading_hours LIMIT 1),
+        'vesting_claimable', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimable'),
+        'active_orders', (SELECT COUNT(*) FROM buy_orders WHERE status = 'pending') + (SELECT COUNT(*) FROM sell_orders WHERE status = 'pending')
+    );
+END;
+$$ LANGUAGE plpgsql;
 
--- Test the function
+-- Run verification
 SELECT run_weekly_cycle_verification();
+SELECT quick_system_check();

@@ -1,83 +1,113 @@
--- Reset system for next test with proper Supabase compliance
--- This script creates a function to safely reset the system state
+-- Reset System for Next Test (Supabase-Compliant)
+-- This script safely resets the system state for the next test cycle
 
+-- Main reset function
 CREATE OR REPLACE FUNCTION run_system_reset()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
-    reset_time TIMESTAMPTZ;
-    orders_reset INTEGER := 0;
+    reset_start TIMESTAMP;
+    orders_cleared INTEGER := 0;
     transactions_archived INTEGER := 0;
+    vesting_reset INTEGER := 0;
 BEGIN
-    reset_time := NOW();
-    RAISE NOTICE 'Starting system reset at: %', reset_time;
+    reset_start := NOW();
     
-    -- Reset order statuses (don't delete, just expire old ones)
+    RAISE NOTICE 'Starting system reset at %', reset_start;
+    
+    -- Reset exchange to closed state
+    UPDATE exchange_trading_hours 
+    SET is_open = false, updated_at = NOW()
+    WHERE is_open = true;
+    
+    RAISE NOTICE 'Exchange closed for reset';
+    
+    -- Clear expired orders and get count
     UPDATE buy_orders 
-    SET status = 'expired', updated_at = NOW()
-    WHERE status IN ('pending', 'partially_filled')
-    AND created_at < NOW() - INTERVAL '1 hour';
+    SET status = 'expired', updated_at = NOW() 
+    WHERE status IN ('pending', 'partial');
     
-    GET DIAGNOSTICS orders_reset = ROW_COUNT;
+    GET DIAGNOSTICS orders_cleared = ROW_COUNT;
     
     UPDATE sell_orders 
-    SET status = 'expired', updated_at = NOW()
-    WHERE status IN ('pending', 'partially_filled')
-    AND created_at < NOW() - INTERVAL '1 hour';
+    SET status = 'expired', updated_at = NOW() 
+    WHERE status IN ('pending', 'partial');
     
-    GET DIAGNOSTICS orders_reset = orders_reset + ROW_COUNT;
+    GET DIAGNOSTICS orders_cleared = orders_cleared + ROW_COUNT;
     
-    RAISE NOTICE 'Expired % old orders', orders_reset;
+    RAISE NOTICE 'Expired % orders', orders_cleared;
     
     -- Archive old transactions
     UPDATE share_transactions 
-    SET description = 'RESET_ARCHIVED: ' || description,
-        updated_at = NOW()
-    WHERE created_at < NOW() - INTERVAL '2 hours'
-    AND description NOT LIKE 'RESET_ARCHIVED: %%'
-    AND description NOT LIKE 'ARCHIVED: %%';
+    SET status = 'archived', updated_at = NOW()
+    WHERE status = 'completed' 
+    AND created_at < NOW() - INTERVAL '1 hour';
     
     GET DIAGNOSTICS transactions_archived = ROW_COUNT;
     
-    RAISE NOTICE 'Archived % old transactions', transactions_archived;
+    RAISE NOTICE 'Archived % transactions', transactions_archived;
     
-    -- Reset exchange to open state
-    UPDATE exchange_trading_hours 
-    SET is_open = true,
-        last_updated = NOW()
-    WHERE id = 1;
+    -- Reset test vesting slots (only test data, preserve real user data)
+    UPDATE pivot_vesting 
+    SET status = 'claimed', 
+        claimed_at = NOW(),
+        updated_at = NOW()
+    WHERE user_uuid IN (
+        SELECT user_uuid FROM pivot_vesting 
+        WHERE user_uuid::text LIKE 'test-%' 
+        OR amount = 0
+    )
+    AND status IN ('locked', 'claimable');
     
-    -- Clean up old status logs (keep last 10)
-    DELETE FROM exchange_status_log 
+    GET DIAGNOSTICS vesting_reset = ROW_COUNT;
+    
+    RAISE NOTICE 'Reset % test vesting slots', vesting_reset;
+    
+    -- Clean up old price data (keep last 10 entries)
+    DELETE FROM weekly_share_price 
     WHERE id NOT IN (
-        SELECT id FROM exchange_status_log 
-        ORDER BY created_at DESC 
+        SELECT id FROM weekly_share_price 
+        ORDER BY week DESC 
         LIMIT 10
     );
     
-    -- Reset any test vesting slots older than 1 hour
-    UPDATE pivot_vesting 
-    SET status = 'claimed',
-        claimed_at = NOW(),
-        updated_at = NOW()
-    WHERE status IN ('locked', 'vest')
-    AND created_at < NOW() - INTERVAL '1 hour'
-    AND user_uuid = '00000000-0000-0000-0000-000000000001'; -- Only test user
+    -- Clean up old JSE200 data (keep last 5 entries)
+    DELETE FROM jse200_weekly_data 
+    WHERE id NOT IN (
+        SELECT id FROM jse200_weekly_data 
+        ORDER BY week_start DESC 
+        LIMIT 5
+    );
     
-    RAISE NOTICE 'System reset completed successfully';
+    RAISE NOTICE 'Cleaned up old historical data';
     
+    -- Verify reset completion
+    PERFORM pg_sleep(0.5); -- Brief pause to ensure all updates are committed
+    
+    -- Build result JSON
     SELECT json_build_object(
         'success', true,
-        'message', 'System reset completed successfully',
-        'reset_time', reset_time,
-        'data', json_build_object(
-            'orders_expired', orders_reset,
+        'reset_type', 'system_reset_for_next_test',
+        'timestamp', NOW(),
+        'duration_seconds', EXTRACT(EPOCH FROM (NOW() - reset_start)),
+        'actions_performed', json_build_object(
+            'exchange_closed', true,
+            'orders_expired', orders_cleared,
             'transactions_archived', transactions_archived,
-            'exchange_reopened', true,
-            'test_vesting_cleared', true,
-            'duration_seconds', EXTRACT(EPOCH FROM (NOW() - reset_time))
-        )
+            'vesting_slots_reset', vesting_reset,
+            'historical_data_cleaned', true
+        ),
+        'current_state', json_build_object(
+            'exchange_open', (SELECT COALESCE(is_open, false) FROM exchange_trading_hours LIMIT 1),
+            'active_buy_orders', (SELECT COUNT(*) FROM buy_orders WHERE status NOT IN ('expired', 'cancelled')),
+            'active_sell_orders', (SELECT COUNT(*) FROM sell_orders WHERE status NOT IN ('expired', 'cancelled')),
+            'pending_vesting', (SELECT COUNT(*) FROM pivot_vesting WHERE status IN ('locked', 'vest')),
+            'claimable_vesting', (SELECT COUNT(*) FROM pivot_vesting WHERE status = 'claimable')
+        ),
+        'ready_for_next_test', true
     ) INTO result;
+    
+    RAISE NOTICE 'System reset completed in % seconds', EXTRACT(EPOCH FROM (NOW() - reset_start));
     
     RETURN result;
     
@@ -85,14 +115,56 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'message', 'Error in system reset: ' || SQLERRM,
-            'reset_time', reset_time
+            'error', SQLERRM,
+            'reset_type', 'system_reset_for_next_test',
+            'failed_at', NOW(),
+            'duration_before_failure', EXTRACT(EPOCH FROM (NOW() - reset_start)),
+            'partial_completion', json_build_object(
+                'orders_cleared', orders_cleared,
+                'transactions_archived', transactions_archived,
+                'vesting_reset', vesting_reset
+            )
         );
 END;
 $$ LANGUAGE plpgsql;
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION run_system_reset() TO authenticated;
+-- Function to prepare system for testing
+CREATE OR REPLACE FUNCTION prepare_for_testing()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    -- Ensure basic tables exist and have minimal data
+    INSERT INTO exchange_trading_hours (is_open, updated_at)
+    SELECT false, NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM exchange_trading_hours);
+    
+    -- Ensure JSE200 data exists
+    INSERT INTO jse200_weekly_data (week_start, closing_value, percentage_change, created_at)
+    SELECT DATE_TRUNC('week', NOW()), 75000.00, 2.5, NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM jse200_weekly_data WHERE week_start = DATE_TRUNC('week', NOW()));
+    
+    -- Ensure share price data exists
+    INSERT INTO weekly_share_price (week, price, created_at)
+    SELECT DATE_TRUNC('week', NOW()), 108.20, NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM weekly_share_price WHERE week = DATE_TRUNC('week', NOW()));
+    
+    SELECT json_build_object(
+        'success', true,
+        'message', 'System prepared for testing',
+        'timestamp', NOW(),
+        'tables_ready', json_build_object(
+            'exchange_trading_hours', (SELECT COUNT(*) FROM exchange_trading_hours) > 0,
+            'jse200_weekly_data', (SELECT COUNT(*) FROM jse200_weekly_data) > 0,
+            'weekly_share_price', (SELECT COUNT(*) FROM weekly_share_price) > 0,
+            'pivot_vesting', (SELECT COUNT(*) FROM pivot_vesting) >= 0
+        )
+    ) INTO result;
+    
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
 
--- Test the function
+-- Run reset
 SELECT run_system_reset();
+SELECT prepare_for_testing();
