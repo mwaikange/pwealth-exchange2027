@@ -1,61 +1,39 @@
--- Reset system for next test run
+-- Reset system for next test (optional - use carefully)
+-- This script helps reset the system state for testing purposes
+
 DO $$
-DECLARE
-    reset_count INTEGER;
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    RESET SYSTEM FOR NEXT TEST                               █';
+    RAISE NOTICE '█                    SYSTEM RESET FOR TESTING                                  █';
+    RAISE NOTICE '█                    (Use with caution)                                       █';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
     
-    RAISE NOTICE '🔄 RESETTING SYSTEM STATE...';
+    -- Reset exchange to closed state
+    UPDATE exchange_trading_hours 
+    SET is_trading_open = FALSE,
+        status_message = 'Exchange manually reset for testing',
+        last_updated = NOW();
+    
+    RAISE NOTICE '✅ Exchange set to closed state';
+    
+    -- Reset all archived flags (make all orders visible in UI again)
+    UPDATE buy_orders SET archived_for_ui = FALSE WHERE archived_for_ui = TRUE;
+    UPDATE sell_orders SET archived_for_ui = FALSE WHERE archived_for_ui = TRUE;
+    
+    RAISE NOTICE '✅ All order archive flags reset (all orders visible in UI)';
+    
+    -- Optional: Cancel all pending orders (uncomment if needed)
+    -- UPDATE buy_orders SET status = 'cancelled' WHERE status IN ('pending', 'partial');
+    -- UPDATE sell_orders SET status = 'cancelled' WHERE status IN ('available', 'partial');
+    -- RAISE NOTICE '✅ All pending orders cancelled';
+    
     RAISE NOTICE '';
-    
-    -- Reset archived flags (un-archive orders for UI)
-    UPDATE buy_orders 
-    SET archived_for_ui = FALSE,
-        archived_at = NULL,
-        updated_at = NOW()
-    WHERE archived_for_ui = TRUE;
-    
-    GET DIAGNOSTICS reset_count = ROW_COUNT;
-    RAISE NOTICE '✅ Un-archived % buy orders for UI display', reset_count;
-    
-    UPDATE sell_orders 
-    SET archived_for_ui = FALSE,
-        archived_at = NULL,
-        updated_at = NOW()
-    WHERE archived_for_ui = TRUE;
-    
-    GET DIAGNOSTICS reset_count = ROW_COUNT;
-    RAISE NOTICE '✅ Un-archived % sell orders for UI display', reset_count;
-    
-    -- Note: We don't delete any data - just reset UI flags
+    RAISE NOTICE 'System reset completed. Ready for next test cycle.';
     RAISE NOTICE '';
-    RAISE NOTICE '📊 RESET ACTIONS COMPLETED:';
-    RAISE NOTICE '   ✅ All orders visible in UI again';
-    RAISE NOTICE '   ✅ No data deleted (transaction history preserved)';
-    RAISE NOTICE '   ✅ Exchange can be tested again';
-    RAISE NOTICE '';
-    
-    -- Show current state
-    RAISE NOTICE '📈 CURRENT STATE AFTER RESET:';
-    RAISE NOTICE '   Buy orders visible in UI: %', (SELECT COUNT(*) FROM buy_orders WHERE archived_for_ui IS NULL OR archived_for_ui = FALSE);
-    RAISE NOTICE '   Sell orders visible in UI: %', (SELECT COUNT(*) FROM sell_orders WHERE archived_for_ui IS NULL OR archived_for_ui = FALSE);
-    RAISE NOTICE '   Total orders in database: %', (SELECT COUNT(*) FROM buy_orders) + (SELECT COUNT(*) FROM sell_orders);
-    RAISE NOTICE '';
-    
-    RAISE NOTICE '🚀 SYSTEM READY FOR NEXT TEST!';
-    RAISE NOTICE '   You can run the simulation script again';
-    RAISE NOTICE '';
-    
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    RESET COMPLETED                                          █';
-    RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
     

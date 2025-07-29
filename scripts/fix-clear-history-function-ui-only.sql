@@ -272,3 +272,8 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
 END $$;
+
+-- Additional notices for updates
+RAISE NOTICE 'Fixed clear_weekly_order_history_ui_only() function';
+RAISE NOTICE 'Added archived_for_ui columns to preserve transaction history';
+RAISE NOTICE 'UI will now filter out archived orders while keeping all data';

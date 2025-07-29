@@ -1,4 +1,4 @@
--- Fixed simulation that uses actual table names and real percentage data
+-- CORRECTED simulation that uses EXISTING JSE200 data (NO INSERTS)
 DO $$
 DECLARE
     close_result JSON;
@@ -19,7 +19,7 @@ BEGIN
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '█                    WEEKLY CYCLE SIMULATION (6 MINUTES)                      █';
     RAISE NOTICE '█                    Sunday 23:59 → Monday 10:05                              █';
-    RAISE NOTICE '█                    Using REAL JSE200 data from your table                   █';
+    RAISE NOTICE '█                    Using EXISTING JSE200 data (NO INSERTS)                  █';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
@@ -30,7 +30,7 @@ BEGIN
     SELECT get_exchange_status() INTO initial_status;
     SELECT get_current_share_price() INTO current_price_before;
     
-    -- Get latest JSE200 data to show what we'll use
+    -- Get latest JSE200 data by created_at (EXISTING data only)
     SELECT * INTO latest_jse_data
     FROM jse200_priceupdate_mondays 
     ORDER BY created_at DESC 
@@ -42,12 +42,12 @@ BEGIN
     RAISE NOTICE 'Current price: N$%', current_price_before;
     RAISE NOTICE 'Status: %', initial_status->>'status_message';
     RAISE NOTICE '';
-    RAISE NOTICE 'LATEST JSE200 DATA TO USE:';
-    RAISE NOTICE 'Week: %, JSE200: %, Change: %%, Price: %', 
+    RAISE NOTICE 'LATEST JSE200 DATA (EXISTING):';
+    RAISE NOTICE 'Week: %, JSE200: %, Change: %%, Created: %', 
                  latest_jse_data.week_start_date, 
                  latest_jse_data.price, 
                  latest_jse_data.percent_change,
-                 latest_jse_data.price;
+                 latest_jse_data.created_at;
     RAISE NOTICE '';
     
     -- MINUTE 0-1: SUNDAY 23:59 - CLOSE EXCHANGE
@@ -73,7 +73,7 @@ BEGIN
     PERFORM pg_sleep(1);
     RAISE NOTICE '';
     
-    -- MINUTE 2-3: MONDAY 09:30 - CLEAR ORDER HISTORY (UI ONLY - NOT DELETE FROM TABLES)
+    -- MINUTE 2-3: MONDAY 09:30 - CLEAR ORDER HISTORY (UI ONLY - NO DATA DELETED)
     RAISE NOTICE 'MINUTE 2-3: MONDAY 09:30 - CLEARING ORDER HISTORY FROM UI';
     RAISE NOTICE '========================================================';
     RAISE NOTICE 'Simulating Monday 09:30 order history UI cleanup...';
@@ -100,32 +100,17 @@ BEGIN
     RAISE NOTICE 'MINUTE 4-5: MONDAY 10:03 - CALCULATING NEW SHARE PRICE';
     RAISE NOTICE '====================================================';
     RAISE NOTICE 'Simulating Monday 10:03 price calculation...';
-    RAISE NOTICE 'Using REAL JSE200 data: %% change', latest_jse_data.percent_change;
+    RAISE NOTICE 'Using EXISTING JSE200 data: %% change', latest_jse_data.percent_change;
+    RAISE NOTICE 'JSE200 Price: %, Change: %%, Created: %', 
+                 latest_jse_data.price, 
+                 latest_jse_data.percent_change,
+                 latest_jse_data.created_at;
     
-    -- Add today's JSE200 data using the REAL percentage from your latest data
-    -- This simulates getting fresh JSE200 data for today
-    INSERT INTO jse200_priceupdate_mondays (
-        week_start_date,
-        price,
-        percent_change,
-        day_of_week,
-        created_at,
-        updated_at
-    ) VALUES (
-        date_trunc('week', CURRENT_DATE)::date, -- This Monday
-        latest_jse_data.price * (1 + (latest_jse_data.percent_change / 100)), -- Calculate new JSE price
-        latest_jse_data.percent_change, -- Use REAL percentage change
-        'Monday',
-        NOW(),
-        NOW()
-    ) ON CONFLICT (week_start_date) DO UPDATE SET
-        price = latest_jse_data.price * (1 + (latest_jse_data.percent_change / 100)),
-        percent_change = latest_jse_data.percent_change,
-        updated_at = NOW();
+    -- IMPORTANT: NO INSERT - Use existing JSE200 data only
+    RAISE NOTICE 'Using existing JSE200 data (NO INSERT performed)';
+    RAISE NOTICE 'Percent change from existing data: %%', latest_jse_data.percent_change;
     
-    RAISE NOTICE 'JSE200 data updated for current week using real %% change: %%', latest_jse_data.percent_change;
-    
-    -- Now calculate the weekly share price using the real data
+    -- Calculate the weekly share price using the existing real data
     SELECT calculate_weekly_share_price_simplified() INTO price_result;
     
     IF (price_result->>'success')::BOOLEAN THEN
@@ -189,7 +174,7 @@ BEGIN
     RAISE NOTICE 'SIMULATION SUMMARY:';
     RAISE NOTICE '==================';
     RAISE NOTICE '⏱️  Total time: % seconds', EXTRACT(EPOCH FROM (NOW() - simulation_start));
-    RAISE NOTICE '📊 JSE200 change used: %%', latest_jse_data.percent_change;
+    RAISE NOTICE '📊 JSE200 change used: %% (from existing data)', latest_jse_data.percent_change;
     RAISE NOTICE '💰 Price calculation: N$% × (1 + %%/100) = N$%', 
                  current_price_before, 
                  latest_jse_data.percent_change,
@@ -206,9 +191,10 @@ BEGIN
        (open_result->>'success')::BOOLEAN THEN
         RAISE NOTICE '🎉 WEEKLY CYCLE SIMULATION: COMPLETE SUCCESS!';
         RAISE NOTICE '   All systems operational for new trading week';
-        RAISE NOTICE '   Share price updated from N$% to N$% using real JSE200 data', 
+        RAISE NOTICE '   Share price updated from N$% to N$% using existing JSE200 data', 
                      current_price_before, current_price_after;
         RAISE NOTICE '   All transaction history preserved in database tables';
+        RAISE NOTICE '   JSE200 data source: % (%%)', latest_jse_data.created_at, latest_jse_data.percent_change;
     ELSE
         RAISE NOTICE '⚠️  WEEKLY CYCLE SIMULATION: PARTIAL SUCCESS';
         RAISE NOTICE '   Some operations failed - check logs above';
@@ -218,6 +204,7 @@ BEGIN
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '█                    WEEKLY CYCLE SIMULATION COMPLETED                        █';
+    RAISE NOTICE '█                    (Using existing JSE200 data only)                       █';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
