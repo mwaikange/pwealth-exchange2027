@@ -7,6 +7,8 @@ DECLARE
     exchange_trading_hours_exists BOOLEAN;
     function_count INTEGER;
     table_structure TEXT;
+    status_result JSON;
+    current_price NUMERIC;
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
@@ -170,5 +172,41 @@ BEGIN
     
     RAISE NOTICE '';
     RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
+    
+    -- Simple verification of database consistency
+    RAISE NOTICE 'Verifying database consistency...';
+    
+    -- Check exchange status
+    SELECT get_exchange_status() INTO status_result;
+    
+    RAISE NOTICE 'Trading open: %', status_result->>'is_trading_open';
+    RAISE NOTICE 'Status message: %', status_result->>'status_message';
+    RAISE NOTICE 'Current week: %', status_result->>'current_week_start';
+    
+    -- Check current price
+    SELECT get_current_share_price() INTO current_price;
+    RAISE NOTICE 'Current share price: N$%', current_price;
+    
+    -- Verify table exists and has correct columns
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'exchange_status'
+    ) THEN
+        RAISE NOTICE 'Table exchange_status exists';
+        
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'exchange_status' 
+            AND column_name = 'is_trading_open'
+        ) THEN
+            RAISE NOTICE 'Column is_trading_open exists';
+        ELSE
+            RAISE NOTICE 'ERROR: Column is_trading_open missing';
+        END IF;
+    ELSE
+        RAISE NOTICE 'ERROR: Table exchange_status missing';
+    END IF;
+    
+    RAISE NOTICE 'Verification completed';
     
 END $$;
