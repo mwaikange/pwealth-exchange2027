@@ -1,85 +1,81 @@
--- Reset system for next test cycle with proper Supabase compliance
--- This function cleans up test data and prepares for the next simulation
+-- Reset system for next test with proper Supabase compliance
+-- This script creates a function to safely reset the system state
 
 CREATE OR REPLACE FUNCTION run_system_reset()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
     reset_time TIMESTAMPTZ;
-    orders_deleted INTEGER := 0;
-    prices_kept INTEGER := 0;
+    orders_reset INTEGER := 0;
     transactions_archived INTEGER := 0;
 BEGIN
     reset_time := NOW();
+    RAISE NOTICE 'Starting system reset at: %', reset_time;
     
-    RAISE NOTICE 'Starting system reset at %', reset_time;
+    -- Reset order statuses (don't delete, just expire old ones)
+    UPDATE buy_orders 
+    SET status = 'expired', updated_at = NOW()
+    WHERE status IN ('pending', 'partially_filled')
+    AND created_at < NOW() - INTERVAL '1 hour';
     
-    -- Reset exchange to closed state
-    UPDATE exchange_status 
-    SET status = 'closed',
-        last_updated = NOW(),
-        notes = 'Reset for next test cycle'
-    WHERE id = 1;
+    GET DIAGNOSTICS orders_reset = ROW_COUNT;
     
-    RAISE NOTICE 'Exchange status reset to closed';
+    UPDATE sell_orders 
+    SET status = 'expired', updated_at = NOW()
+    WHERE status IN ('pending', 'partially_filled')
+    AND created_at < NOW() - INTERVAL '1 hour';
     
-    -- Clear test orders (keep last 24 hours for reference)
-    DELETE FROM buy_orders 
-    WHERE created_at < NOW() - INTERVAL '24 hours'
-    AND status IN ('expired', 'cancelled');
+    GET DIAGNOSTICS orders_reset = orders_reset + ROW_COUNT;
     
-    GET DIAGNOSTICS orders_deleted = ROW_COUNT;
-    
-    DELETE FROM sell_orders 
-    WHERE created_at < NOW() - INTERVAL '24 hours'
-    AND status IN ('expired', 'cancelled');
-    
-    GET DIAGNOSTICS orders_deleted = orders_deleted + ROW_COUNT;
-    
-    RAISE NOTICE 'Deleted % old test orders', orders_deleted;
-    
-    -- Keep recent price data (last 4 weeks)
-    SELECT COUNT(*) INTO prices_kept
-    FROM weekly_share_price 
-    WHERE week >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '4 weeks';
+    RAISE NOTICE 'Expired % old orders', orders_reset;
     
     -- Archive old transactions
     UPDATE share_transactions 
-    SET status = 'archived', updated_at = NOW()
-    WHERE created_at < NOW() - INTERVAL '7 days'
-    AND status = 'completed';
+    SET description = 'RESET_ARCHIVED: ' || description,
+        updated_at = NOW()
+    WHERE created_at < NOW() - INTERVAL '2 hours'
+    AND description NOT LIKE 'RESET_ARCHIVED: %%'
+    AND description NOT LIKE 'ARCHIVED: %%';
     
     GET DIAGNOSTICS transactions_archived = ROW_COUNT;
     
     RAISE NOTICE 'Archived % old transactions', transactions_archived;
     
-    -- Reset any pending operations
-    UPDATE buy_orders 
-    SET status = 'cancelled', updated_at = NOW()
-    WHERE status = 'processing';
+    -- Reset exchange to open state
+    UPDATE exchange_trading_hours 
+    SET is_open = true,
+        last_updated = NOW()
+    WHERE id = 1;
     
-    UPDATE sell_orders 
-    SET status = 'cancelled', updated_at = NOW()
-    WHERE status = 'processing';
+    -- Clean up old status logs (keep last 10)
+    DELETE FROM exchange_status_log 
+    WHERE id NOT IN (
+        SELECT id FROM exchange_status_log 
+        ORDER BY created_at DESC 
+        LIMIT 10
+    );
+    
+    -- Reset any test vesting slots older than 1 hour
+    UPDATE pivot_vesting 
+    SET status = 'claimed',
+        claimed_at = NOW(),
+        updated_at = NOW()
+    WHERE status IN ('locked', 'vest')
+    AND created_at < NOW() - INTERVAL '1 hour'
+    AND user_uuid = '00000000-0000-0000-0000-000000000001'; -- Only test user
     
     RAISE NOTICE 'System reset completed successfully';
     
     SELECT json_build_object(
         'success', true,
-        'reset_time', reset_time,
         'message', 'System reset completed successfully',
-        'actions_performed', json_build_object(
-            'exchange_status', 'Reset to closed',
-            'orders_deleted', orders_deleted,
-            'prices_kept', prices_kept,
+        'reset_time', reset_time,
+        'data', json_build_object(
+            'orders_expired', orders_reset,
             'transactions_archived', transactions_archived,
-            'pending_operations', 'Cancelled'
-        ),
-        'system_ready', true,
-        'next_steps', json_build_array(
-            'System is ready for next test cycle',
-            'Run run_weekly_cycle_simulation() to start new cycle',
-            'Use run_weekly_cycle_verification() to check results'
+            'exchange_reopened', true,
+            'test_vesting_cleared', true,
+            'duration_seconds', EXTRACT(EPOCH FROM (NOW() - reset_time))
         )
     ) INTO result;
     
@@ -89,15 +85,14 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'error', SQLERRM,
-            'message', 'System reset failed',
+            'message', 'Error in system reset: ' || SQLERRM,
             'reset_time', reset_time
         );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
 -- Grant permissions
 GRANT EXECUTE ON FUNCTION run_system_reset() TO authenticated;
 
--- Execute the reset
+-- Test the function
 SELECT run_system_reset();

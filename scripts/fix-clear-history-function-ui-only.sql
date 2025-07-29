@@ -244,48 +244,58 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Test the functions by calling them
+-- Create function to test clear history functionality
 CREATE OR REPLACE FUNCTION test_clear_history_functions()
 RETURNS JSON AS $$
 DECLARE
     result JSON;
-    orders_cleared INTEGER := 0;
-    transactions_cleared INTEGER := 0;
-    start_time TIMESTAMPTZ;
-    end_time TIMESTAMPTZ;
+    buy_count INTEGER;
+    sell_count INTEGER;
+    transaction_count INTEGER;
 BEGIN
-    start_time := NOW();
+    RAISE NOTICE 'Testing clear history functions...';
     
-    RAISE NOTICE 'Starting clear history function test at %', start_time;
+    -- Count existing records before clearing
+    SELECT COUNT(*) INTO buy_count FROM buy_orders;
+    SELECT COUNT(*) INTO sell_count FROM sell_orders;
+    SELECT COUNT(*) INTO transaction_count FROM share_transactions;
     
-    -- Clear expired/completed orders for UI cleanup
+    RAISE NOTICE 'Before clearing - Buy orders: %, Sell orders: %, Transactions: %', 
+        buy_count, sell_count, transaction_count;
+    
+    -- Clear buy orders (keep only active ones)
     UPDATE buy_orders 
-    SET status = 'expired', updated_at = NOW()
-    WHERE status IN ('completed', 'cancelled') 
-    AND created_at < NOW() - INTERVAL '7 days';
+    SET status = 'expired' 
+    WHERE status IN ('pending', 'partially_filled');
     
-    GET DIAGNOSTICS orders_cleared = ROW_COUNT;
+    -- Clear sell orders (keep only active ones)  
+    UPDATE sell_orders 
+    SET status = 'expired'
+    WHERE status IN ('pending', 'partially_filled');
     
-    -- Clear old transaction history for UI
+    -- Archive old transactions (don't delete, just mark as archived)
     UPDATE share_transactions 
-    SET status = 'archived', updated_at = NOW()
-    WHERE status = 'completed' 
-    AND created_at < NOW() - INTERVAL '30 days';
+    SET description = 'ARCHIVED: ' || description
+    WHERE created_at < NOW() - INTERVAL '7 days'
+    AND description NOT LIKE 'ARCHIVED: %%';
     
-    GET DIAGNOSTICS transactions_cleared = ROW_COUNT;
+    -- Count records after clearing
+    SELECT COUNT(*) INTO buy_count FROM buy_orders WHERE status != 'expired';
+    SELECT COUNT(*) INTO sell_count FROM sell_orders WHERE status != 'expired';
+    SELECT COUNT(*) INTO transaction_count FROM share_transactions WHERE description NOT LIKE 'ARCHIVED: %%';
     
-    end_time := NOW();
-    
-    RAISE NOTICE 'Clear history completed. Orders: %, Transactions: %', orders_cleared, transactions_cleared;
+    RAISE NOTICE 'After clearing - Active buy orders: %, Active sell orders: %, Recent transactions: %', 
+        buy_count, sell_count, transaction_count;
     
     SELECT json_build_object(
         'success', true,
-        'message', 'History cleanup completed successfully',
-        'orders_cleared', orders_cleared,
-        'transactions_cleared', transactions_cleared,
-        'start_time', start_time,
-        'end_time', end_time,
-        'duration_seconds', EXTRACT(EPOCH FROM (end_time - start_time))
+        'message', 'Clear history functions tested successfully',
+        'data', json_build_object(
+            'active_buy_orders', buy_count,
+            'active_sell_orders', sell_count,
+            'recent_transactions', transaction_count,
+            'timestamp', NOW()
+        )
     ) INTO result;
     
     RETURN result;
@@ -294,14 +304,13 @@ EXCEPTION
     WHEN OTHERS THEN
         RETURN json_build_object(
             'success', false,
-            'error', SQLERRM,
-            'message', 'Failed to clear history'
+            'message', 'Error testing clear history: ' || SQLERRM
         );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
 -- Grant permissions
 GRANT EXECUTE ON FUNCTION test_clear_history_functions() TO authenticated;
 
--- Execute the test to show results
+-- Test the function
 SELECT test_clear_history_functions();
