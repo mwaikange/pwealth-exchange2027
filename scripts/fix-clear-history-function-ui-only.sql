@@ -3,6 +3,8 @@
 
 -- Drop the existing function that deletes data
 DROP FUNCTION IF EXISTS clear_weekly_order_history() CASCADE;
+DROP FUNCTION IF EXISTS clear_weekly_order_history_ui_only() CASCADE;
+DROP FUNCTION IF EXISTS clear_history_with_retries() CASCADE;
 
 -- Create new function that only marks orders as archived for UI
 CREATE OR REPLACE FUNCTION clear_weekly_order_history_ui_only()
@@ -271,9 +273,8 @@ BEGIN
     RAISE NOTICE '🚀 READY TO TEST: Run the simulation script now!';
     RAISE NOTICE '';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Fixed clear_weekly_order_history_ui_only() function';
+    RAISE NOTICE 'Added archived_for_ui columns to preserve transaction history';
+    RAISE NOTICE 'UI will now filter out archived orders while keeping all data';
 END $$;
-
--- Additional notices for updates
-RAISE NOTICE 'Fixed clear_weekly_order_history_ui_only() function';
-RAISE NOTICE 'Added archived_for_ui columns to preserve transaction history';
-RAISE NOTICE 'UI will now filter out archived orders while keeping all data';

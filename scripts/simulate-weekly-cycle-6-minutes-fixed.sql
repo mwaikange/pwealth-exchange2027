@@ -1,5 +1,6 @@
--- CORRECTED simulation that uses EXISTING JSE200 data (NO INSERTS)
-DO $$
+-- Create a function to simulate the weekly cycle for better Supabase compatibility
+CREATE OR REPLACE FUNCTION simulate_weekly_cycle()
+RETURNS JSON AS $$
 DECLARE
     close_result JSON;
     clear_result JSON;
@@ -11,6 +12,7 @@ DECLARE
     current_price_after NUMERIC;
     simulation_start TIMESTAMP;
     latest_jse_data RECORD;
+    simulation_results JSON;
 BEGIN
     simulation_start := NOW();
     
@@ -163,7 +165,7 @@ BEGIN
     RAISE NOTICE 'Exchange open: %', final_status->>'is_trading_open';
     RAISE NOTICE 'Current price: N$%', current_price_after;
     RAISE NOTICE 'Status: %', final_status->>'status_message';
-    RAISE NOTICE 'Price change: N$% → N$% (%%)', 
+    RAISE NOTICE 'Price change: N$% → N$% (%% change)', 
                  current_price_before, 
                  current_price_after,
                  ROUND(((current_price_after - current_price_before) / current_price_before * 100)::NUMERIC, 2);
@@ -185,6 +187,34 @@ BEGIN
     RAISE NOTICE '🚀 Exchange opening: %', CASE WHEN (open_result->>'success')::BOOLEAN THEN 'SUCCESS' ELSE 'FAILED' END;
     RAISE NOTICE '';
     
+    -- Build comprehensive result JSON
+    simulation_results := json_build_object(
+        'success', (close_result->>'success')::BOOLEAN AND 
+                  (clear_result->>'success')::BOOLEAN AND 
+                  (price_result->>'success')::BOOLEAN AND 
+                  (open_result->>'success')::BOOLEAN,
+        'simulation_start', simulation_start,
+        'simulation_duration_seconds', EXTRACT(EPOCH FROM (NOW() - simulation_start)),
+        'initial_price', current_price_before,
+        'final_price', current_price_after,
+        'price_change_amount', current_price_after - current_price_before,
+        'price_change_percent', ROUND(((current_price_after - current_price_before) / current_price_before * 100)::NUMERIC, 2),
+        'jse200_data_used', json_build_object(
+            'week_start_date', latest_jse_data.week_start_date,
+            'price', latest_jse_data.price,
+            'percent_change', latest_jse_data.percent_change,
+            'created_at', latest_jse_data.created_at
+        ),
+        'operations', json_build_object(
+            'exchange_closure', close_result,
+            'history_clearing', clear_result,
+            'price_calculation', price_result,
+            'exchange_opening', open_result
+        ),
+        'final_status', final_status,
+        'completed_at', NOW()
+    );
+    
     IF (close_result->>'success')::BOOLEAN AND 
        (clear_result->>'success')::BOOLEAN AND 
        (price_result->>'success')::BOOLEAN AND 
@@ -194,7 +224,7 @@ BEGIN
         RAISE NOTICE '   Share price updated from N$% to N$% using existing JSE200 data', 
                      current_price_before, current_price_after;
         RAISE NOTICE '   All transaction history preserved in database tables';
-        RAISE NOTICE '   JSE200 data source: % (%%)', latest_jse_data.created_at, latest_jse_data.percent_change;
+        RAISE NOTICE '   JSE200 data source: % (%% change)', latest_jse_data.created_at, latest_jse_data.percent_change;
     ELSE
         RAISE NOTICE '⚠️  WEEKLY CYCLE SIMULATION: PARTIAL SUCCESS';
         RAISE NOTICE '   Some operations failed - check logs above';
@@ -207,6 +237,42 @@ BEGIN
     RAISE NOTICE '█                    (Using existing JSE200 data only)                       █';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '';
+    
+    RETURN simulation_results;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE '❌ SIMULATION ERROR: %', SQLERRM;
+        RETURN json_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'sql_state', SQLSTATE,
+            'failed_at', NOW()
+        );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Execute the simulation
+DO $$
+DECLARE
+    simulation_result JSON;
+BEGIN
+    RAISE NOTICE 'Starting Weekly Cycle Simulation...';
+    RAISE NOTICE '';
+    
+    SELECT simulate_weekly_cycle() INTO simulation_result;
+    
+    RAISE NOTICE '';
+    RAISE NOTICE 'SIMULATION RESULT SUMMARY:';
+    RAISE NOTICE '=========================';
+    RAISE NOTICE 'Success: %', simulation_result->>'success';
+    RAISE NOTICE 'Duration: % seconds', simulation_result->>'simulation_duration_seconds';
+    RAISE NOTICE 'Price change: N$% → N$%', 
+                 simulation_result->>'initial_price', 
+                 simulation_result->>'final_price';
+    RAISE NOTICE 'JSE200 change used: %%', 
+                 (simulation_result->'jse200_data_used'->>'percent_change');
     RAISE NOTICE '';
     
 END $$;

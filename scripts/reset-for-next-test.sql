@@ -1,40 +1,88 @@
--- Reset system for next test (optional - use carefully)
--- This script helps reset the system state for testing purposes
-
-DO $$
+-- Reset function for next test - Supabase compatible
+CREATE OR REPLACE FUNCTION reset_for_next_test()
+RETURNS JSON AS $$
+DECLARE
+    reset_results JSON;
+    buy_orders_reset INTEGER := 0;
+    sell_orders_reset INTEGER := 0;
+    price_records_kept INTEGER := 0;
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    SYSTEM RESET FOR TESTING                                  █';
-    RAISE NOTICE '█                    (Use with caution)                                       █';
+    RAISE NOTICE '█                    RESETTING FOR NEXT TEST                                  █';
     RAISE NOTICE '█                                                                              █';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
     
-    -- Reset exchange to closed state
-    UPDATE exchange_trading_hours 
-    SET is_trading_open = FALSE,
-        status_message = 'Exchange manually reset for testing',
-        last_updated = NOW();
+    -- Reset archived_for_ui flags to make orders visible again
+    UPDATE buy_orders 
+    SET archived_for_ui = FALSE,
+        archived_at = NULL,
+        updated_at = NOW()
+    WHERE archived_for_ui = TRUE;
     
-    RAISE NOTICE '✅ Exchange set to closed state';
+    GET DIAGNOSTICS buy_orders_reset = ROW_COUNT;
     
-    -- Reset all archived flags (make all orders visible in UI again)
-    UPDATE buy_orders SET archived_for_ui = FALSE WHERE archived_for_ui = TRUE;
-    UPDATE sell_orders SET archived_for_ui = FALSE WHERE archived_for_ui = TRUE;
+    UPDATE sell_orders 
+    SET archived_for_ui = FALSE,
+        archived_at = NULL,
+        updated_at = NOW()
+    WHERE archived_for_ui = TRUE;
     
-    RAISE NOTICE '✅ All order archive flags reset (all orders visible in UI)';
+    GET DIAGNOSTICS sell_orders_reset = ROW_COUNT;
     
-    -- Optional: Cancel all pending orders (uncomment if needed)
-    -- UPDATE buy_orders SET status = 'cancelled' WHERE status IN ('pending', 'partial');
-    -- UPDATE sell_orders SET status = 'cancelled' WHERE status IN ('available', 'partial');
-    -- RAISE NOTICE '✅ All pending orders cancelled';
+    -- Count price records (we keep these for history)
+    SELECT COUNT(*) INTO price_records_kept FROM weekly_prices;
     
+    RAISE NOTICE 'RESET OPERATIONS COMPLETED:';
+    RAISE NOTICE '===========================';
+    RAISE NOTICE 'Buy orders un-archived: %', buy_orders_reset;
+    RAISE NOTICE 'Sell orders un-archived: %', sell_orders_reset;
+    RAISE NOTICE 'Price records preserved: %', price_records_kept;
     RAISE NOTICE '';
-    RAISE NOTICE 'System reset completed. Ready for next test cycle.';
+    RAISE NOTICE '✅ All order data restored to UI visibility';
+    RAISE NOTICE '✅ Transaction history preserved';
+    RAISE NOTICE '✅ Price calculation history maintained';
     RAISE NOTICE '';
+    RAISE NOTICE 'System ready for next test cycle!';
+    RAISE NOTICE '';
+    
+    reset_results := json_build_object(
+        'success', true,
+        'buy_orders_reset', buy_orders_reset,
+        'sell_orders_reset', sell_orders_reset,
+        'price_records_preserved', price_records_kept,
+        'reset_at', NOW(),
+        'message', 'System reset completed - ready for next test'
+    );
+    
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
+    
+    RETURN reset_results;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE NOTICE '❌ RESET ERROR: %', SQLERRM;
+        RETURN json_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'sql_state', SQLSTATE,
+            'failed_at', NOW()
+        );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Execute the reset
+DO $$
+DECLARE
+    reset_result JSON;
+BEGIN
+    RAISE NOTICE 'Starting system reset for next test...';
+    
+    SELECT reset_for_next_test() INTO reset_result;
+    
+    RAISE NOTICE 'Reset completed with success: %', reset_result->>'success';
     
 END $$;
