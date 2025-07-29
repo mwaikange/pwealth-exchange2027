@@ -14,6 +14,8 @@ DECLARE
     jse_data_count INTEGER;
     verification_results JSON;
     latest_jse_record RECORD;
+    jse_records JSON[];
+    i INTEGER := 0;
 BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
@@ -48,7 +50,7 @@ BEGIN
         RAISE NOTICE 'Base price: N$%', latest_price_history.base_price;
         RAISE NOTICE 'Final price: N$%', latest_price_history.final_price;
         RAISE NOTICE 'Price change: N$%', latest_price_history.price_change;
-        RAISE NOTICE 'JSE200 growth: %%', latest_price_history.j200_growth;
+        RAISE NOTICE 'JSE200 growth: %% %', latest_price_history.j200_growth;
         RAISE NOTICE 'Created at: %', latest_price_history.created_at;
     ELSE
         RAISE NOTICE '❌ No price records found';
@@ -100,18 +102,26 @@ BEGIN
     RAISE NOTICE '=========================';
     RAISE NOTICE 'Total JSE200 records: %', jse_data_count;
     
-    -- Show latest JSE200 entries
+    -- Collect JSE200 records for JSON response
+    jse_records := ARRAY[]::JSON[];
     FOR latest_jse_record IN 
         SELECT week_start_date, price, percent_change, created_at
         FROM jse200_priceupdate_mondays 
         ORDER BY created_at DESC 
         LIMIT 3
     LOOP
-        RAISE NOTICE 'Week: %, Price: %, Change: %%, Created: %', 
+        RAISE NOTICE 'Week: %, Price: %, Change: %% %, Created: %', 
                      latest_jse_record.week_start_date,
                      latest_jse_record.price,
                      latest_jse_record.percent_change,
                      latest_jse_record.created_at;
+        
+        jse_records := jse_records || json_build_object(
+            'week_start_date', latest_jse_record.week_start_date,
+            'price', latest_jse_record.price,
+            'percent_change', latest_jse_record.percent_change,
+            'created_at', latest_jse_record.created_at
+        );
     END LOOP;
     RAISE NOTICE '';
     
@@ -177,7 +187,8 @@ BEGIN
             )
         ),
         'jse200_data', json_build_object(
-            'total_records', jse_data_count
+            'total_records', jse_data_count,
+            'latest_records', array_to_json(jse_records)
         ),
         'data_integrity_checks', json_build_object(
             'exchange_operational', (exchange_status->>'is_trading_open')::BOOLEAN AND current_price > 0,
@@ -214,8 +225,9 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Execute the verification
-DO $$
+-- Create a function to run verification and return results
+CREATE OR REPLACE FUNCTION run_weekly_cycle_verification()
+RETURNS JSON AS $$
 DECLARE
     verification_result JSON;
 BEGIN
@@ -236,4 +248,9 @@ BEGIN
                  verification_result->'data_integrity_checks'->>'sell_order_integrity';
     RAISE NOTICE '';
     
-END $$;
+    RETURN verification_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Execute the verification and return results
+SELECT run_weekly_cycle_verification();

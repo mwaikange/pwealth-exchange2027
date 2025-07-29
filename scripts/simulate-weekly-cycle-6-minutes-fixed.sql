@@ -45,7 +45,7 @@ BEGIN
     RAISE NOTICE 'Status: %', initial_status->>'status_message';
     RAISE NOTICE '';
     RAISE NOTICE 'LATEST JSE200 DATA (EXISTING):';
-    RAISE NOTICE 'Week: %, JSE200: %, Change: %%, Created: %', 
+    RAISE NOTICE 'Week: %, JSE200: %, Change: %% %, Created: %', 
                  latest_jse_data.week_start_date, 
                  latest_jse_data.price, 
                  latest_jse_data.percent_change,
@@ -102,15 +102,15 @@ BEGIN
     RAISE NOTICE 'MINUTE 4-5: MONDAY 10:03 - CALCULATING NEW SHARE PRICE';
     RAISE NOTICE '====================================================';
     RAISE NOTICE 'Simulating Monday 10:03 price calculation...';
-    RAISE NOTICE 'Using EXISTING JSE200 data: %% change', latest_jse_data.percent_change;
-    RAISE NOTICE 'JSE200 Price: %, Change: %%, Created: %', 
+    RAISE NOTICE 'Using EXISTING JSE200 data: %% % change', latest_jse_data.percent_change;
+    RAISE NOTICE 'JSE200 Price: %, Change: %% %, Created: %', 
                  latest_jse_data.price, 
                  latest_jse_data.percent_change,
                  latest_jse_data.created_at;
     
     -- IMPORTANT: NO INSERT - Use existing JSE200 data only
     RAISE NOTICE 'Using existing JSE200 data (NO INSERT performed)';
-    RAISE NOTICE 'Percent change from existing data: %%', latest_jse_data.percent_change;
+    RAISE NOTICE 'Percent change from existing data: %% %', latest_jse_data.percent_change;
     
     -- Calculate the weekly share price using the existing real data
     SELECT calculate_weekly_share_price_simplified() INTO price_result;
@@ -121,8 +121,8 @@ BEGIN
         RAISE NOTICE 'Base price: N$%', price_result->>'base_price';
         RAISE NOTICE 'Final price: N$%', price_result->>'final_price';
         RAISE NOTICE 'Price change: N$%', price_result->>'price_change';
-        RAISE NOTICE 'JSE200 growth: %%', price_result->>'jse_percent_change';
-        RAISE NOTICE 'Calculation: N$% × (1 + %%/100) = N$%', 
+        RAISE NOTICE 'JSE200 growth: %% %', price_result->>'jse_percent_change';
+        RAISE NOTICE 'Calculation: N$% × (1 + %% %/100) = N$%', 
                      current_price_before, 
                      price_result->>'jse_percent_change',
                      price_result->>'final_price';
@@ -165,7 +165,7 @@ BEGIN
     RAISE NOTICE 'Exchange open: %', final_status->>'is_trading_open';
     RAISE NOTICE 'Current price: N$%', current_price_after;
     RAISE NOTICE 'Status: %', final_status->>'status_message';
-    RAISE NOTICE 'Price change: N$% → N$% (%% change)', 
+    RAISE NOTICE 'Price change: N$% → N$% (%% % change)', 
                  current_price_before, 
                  current_price_after,
                  ROUND(((current_price_after - current_price_before) / current_price_before * 100)::NUMERIC, 2);
@@ -176,8 +176,8 @@ BEGIN
     RAISE NOTICE 'SIMULATION SUMMARY:';
     RAISE NOTICE '==================';
     RAISE NOTICE '⏱️  Total time: % seconds', EXTRACT(EPOCH FROM (NOW() - simulation_start));
-    RAISE NOTICE '📊 JSE200 change used: %% (from existing data)', latest_jse_data.percent_change;
-    RAISE NOTICE '💰 Price calculation: N$% × (1 + %%/100) = N$%', 
+    RAISE NOTICE '📊 JSE200 change used: %% % (from existing data)', latest_jse_data.percent_change;
+    RAISE NOTICE '💰 Price calculation: N$% × (1 + %% %/100) = N$%', 
                  current_price_before, 
                  latest_jse_data.percent_change,
                  current_price_after;
@@ -224,7 +224,7 @@ BEGIN
         RAISE NOTICE '   Share price updated from N$% to N$% using existing JSE200 data', 
                      current_price_before, current_price_after;
         RAISE NOTICE '   All transaction history preserved in database tables';
-        RAISE NOTICE '   JSE200 data source: % (%% change)', latest_jse_data.created_at, latest_jse_data.percent_change;
+        RAISE NOTICE '   JSE200 data source: % (%% % change)', latest_jse_data.created_at, latest_jse_data.percent_change;
     ELSE
         RAISE NOTICE '⚠️  WEEKLY CYCLE SIMULATION: PARTIAL SUCCESS';
         RAISE NOTICE '   Some operations failed - check logs above';
@@ -253,8 +253,9 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Execute the simulation
-DO $$
+-- Create a function to run the simulation and return results
+CREATE OR REPLACE FUNCTION run_weekly_cycle_simulation()
+RETURNS JSON AS $$
 DECLARE
     simulation_result JSON;
 BEGIN
@@ -271,8 +272,13 @@ BEGIN
     RAISE NOTICE 'Price change: N$% → N$%', 
                  simulation_result->>'initial_price', 
                  simulation_result->>'final_price';
-    RAISE NOTICE 'JSE200 change used: %%', 
+    RAISE NOTICE 'JSE200 change used: %% %', 
                  (simulation_result->'jse200_data_used'->>'percent_change');
     RAISE NOTICE '';
     
-END $$;
+    RETURN simulation_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Execute the simulation and return results
+SELECT run_weekly_cycle_simulation();

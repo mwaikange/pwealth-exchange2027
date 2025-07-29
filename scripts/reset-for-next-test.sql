@@ -74,8 +74,9 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Execute the reset
-DO $$
+-- Create a function to run reset and return results
+CREATE OR REPLACE FUNCTION run_system_reset()
+RETURNS JSON AS $$
 DECLARE
     reset_result JSON;
 BEGIN
@@ -85,4 +86,9 @@ BEGIN
     
     RAISE NOTICE 'Reset completed with success: %', reset_result->>'success';
     
-END $$;
+    RETURN reset_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Execute the reset and return results
+SELECT run_system_reset();
