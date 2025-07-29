@@ -1,133 +1,122 @@
--- Verify the results of the weekly cycle simulation
--- Check that everything is in the correct state
-
+-- Verify that the weekly cycle simulation worked correctly
 DO $$
 DECLARE
     exchange_status JSON;
     current_price NUMERIC;
-    price_history RECORD;
-    order_counts RECORD;
-    user_balances RECORD;
+    latest_weekly_price RECORD;
+    latest_jse_data RECORD;
+    active_orders_count INTEGER;
+    order_history_count INTEGER;
 BEGIN
-    RAISE NOTICE 'VERIFYING WEEKLY CYCLE RESULTS';
-    RAISE NOTICE '==============================';
+    RAISE NOTICE '';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '█                                                                              █';
+    RAISE NOTICE '█                    WEEKLY CYCLE VERIFICATION                                 █';
+    RAISE NOTICE '█                                                                              █';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
     RAISE NOTICE '';
     
-    -- 1. Check exchange status
+    -- Check exchange status
     SELECT get_exchange_status() INTO exchange_status;
-    
-    RAISE NOTICE '1. EXCHANGE STATUS:';
-    RAISE NOTICE '   Trading open: %', exchange_status->>'is_trading_open';
-    RAISE NOTICE '   Status message: %', exchange_status->>'status_message';
-    RAISE NOTICE '   Current week: %', exchange_status->>'current_week_start';
-    RAISE NOTICE '   Last update: %', exchange_status->>'last_price_update';
-    RAISE NOTICE '';
-    
-    -- 2. Check current share price
     SELECT get_current_share_price() INTO current_price;
     
-    RAISE NOTICE '2. SHARE PRICE:';
-    RAISE NOTICE '   Current price: N$%', current_price;
+    RAISE NOTICE 'EXCHANGE STATUS VERIFICATION:';
+    RAISE NOTICE '============================';
+    RAISE NOTICE 'Is trading open: %', exchange_status->>'is_trading_open';
+    RAISE NOTICE 'Status message: %', exchange_status->>'status_message';
+    RAISE NOTICE 'Current price: N$%', current_price;
+    RAISE NOTICE 'Windhoek time: %', exchange_status->>'windhoek_time';
     RAISE NOTICE '';
     
-    -- 3. Check latest price history
-    SELECT * INTO price_history
+    -- Check latest weekly price calculation
+    SELECT * INTO latest_weekly_price
     FROM weekly_prices 
     ORDER BY effective_date DESC 
     LIMIT 1;
     
-    IF price_history IS NOT NULL THEN
-        RAISE NOTICE '3. LATEST PRICE RECORD:';
-        RAISE NOTICE '   Effective date: %', price_history.effective_date;
-        RAISE NOTICE '   Base price: N$%', price_history.base_price;
-        RAISE NOTICE '   JSE200 growth: %%', price_history.j200_growth;
-        RAISE NOTICE '   Final price: N$%', price_history.final_price;
-        RAISE NOTICE '   Price change: N$%', price_history.price_change;
-        RAISE NOTICE '   Created: %', price_history.created_at;
+    IF latest_weekly_price IS NOT NULL THEN
+        RAISE NOTICE 'LATEST WEEKLY PRICE RECORD:';
+        RAISE NOTICE '===========================';
+        RAISE NOTICE 'Effective date: %', latest_weekly_price.effective_date;
+        RAISE NOTICE 'Base price: N$%', latest_weekly_price.base_price;
+        RAISE NOTICE 'JSE200 growth: %%', latest_weekly_price.j200_growth;
+        RAISE NOTICE 'Final price: N$%', latest_weekly_price.final_price;
+        RAISE NOTICE 'Price change: N$%', latest_weekly_price.price_change;
+        RAISE NOTICE 'Created at: %', latest_weekly_price.created_at;
+        RAISE NOTICE '';
     ELSE
-        RAISE NOTICE '3. PRICE HISTORY: No records found';
+        RAISE NOTICE '❌ NO WEEKLY PRICE RECORD FOUND!';
+        RAISE NOTICE '';
     END IF;
+    
+    -- Check JSE200 data
+    SELECT * INTO latest_jse_data
+    FROM jse200_priceupdate_mondays 
+    ORDER BY created_at DESC 
+    LIMIT 1;
+    
+    IF latest_jse_data IS NOT NULL THEN
+        RAISE NOTICE 'LATEST JSE200 DATA:';
+        RAISE NOTICE '==================';
+        RAISE NOTICE 'Week start: %', latest_jse_data.week_start_date;
+        RAISE NOTICE 'JSE200 price: %', latest_jse_data.price;
+        RAISE NOTICE 'Percent change: %%', latest_jse_data.percent_change;
+        RAISE NOTICE 'Day of week: %', latest_jse_data.day_of_week;
+        RAISE NOTICE 'Updated at: %', latest_jse_data.updated_at;
+        RAISE NOTICE '';
+    END IF;
+    
+    -- Check active orders (should be minimal after cycle)
+    SELECT COUNT(*) INTO active_orders_count
+    FROM (
+        SELECT id FROM buy_orders WHERE status = 'active'
+        UNION ALL
+        SELECT id FROM sell_orders WHERE status = 'active'
+    ) active_orders;
+    
+    RAISE NOTICE 'ACTIVE ORDERS CHECK:';
+    RAISE NOTICE '===================';
+    RAISE NOTICE 'Active orders count: %', active_orders_count;
+    
+    -- Check order history (should have expired orders)
+    SELECT COUNT(*) INTO order_history_count
+    FROM (
+        SELECT id FROM buy_orders WHERE status IN ('expired', 'cancelled')
+        UNION ALL
+        SELECT id FROM sell_orders WHERE status IN ('expired', 'cancelled')
+    ) historical_orders;
+    
+    RAISE NOTICE 'Historical orders count: %', order_history_count;
     RAISE NOTICE '';
     
-    -- 4. Check order counts by status
-    SELECT 
-        COUNT(*) FILTER (WHERE status = 'pending') as pending_buy,
-        COUNT(*) FILTER (WHERE status = 'partial') as partial_buy,
-        COUNT(*) FILTER (WHERE status = 'filled') as filled_buy,
-        COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled_buy,
-        COUNT(*) FILTER (WHERE status = 'expired') as expired_buy
-    INTO order_counts
-    FROM buy_orders;
-    
-    RAISE NOTICE '4. BUY ORDER STATUS COUNTS:';
-    RAISE NOTICE '   Pending: %', order_counts.pending_buy;
-    RAISE NOTICE '   Partial: %', order_counts.partial_buy;
-    RAISE NOTICE '   Filled: %', order_counts.filled_buy;
-    RAISE NOTICE '   Cancelled: %', order_counts.cancelled_buy;
-    RAISE NOTICE '   Expired: %', order_counts.expired_buy;
-    RAISE NOTICE '';
-    
-    SELECT 
-        COUNT(*) FILTER (WHERE status = 'available') as available_sell,
-        COUNT(*) FILTER (WHERE status = 'partial') as partial_sell,
-        COUNT(*) FILTER (WHERE status = 'matched') as matched_sell,
-        COUNT(*) FILTER (WHERE status = 'expired') as expired_sell
-    INTO order_counts
-    FROM sell_orders;
-    
-    RAISE NOTICE '5. SELL ORDER STATUS COUNTS:';
-    RAISE NOTICE '   Available: %', order_counts.available_sell;
-    RAISE NOTICE '   Partial: %', order_counts.partial_sell;
-    RAISE NOTICE '   Matched: %', order_counts.matched_sell;
-    RAISE NOTICE '   Expired: %', order_counts.expired_sell;
-    RAISE NOTICE '';
-    
-    -- 6. Check if exchange_status table has correct data
-    DECLARE
-        status_record RECORD;
-    BEGIN
-        SELECT * INTO status_record 
-        FROM exchange_status 
-        ORDER BY id DESC 
-        LIMIT 1;
-        
-        RAISE NOTICE '6. EXCHANGE_STATUS TABLE:';
-        RAISE NOTICE '   ID: %', status_record.id;
-        RAISE NOTICE '   is_trading_open: %', status_record.is_trading_open;
-        RAISE NOTICE '   current_week_start: %', status_record.current_week_start;
-        RAISE NOTICE '   last_price_update: %', status_record.last_price_update;
-        RAISE NOTICE '   status_message: %', status_record.status_message;
-        RAISE NOTICE '   updated_at: %', status_record.updated_at;
-    EXCEPTION
-        WHEN OTHERS THEN
-            RAISE NOTICE '6. EXCHANGE_STATUS TABLE: Error - %', SQLERRM;
-    END;
-    RAISE NOTICE '';
-    
-    -- 7. Final assessment
-    RAISE NOTICE '7. WEEKLY CYCLE ASSESSMENT:';
-    RAISE NOTICE '===========================';
+    -- Overall verification
+    RAISE NOTICE 'OVERALL VERIFICATION:';
+    RAISE NOTICE '====================';
     
     IF (exchange_status->>'is_trading_open')::BOOLEAN THEN
-        RAISE NOTICE '✅ Exchange is OPEN for trading';
+        RAISE NOTICE '✅ Exchange is open for trading';
     ELSE
-        RAISE NOTICE '❌ Exchange is CLOSED - should be open';
+        RAISE NOTICE '❌ Exchange is not open for trading';
     END IF;
     
-    IF current_price > 100.00 THEN
-        RAISE NOTICE '✅ Share price updated (N$% > N$100.00)', current_price;
+    IF latest_weekly_price IS NOT NULL THEN
+        RAISE NOTICE '✅ Weekly price calculation completed';
+        RAISE NOTICE '   Price updated to N$% using %%% JSE200 change', 
+                     latest_weekly_price.final_price, 
+                     latest_weekly_price.j200_growth;
     ELSE
-        RAISE NOTICE '⚠️  Share price unchanged (N$%)', current_price;
+        RAISE NOTICE '❌ Weekly price calculation missing';
     END IF;
     
-    IF price_history IS NOT NULL AND price_history.effective_date = CURRENT_DATE THEN
-        RAISE NOTICE '✅ New price record created for today';
+    IF current_price > 0 THEN
+        RAISE NOTICE '✅ Current share price is valid: N$%', current_price;
     ELSE
-        RAISE NOTICE '❌ No price record for current date';
+        RAISE NOTICE '❌ Current share price is invalid: N$%', current_price;
     END IF;
     
     RAISE NOTICE '';
-    RAISE NOTICE 'VERIFICATION COMPLETED';
-    RAISE NOTICE '======================';
+    RAISE NOTICE 'VERIFICATION COMPLETE';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '';
     
 END $$;

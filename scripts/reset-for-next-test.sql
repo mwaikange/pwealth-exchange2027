@@ -1,31 +1,41 @@
--- Reset system for next weekly cycle test
--- This prepares the system for another simulation run
-
+-- Reset system for another weekly cycle test
 DO $$
 BEGIN
-    RAISE NOTICE 'RESETTING SYSTEM FOR NEXT TEST';
-    RAISE NOTICE '==============================';
+    RAISE NOTICE '';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '█                                                                              █';
+    RAISE NOTICE '█                    RESETTING FOR NEXT TEST                                   █';
+    RAISE NOTICE '█                                                                              █';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '';
     
-    -- Reset exchange to closed state
-    UPDATE exchange_status 
+    -- Close exchange to prepare for next test
+    RAISE NOTICE 'Closing exchange for reset...';
+    UPDATE exchange_trading_hours 
     SET is_trading_open = false,
-        status_message = 'Exchange reset for testing',
-        updated_at = NOW()
-    WHERE id = (SELECT MAX(id) FROM exchange_status);
+        last_updated = NOW()
+    WHERE id = 1;
     
-    RAISE NOTICE '✅ Exchange status reset to closed';
+    -- Cancel any remaining active orders
+    RAISE NOTICE 'Cancelling active orders...';
+    UPDATE buy_orders 
+    SET status = 'cancelled', updated_at = NOW() 
+    WHERE status = 'active';
     
-    -- Clean up test orders (optional)
-    -- DELETE FROM buy_orders WHERE status IN ('cancelled', 'expired');
-    -- DELETE FROM sell_orders WHERE status IN ('expired');
-    -- RAISE NOTICE '✅ Test orders cleaned up';
+    UPDATE sell_orders 
+    SET status = 'cancelled', updated_at = NOW() 
+    WHERE status = 'active';
     
-    -- Reset price to base value (optional)
-    -- UPDATE weekly_prices SET final_price = 100.00 WHERE effective_date = CURRENT_DATE;
-    -- RAISE NOTICE '✅ Price reset to base value';
+    -- Don't delete price history - keep it for reference
+    RAISE NOTICE 'Keeping price history for reference...';
     
     RAISE NOTICE '';
-    RAISE NOTICE 'System ready for next weekly cycle simulation';
-    RAISE NOTICE 'Run simulate-weekly-cycle-6-minutes.sql again to test';
+    RAISE NOTICE '✅ System reset complete';
+    RAISE NOTICE '   Exchange closed';
+    RAISE NOTICE '   Active orders cancelled';
+    RAISE NOTICE '   Ready for next simulation';
+    RAISE NOTICE '';
+    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
+    RAISE NOTICE '';
     
 END $$;
