@@ -1,99 +1,121 @@
--- Test script to verify exchange opening scenario works correctly with UTC+2 timezone
+-- Test the exchange in OPEN state after Monday morning process
+-- This verifies everything works correctly when the exchange is operational
 
--- Test 1: Check current timezone handling
-SELECT 
-    'Timezone Test' as test_name,
-    NOW() as utc_time,
-    (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours' as namibian_time,
-    EXTRACT(ISODOW FROM (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours') as day_of_week,
-    EXTRACT(HOUR FROM (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours') as hour_of_day;
+RAISE NOTICE 'Testing exchange in OPEN state...';
 
--- Test 2: Verify exchange status function
+-- 1. Check exchange status
+RAISE NOTICE 'Step 1: Checking exchange status...';
+
 SELECT 
-    'Exchange Status Test' as test_name,
-    *
+    'Exchange Status Check' as test_name,
+    is_open,
+    message,
+    next_open_time AT TIME ZONE 'Africa/Johannesburg' as next_open_sast,
+    next_close_time AT TIME ZONE 'Africa/Johannesburg' as next_close_sast
 FROM get_exchange_status();
 
--- Test 3: Test price calculation
-SELECT 
-    'Price Calculation Test' as test_name,
-    calculate_weekly_share_price_simplified() as calculated_price,
-    get_current_share_price() as current_price;
+-- 2. Verify current share price
+RAISE NOTICE 'Step 2: Verifying current share price...';
 
--- Test 4: Check JSE200 data availability
 SELECT 
-    'JSE200 Data Test' as test_name,
-    COUNT(*) as total_records,
-    MAX(week_start_date) as latest_week,
-    MIN(week_start_date) as earliest_week
-FROM jse200_weekly_data;
+    'Current Share Price' as test_name,
+    get_current_share_price() as current_price,
+    'N$' || get_current_share_price()::TEXT as formatted_price;
 
--- Test 5: Verify pricing info table
+-- 3. Check price history
+RAISE NOTICE 'Step 3: Checking price history...';
+
 SELECT 
-    'Pricing Info Test' as test_name,
-    COUNT(*) as total_records,
-    MAX(calculated_at) as latest_calculation,
-    AVG(final_price) as average_price
-FROM current_pricing_info;
-
--- Test 6: Check exchange trading hours
-SELECT 
-    'Trading Hours Test' as test_name,
-    COUNT(*) as total_records,
-    MAX(opened_at) as latest_open,
-    MAX(closed_at) as latest_close,
-    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_sessions,
-    COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_sessions
-FROM exchange_trading_hours;
-
--- Test 7: Simulate exchange opening
-DO $$
-DECLARE
-    result BOOLEAN;
-    current_utc2 TIMESTAMP;
-BEGIN
-    current_utc2 := (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours';
-    
-    RAISE NOTICE 'Testing exchange opening at %', current_utc2;
-    
-    result := open_exchange_weekly();
-    
-    IF result THEN
-        RAISE NOTICE '✅ Exchange opening test PASSED';
-    ELSE
-        RAISE NOTICE '❌ Exchange opening test FAILED';
-    END IF;
-END $$;
-
--- Test 8: Verify order history cleanup
-SELECT 
-    'Order History Test' as test_name,
-    (SELECT COUNT(*) FROM buy_orders) as total_buy_orders,
-    (SELECT COUNT(*) FROM sell_orders) as total_sell_orders,
-    (SELECT COUNT(*) FROM buy_orders WHERE status = 'pending') as pending_buy_orders,
-    (SELECT COUNT(*) FROM sell_orders WHERE status = 'pending') as pending_sell_orders;
-
--- Test 9: Check price history function
-SELECT 
-    'Price History Test' as test_name,
-    *
-FROM get_price_history(7)
+    'Price History' as test_name,
+    effective_date,
+    base_price,
+    j200_growth,
+    final_price,
+    price_change,
+    created_at AT TIME ZONE 'Africa/Johannesburg' as created_sast
+FROM weekly_prices
+ORDER BY effective_date DESC
 LIMIT 5;
 
--- Test 10: Final verification
-SELECT 
-    'Final Verification' as test_name,
-    CASE 
-        WHEN get_current_share_price() > 0 THEN '✅ Price system working'
-        ELSE '❌ Price system failed'
-    END as price_status,
-    CASE 
-        WHEN EXISTS(SELECT 1 FROM get_exchange_status() WHERE is_open IS NOT NULL) THEN '✅ Exchange status working'
-        ELSE '❌ Exchange status failed'
-    END as exchange_status,
-    CASE 
-        WHEN EXISTS(SELECT 1 FROM current_pricing_info LIMIT 1) THEN '✅ Pricing info available'
-        ELSE '❌ No pricing info'
-    END as pricing_info_status;
+-- 4. Test order placement (should work when exchange is open)
+RAISE NOTICE 'Step 4: Testing order placement functionality...';
 
-SELECT '🎯 Exchange opening scenario test completed!' as final_status;
+-- Check if we can place orders (this should return success when exchange is open)
+SELECT 
+    'Order Placement Test' as test_name,
+    CASE 
+        WHEN (SELECT is_open FROM get_exchange_status() LIMIT 1) THEN 
+            'Orders can be placed - Exchange is OPEN'
+        ELSE 
+            'Orders cannot be placed - Exchange is CLOSED'
+    END as status;
+
+-- 5. Verify wallet calculations use correct price
+RAISE NOTICE 'Step 5: Testing wallet value calculations...';
+
+-- This simulates what the frontend should show
+WITH current_price AS (
+    SELECT get_current_share_price() as price
+),
+sample_wallet AS (
+    SELECT 
+        100.0 as buy_wallet_balance,
+        50.5555 as hold_wallet_pre_hold,
+        25.2222 as hold_wallet_post_hold,
+        75.0 as cashout_wallet_balance
+)
+SELECT 
+    'Wallet Calculations' as test_name,
+    sw.buy_wallet_balance,
+    sw.hold_wallet_pre_hold,
+    sw.hold_wallet_post_hold,
+    sw.cashout_wallet_balance,
+    cp.price as current_share_price,
+    (sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) as total_shares,
+    ROUND((sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) * cp.price, 2) as portfolio_value,
+    ROUND(sw.buy_wallet_balance + sw.cashout_wallet_balance + 
+          (sw.hold_wallet_pre_hold + sw.hold_wallet_post_hold) * cp.price, 2) as total_account_value
+FROM current_price cp, sample_wallet sw;
+
+-- 6. Check that expired orders were properly handled
+RAISE NOTICE 'Step 6: Verifying expired orders were processed...';
+
+SELECT 
+    'Expired Orders Check' as test_name,
+    COUNT(*) as expired_buy_orders
+FROM buy_orders 
+WHERE status = 'expired'
+
+UNION ALL
+
+SELECT 
+    'Expired Orders Check' as test_name,
+    COUNT(*) as expired_sell_orders
+FROM sell_orders 
+WHERE status = 'expired';
+
+-- 7. Final system health check
+RAISE NOTICE 'Step 7: Final system health check...';
+
+SELECT 
+    'System Health' as test_name,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM weekly_prices WHERE effective_date = date_trunc('week', CURRENT_DATE)::DATE) 
+        THEN 'PASS - Current week price exists'
+        ELSE 'FAIL - No current week price found'
+    END as price_system_status,
+    
+    CASE 
+        WHEN (SELECT is_open FROM get_exchange_status() LIMIT 1) 
+        THEN 'PASS - Exchange is open'
+        ELSE 'FAIL - Exchange is closed'
+    END as exchange_status,
+    
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM exchange_trading_hours WHERE is_open = TRUE)
+        THEN 'PASS - Trading hours configured'
+        ELSE 'FAIL - No trading hours found'
+    END as trading_hours_status;
+
+RAISE NOTICE '=== EXCHANGE OPEN STATE TEST COMPLETE ===';
+RAISE NOTICE 'All systems should be operational and ready for trading!';

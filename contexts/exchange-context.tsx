@@ -84,14 +84,32 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch exchange status with updated schedule information
+  // FIXED: Fetch exchange status using correct function and column names
   const fetchExchangeStatus = async () => {
     try {
       const { data, error } = await supabase.rpc("get_exchange_status")
       if (error) throw error
 
-      setExchangeStatus(data)
-      console.log("Exchange status fetched:", data)
+      // Map the response to our expected format
+      const mappedStatus: ExchangeStatus = {
+        is_trading_open: data.is_trading_open || false,
+        status_message: data.status_message || "Exchange status unavailable",
+        current_price: currentSharePrice,
+        current_week_start: data.current_week_start || new Date().toISOString(),
+        last_price_update: data.last_price_update || new Date().toISOString(),
+        last_updated: data.windhoek_time || new Date().toISOString(),
+        windhoek_time: data.windhoek_time,
+        trading_schedule: data.trading_schedule || {
+          weekly_close: "Sunday 23:59",
+          history_clear: "Monday 09:30",
+          price_calculation: "Monday 10:03",
+          weekly_open: "Monday 10:05",
+          timezone: "Africa/Windhoek (UTC+2)",
+        },
+      }
+
+      setExchangeStatus(mappedStatus)
+      console.log("Exchange status fetched:", mappedStatus)
     } catch (err) {
       console.error("Error fetching exchange status:", err)
       setExchangeStatus({

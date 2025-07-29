@@ -1,133 +1,133 @@
--- Complete price calculation and exchange opening script with UTC+2 timezone handling
--- This script ensures the exchange opens properly with correct pricing
+-- Complete Monday morning process: Price calculation, order cleanup, and exchange opening
+-- This simulates the full workflow that should happen every Monday at 10:05
 
--- First, ensure we have the JSE200 table with proper data
-DO $$
-BEGIN
-    -- Check if JSE200 table exists and has data
-    IF NOT EXISTS (SELECT 1 FROM jse200_weekly_data LIMIT 1) THEN
-        -- Insert sample data for current week if none exists
-        INSERT INTO jse200_weekly_data (
-            week_start_date,
-            monday_open,
-            tuesday_close,
-            wednesday_close,
-            thursday_close,
-            friday_close,
-            created_at
-        ) VALUES (
-            DATE_TRUNC('week', (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours')::DATE,
-            45000.00,  -- Monday open
-            45100.00,  -- Tuesday close
-            45200.00,  -- Wednesday close
-            45300.00,  -- Thursday close
-            45400.00,  -- Friday close (1% growth)
-            (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours'
-        )
-        ON CONFLICT (week_start_date) DO NOTHING;
-        
-        RAISE NOTICE 'Sample JSE200 data inserted for current week';
-    END IF;
-END $$;
+BEGIN;
 
--- Calculate and set the current share price
-DO $$
-DECLARE
-    calculated_price DECIMAL(10,2);
-    current_utc2 TIMESTAMP;
-BEGIN
-    -- Get current time in UTC+2
-    current_utc2 := (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours';
-    
-    -- Calculate the weekly share price
-    calculated_price := calculate_weekly_share_price_simplified();
-    
-    RAISE NOTICE 'Calculated share price: N$%', calculated_price;
-    
-    -- Ensure the price is properly stored
-    IF calculated_price IS NULL OR calculated_price < 50.00 THEN
-        calculated_price := 100.00; -- Default fallback price
-        
-        -- Insert fallback pricing info
-        INSERT INTO current_pricing_info (
-            calculated_at,
-            base_price,
-            jse200_growth_percent,
-            price_change_percent,
-            final_price,
-            week_start_date,
-            week_end_date
-        ) VALUES (
-            current_utc2,
-            100.00,
-            0.0,
-            0.0,
-            calculated_price,
-            DATE_TRUNC('week', current_utc2)::DATE,
-            (DATE_TRUNC('week', current_utc2) + INTERVAL '4 days')::DATE
-        )
-        ON CONFLICT (week_start_date) 
-        DO UPDATE SET
-            calculated_at = EXCLUDED.calculated_at,
-            final_price = EXCLUDED.final_price;
-    END IF;
-    
-    RAISE NOTICE 'Final share price set to: N$%', calculated_price;
-END $$;
+RAISE NOTICE 'Starting Monday morning exchange process...';
 
--- Open the exchange for trading
+-- 1. First, expire all open orders and refund users
+RAISE NOTICE 'Step 1: Expiring open orders and processing refunds...';
+
+-- Expire buy orders and refund to buy_wallet
+WITH expired_buy_orders AS (
+    UPDATE buy_orders 
+    SET status = 'expired',
+        updated_at = NOW()
+    WHERE status = 'open'
+    RETURNING user_uuid, (quantity * price_per_share) as refund_amount
+)
+INSERT INTO user_shares (user_uuid, wallet_type, shares, source, created_at, updated_at)
+SELECT 
+    user_uuid,
+    'buy_wallet',
+    refund_amount,
+    'order_expiry_refund',
+    NOW(),
+    NOW()
+FROM expired_buy_orders
+ON CONFLICT (user_uuid, wallet_type)
+DO UPDATE SET 
+    shares = user_shares.shares + EXCLUDED.shares,
+    updated_at = NOW();
+
+-- Expire sell orders and refund shares to hold_wallet_pre_hold
+WITH expired_sell_orders AS (
+    UPDATE sell_orders 
+    SET status = 'expired',
+        updated_at = NOW()
+    WHERE status = 'open'
+    RETURNING user_uuid, quantity as refund_shares
+)
+INSERT INTO user_shares (user_uuid, wallet_type, shares, source, created_at, updated_at)
+SELECT 
+    user_uuid,
+    'hold_wallet_pre_hold',
+    refund_shares,
+    'order_expiry_refund',
+    NOW(),
+    NOW()
+FROM expired_sell_orders
+ON CONFLICT (user_uuid, wallet_type)
+DO UPDATE SET 
+    shares = user_shares.shares + EXCLUDED.shares,
+    updated_at = NOW();
+
+RAISE NOTICE 'Order expiry and refunds completed.';
+
+-- 2. Calculate new weekly share price
+RAISE NOTICE 'Step 2: Calculating new weekly share price...';
+
 DO $$
 DECLARE
-    exchange_opened BOOLEAN;
-    current_utc2 TIMESTAMP;
+    calc_result RECORD;
 BEGIN
-    -- Get current time in UTC+2
-    current_utc2 := (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours';
+    SELECT * INTO calc_result 
+    FROM calculate_weekly_share_price() 
+    LIMIT 1;
     
-    -- Open the exchange
-    exchange_opened := open_exchange_weekly();
-    
-    IF exchange_opened THEN
-        RAISE NOTICE 'Exchange opened successfully at %', current_utc2;
+    IF calc_result.success THEN
+        RAISE NOTICE 'Price calculation successful: %', calc_result.message;
     ELSE
-        RAISE NOTICE 'Failed to open exchange';
+        RAISE WARNING 'Price calculation failed: %', calc_result.message;
     END IF;
 END $$;
 
--- Verify everything is working
-SELECT 
-    'Exchange Status Check' as test_name,
+-- 3. Update exchange status to OPEN
+RAISE NOTICE 'Step 3: Opening exchange for the week...';
+
+-- Clear any existing exchange status and set to OPEN
+DELETE FROM exchange_trading_hours WHERE id IS NOT NULL;
+
+INSERT INTO exchange_trading_hours (
     is_open,
-    current_time_utc2,
-    day_of_week,
-    hour_of_day
-FROM get_exchange_status();
+    last_updated,
+    next_close_time,
+    status_message
+) VALUES (
+    TRUE,
+    NOW(),
+    (date_trunc('week', CURRENT_DATE) + INTERVAL '6 days 23 hours 59 minutes')::TIMESTAMPTZ,
+    'Exchange is OPEN. Weekly price calculation completed. Trading is active.'
+);
+
+-- 4. Log the complete process
+INSERT INTO price_calculation_log (
+    calculation_date,
+    status,
+    message,
+    created_at
+) VALUES (
+    CURRENT_DATE,
+    'completed',
+    'Monday morning process completed: Orders expired, prices calculated, exchange opened',
+    NOW()
+);
+
+RAISE NOTICE 'Step 4: Process logged successfully.';
+
+-- 5. Display final status
+RAISE NOTICE 'Monday morning exchange process completed successfully!';
 
 SELECT 
-    'Current Price Check' as test_name,
-    get_current_share_price() as current_price;
+    'EXCHANGE STATUS' as info_type,
+    is_open,
+    status_message,
+    last_updated AT TIME ZONE 'Africa/Johannesburg' as last_updated_sast
+FROM exchange_trading_hours
+WHERE id = (SELECT MAX(id) FROM exchange_trading_hours)
+
+UNION ALL
 
 SELECT 
-    'Pricing Info Check' as test_name,
-    calculated_at,
-    base_price,
-    jse200_growth_percent,
-    price_change_percent,
-    final_price,
-    week_start_date
-FROM current_pricing_info 
-ORDER BY calculated_at DESC 
+    'CURRENT PRICE' as info_type,
+    TRUE as is_open,
+    format('N$%s (Change: N$%s, JSE200: %s%%)', 
+           final_price, price_change, j200_growth) as status_message,
+    created_at AT TIME ZONE 'Africa/Johannesburg' as last_updated_sast
+FROM weekly_prices
+ORDER BY effective_date DESC
 LIMIT 1;
 
--- Show recent JSE200 data
-SELECT 
-    'JSE200 Data Check' as test_name,
-    week_start_date,
-    monday_open,
-    friday_close,
-    ROUND(((friday_close - monday_open) / monday_open * 100), 4) as growth_percent
-FROM jse200_weekly_data 
-ORDER BY week_start_date DESC 
-LIMIT 3;
+COMMIT;
 
-SELECT 'Price calculation and exchange opening completed!' as status;
+RAISE NOTICE '=== MONDAY MORNING PROCESS COMPLETE ===';
