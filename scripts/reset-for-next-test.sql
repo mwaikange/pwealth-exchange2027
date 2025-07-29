@@ -1,94 +1,103 @@
--- Reset function for next test - Supabase compatible
-CREATE OR REPLACE FUNCTION reset_for_next_test()
+-- Reset system for next test cycle with proper Supabase compliance
+-- This function cleans up test data and prepares for the next simulation
+
+CREATE OR REPLACE FUNCTION run_system_reset()
 RETURNS JSON AS $$
 DECLARE
-    reset_results JSON;
-    buy_orders_reset INTEGER := 0;
-    sell_orders_reset INTEGER := 0;
-    price_records_kept INTEGER := 0;
+    result JSON;
+    reset_time TIMESTAMPTZ;
+    orders_deleted INTEGER := 0;
+    prices_kept INTEGER := 0;
+    transactions_archived INTEGER := 0;
 BEGIN
-    RAISE NOTICE '';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    RESETTING FOR NEXT TEST                                  █';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
+    reset_time := NOW();
     
-    -- Reset archived_for_ui flags to make orders visible again
+    RAISE NOTICE 'Starting system reset at %', reset_time;
+    
+    -- Reset exchange to closed state
+    UPDATE exchange_status 
+    SET status = 'closed',
+        last_updated = NOW(),
+        notes = 'Reset for next test cycle'
+    WHERE id = 1;
+    
+    RAISE NOTICE 'Exchange status reset to closed';
+    
+    -- Clear test orders (keep last 24 hours for reference)
+    DELETE FROM buy_orders 
+    WHERE created_at < NOW() - INTERVAL '24 hours'
+    AND status IN ('expired', 'cancelled');
+    
+    GET DIAGNOSTICS orders_deleted = ROW_COUNT;
+    
+    DELETE FROM sell_orders 
+    WHERE created_at < NOW() - INTERVAL '24 hours'
+    AND status IN ('expired', 'cancelled');
+    
+    GET DIAGNOSTICS orders_deleted = orders_deleted + ROW_COUNT;
+    
+    RAISE NOTICE 'Deleted % old test orders', orders_deleted;
+    
+    -- Keep recent price data (last 4 weeks)
+    SELECT COUNT(*) INTO prices_kept
+    FROM weekly_share_price 
+    WHERE week >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '4 weeks';
+    
+    -- Archive old transactions
+    UPDATE share_transactions 
+    SET status = 'archived', updated_at = NOW()
+    WHERE created_at < NOW() - INTERVAL '7 days'
+    AND status = 'completed';
+    
+    GET DIAGNOSTICS transactions_archived = ROW_COUNT;
+    
+    RAISE NOTICE 'Archived % old transactions', transactions_archived;
+    
+    -- Reset any pending operations
     UPDATE buy_orders 
-    SET archived_for_ui = FALSE,
-        archived_at = NULL,
-        updated_at = NOW()
-    WHERE archived_for_ui = TRUE;
-    
-    GET DIAGNOSTICS buy_orders_reset = ROW_COUNT;
+    SET status = 'cancelled', updated_at = NOW()
+    WHERE status = 'processing';
     
     UPDATE sell_orders 
-    SET archived_for_ui = FALSE,
-        archived_at = NULL,
-        updated_at = NOW()
-    WHERE archived_for_ui = TRUE;
+    SET status = 'cancelled', updated_at = NOW()
+    WHERE status = 'processing';
     
-    GET DIAGNOSTICS sell_orders_reset = ROW_COUNT;
+    RAISE NOTICE 'System reset completed successfully';
     
-    -- Count price records (we keep these for history)
-    SELECT COUNT(*) INTO price_records_kept FROM weekly_prices;
-    
-    RAISE NOTICE 'RESET OPERATIONS COMPLETED:';
-    RAISE NOTICE '===========================';
-    RAISE NOTICE 'Buy orders un-archived: %', buy_orders_reset;
-    RAISE NOTICE 'Sell orders un-archived: %', sell_orders_reset;
-    RAISE NOTICE 'Price records preserved: %', price_records_kept;
-    RAISE NOTICE '';
-    RAISE NOTICE '✅ All order data restored to UI visibility';
-    RAISE NOTICE '✅ Transaction history preserved';
-    RAISE NOTICE '✅ Price calculation history maintained';
-    RAISE NOTICE '';
-    RAISE NOTICE 'System ready for next test cycle!';
-    RAISE NOTICE '';
-    
-    reset_results := json_build_object(
+    SELECT json_build_object(
         'success', true,
-        'buy_orders_reset', buy_orders_reset,
-        'sell_orders_reset', sell_orders_reset,
-        'price_records_preserved', price_records_kept,
-        'reset_at', NOW(),
-        'message', 'System reset completed - ready for next test'
-    );
+        'reset_time', reset_time,
+        'message', 'System reset completed successfully',
+        'actions_performed', json_build_object(
+            'exchange_status', 'Reset to closed',
+            'orders_deleted', orders_deleted,
+            'prices_kept', prices_kept,
+            'transactions_archived', transactions_archived,
+            'pending_operations', 'Cancelled'
+        ),
+        'system_ready', true,
+        'next_steps', json_build_array(
+            'System is ready for next test cycle',
+            'Run run_weekly_cycle_simulation() to start new cycle',
+            'Use run_weekly_cycle_verification() to check results'
+        )
+    ) INTO result;
     
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    
-    RETURN reset_results;
+    RETURN result;
     
 EXCEPTION
     WHEN OTHERS THEN
-        RAISE NOTICE '❌ RESET ERROR: %', SQLERRM;
         RETURN json_build_object(
             'success', false,
             'error', SQLERRM,
-            'sql_state', SQLSTATE,
-            'failed_at', NOW()
+            'message', 'System reset failed',
+            'reset_time', reset_time
         );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create a function to run reset and return results
-CREATE OR REPLACE FUNCTION run_system_reset()
-RETURNS JSON AS $$
-DECLARE
-    reset_result JSON;
-BEGIN
-    RAISE NOTICE 'Starting system reset for next test...';
-    
-    SELECT reset_for_next_test() INTO reset_result;
-    
-    RAISE NOTICE 'Reset completed with success: %', reset_result->>'success';
-    
-    RETURN reset_result;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION run_system_reset() TO authenticated;
 
--- Execute the reset and return results
+-- Execute the reset
 SELECT run_system_reset();

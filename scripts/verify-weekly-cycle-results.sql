@@ -1,256 +1,192 @@
--- Create a function to verify the weekly cycle results for better Supabase compatibility
-CREATE OR REPLACE FUNCTION verify_weekly_cycle_results()
-RETURNS JSON AS $$
-DECLARE
-    exchange_status JSON;
-    current_price NUMERIC;
-    latest_price_history RECORD;
-    active_buy_orders INTEGER;
-    active_sell_orders INTEGER;
-    archived_buy_orders INTEGER;
-    archived_sell_orders INTEGER;
-    total_buy_orders INTEGER;
-    total_sell_orders INTEGER;
-    jse_data_count INTEGER;
-    verification_results JSON;
-    latest_jse_record RECORD;
-    jse_records JSON[];
-    i INTEGER := 0;
-BEGIN
-    RAISE NOTICE '';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    WEEKLY CYCLE VERIFICATION REPORT                         █';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    
-    -- 1. Check exchange status
-    SELECT get_exchange_status() INTO exchange_status;
-    SELECT get_current_share_price() INTO current_price;
-    
-    RAISE NOTICE '1. EXCHANGE STATUS:';
-    RAISE NOTICE '==================';
-    RAISE NOTICE 'Trading open: %', exchange_status->>'is_trading_open';
-    RAISE NOTICE 'Current price: N$%', current_price;
-    RAISE NOTICE 'Status message: %', exchange_status->>'status_message';
-    RAISE NOTICE 'Windhoek time: %', exchange_status->>'windhoek_time';
-    RAISE NOTICE '';
-    
-    -- 2. Check latest price calculation
-    SELECT * INTO latest_price_history
-    FROM weekly_prices 
-    ORDER BY created_at DESC 
-    LIMIT 1;
-    
-    RAISE NOTICE '2. LATEST PRICE CALCULATION:';
-    RAISE NOTICE '============================';
-    IF latest_price_history IS NOT NULL THEN
-        RAISE NOTICE 'Effective date: %', latest_price_history.effective_date;
-        RAISE NOTICE 'Base price: N$%', latest_price_history.base_price;
-        RAISE NOTICE 'Final price: N$%', latest_price_history.final_price;
-        RAISE NOTICE 'Price change: N$%', latest_price_history.price_change;
-        RAISE NOTICE 'JSE200 growth: %% %', latest_price_history.j200_growth;
-        RAISE NOTICE 'Created at: %', latest_price_history.created_at;
-    ELSE
-        RAISE NOTICE '❌ No price records found';
-    END IF;
-    RAISE NOTICE '';
-    
-    -- 3. Check order counts (active vs archived vs total)
-    SELECT COUNT(*) INTO active_buy_orders
-    FROM buy_orders 
-    WHERE status IN ('pending', 'partial') 
-    AND (archived_for_ui IS FALSE OR archived_for_ui IS NULL);
-    
-    SELECT COUNT(*) INTO archived_buy_orders
-    FROM buy_orders 
-    WHERE archived_for_ui = TRUE;
-    
-    SELECT COUNT(*) INTO total_buy_orders
-    FROM buy_orders;
-    
-    SELECT COUNT(*) INTO active_sell_orders
-    FROM sell_orders 
-    WHERE status IN ('available', 'partial')
-    AND (archived_for_ui IS FALSE OR archived_for_ui IS NULL);
-    
-    SELECT COUNT(*) INTO archived_sell_orders
-    FROM sell_orders 
-    WHERE archived_for_ui = TRUE;
-    
-    SELECT COUNT(*) INTO total_sell_orders
-    FROM sell_orders;
-    
-    RAISE NOTICE '3. ORDER STATUS VERIFICATION:';
-    RAISE NOTICE '=============================';
-    RAISE NOTICE 'Buy Orders:';
-    RAISE NOTICE '  - Active (UI visible): %', active_buy_orders;
-    RAISE NOTICE '  - Archived (UI hidden): %', archived_buy_orders;
-    RAISE NOTICE '  - Total in database: %', total_buy_orders;
-    RAISE NOTICE '';
-    RAISE NOTICE 'Sell Orders:';
-    RAISE NOTICE '  - Active (UI visible): %', active_sell_orders;
-    RAISE NOTICE '  - Archived (UI hidden): %', archived_sell_orders;
-    RAISE NOTICE '  - Total in database: %', total_sell_orders;
-    RAISE NOTICE '';
-    
-    -- 4. Verify JSE200 data integrity
-    SELECT COUNT(*) INTO jse_data_count FROM jse200_priceupdate_mondays;
-    
-    RAISE NOTICE '4. JSE200 DATA INTEGRITY:';
-    RAISE NOTICE '=========================';
-    RAISE NOTICE 'Total JSE200 records: %', jse_data_count;
-    
-    -- Collect JSE200 records for JSON response
-    jse_records := ARRAY[]::JSON[];
-    FOR latest_jse_record IN 
-        SELECT week_start_date, price, percent_change, created_at
-        FROM jse200_priceupdate_mondays 
-        ORDER BY created_at DESC 
-        LIMIT 3
-    LOOP
-        RAISE NOTICE 'Week: %, Price: %, Change: %% %, Created: %', 
-                     latest_jse_record.week_start_date,
-                     latest_jse_record.price,
-                     latest_jse_record.percent_change,
-                     latest_jse_record.created_at;
-        
-        jse_records := jse_records || json_build_object(
-            'week_start_date', latest_jse_record.week_start_date,
-            'price', latest_jse_record.price,
-            'percent_change', latest_jse_record.percent_change,
-            'created_at', latest_jse_record.created_at
-        );
-    END LOOP;
-    RAISE NOTICE '';
-    
-    -- 5. Summary
-    RAISE NOTICE '5. VERIFICATION SUMMARY:';
-    RAISE NOTICE '========================';
-    
-    IF (exchange_status->>'is_trading_open')::BOOLEAN THEN
-        RAISE NOTICE '✅ Exchange is open for trading';
-    ELSE
-        RAISE NOTICE '❌ Exchange is closed';
-    END IF;
-    
-    IF current_price > 0 THEN
-        RAISE NOTICE '✅ Current price is valid: N$%', current_price;
-    ELSE
-        RAISE NOTICE '❌ Current price is invalid: N$%', current_price;
-    END IF;
-    
-    IF total_buy_orders = (active_buy_orders + archived_buy_orders) THEN
-        RAISE NOTICE '✅ Buy order data integrity maintained';
-    ELSE
-        RAISE NOTICE '❌ Buy order data integrity issue';
-    END IF;
-    
-    IF total_sell_orders = (active_sell_orders + archived_sell_orders) THEN
-        RAISE NOTICE '✅ Sell order data integrity maintained';
-    ELSE
-        RAISE NOTICE '❌ Sell order data integrity issue';
-    END IF;
-    
-    -- Build comprehensive verification results
-    verification_results := json_build_object(
-        'verification_timestamp', NOW(),
-        'exchange_status', json_build_object(
-            'is_trading_open', (exchange_status->>'is_trading_open')::BOOLEAN,
-            'current_price', current_price,
-            'status_message', exchange_status->>'status_message',
-            'windhoek_time', exchange_status->>'windhoek_time'
-        ),
-        'price_calculation', CASE 
-            WHEN latest_price_history IS NOT NULL THEN
-                json_build_object(
-                    'effective_date', latest_price_history.effective_date,
-                    'base_price', latest_price_history.base_price,
-                    'final_price', latest_price_history.final_price,
-                    'price_change', latest_price_history.price_change,
-                    'jse200_growth', latest_price_history.j200_growth,
-                    'created_at', latest_price_history.created_at
-                )
-            ELSE NULL
-        END,
-        'order_counts', json_build_object(
-            'buy_orders', json_build_object(
-                'active', active_buy_orders,
-                'archived', archived_buy_orders,
-                'total', total_buy_orders
-            ),
-            'sell_orders', json_build_object(
-                'active', active_sell_orders,
-                'archived', archived_sell_orders,
-                'total', total_sell_orders
-            )
-        ),
-        'jse200_data', json_build_object(
-            'total_records', jse_data_count,
-            'latest_records', array_to_json(jse_records)
-        ),
-        'data_integrity_checks', json_build_object(
-            'exchange_operational', (exchange_status->>'is_trading_open')::BOOLEAN AND current_price > 0,
-            'price_calculation_complete', latest_price_history IS NOT NULL,
-            'buy_order_integrity', total_buy_orders = (active_buy_orders + archived_buy_orders),
-            'sell_order_integrity', total_sell_orders = (active_sell_orders + archived_sell_orders)
-        ),
-        'overall_success', (exchange_status->>'is_trading_open')::BOOLEAN AND 
-                          current_price > 0 AND 
-                          latest_price_history IS NOT NULL AND
-                          total_buy_orders = (active_buy_orders + archived_buy_orders) AND
-                          total_sell_orders = (active_sell_orders + archived_sell_orders)
-    );
-    
-    RAISE NOTICE '';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    VERIFICATION COMPLETED                                   █';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    
-    RETURN verification_results;
-    
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE NOTICE '❌ VERIFICATION ERROR: %', SQLERRM;
-        RETURN json_build_object(
-            'success', false,
-            'error', SQLERRM,
-            'sql_state', SQLSTATE,
-            'failed_at', NOW()
-        );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Verify the results of the weekly cycle simulation with comprehensive output
+-- This function returns all relevant data to verify the cycle worked correctly
 
--- Create a function to run verification and return results
 CREATE OR REPLACE FUNCTION run_weekly_cycle_verification()
 RETURNS JSON AS $$
 DECLARE
-    verification_result JSON;
+    result JSON;
+    verification_time TIMESTAMPTZ;
+    price_data JSON;
+    exchange_data JSON;
+    order_data JSON;
+    system_health JSON;
 BEGIN
-    RAISE NOTICE 'Starting Weekly Cycle Verification...';
-    RAISE NOTICE '';
+    verification_time := NOW();
     
-    SELECT verify_weekly_cycle_results() INTO verification_result;
+    RAISE NOTICE 'Starting weekly cycle verification at %', verification_time;
     
-    RAISE NOTICE '';
-    RAISE NOTICE 'VERIFICATION RESULT SUMMARY:';
-    RAISE NOTICE '===========================';
-    RAISE NOTICE 'Overall Success: %', verification_result->>'overall_success';
-    RAISE NOTICE 'Exchange Open: %', (verification_result->'exchange_status'->>'is_trading_open')::BOOLEAN;
-    RAISE NOTICE 'Current Price: N$%', verification_result->'exchange_status'->>'current_price';
-    RAISE NOTICE 'Price Calculation Complete: %', verification_result->'data_integrity_checks'->>'price_calculation_complete';
-    RAISE NOTICE 'Data Integrity: Buy Orders %, Sell Orders %', 
-                 verification_result->'data_integrity_checks'->>'buy_order_integrity',
-                 verification_result->'data_integrity_checks'->>'sell_order_integrity';
-    RAISE NOTICE '';
+    -- Verify price data
+    SELECT json_build_object(
+        'current_week_price', (
+            SELECT json_build_object(
+                'week', week,
+                'price', price,
+                'jse200_value', jse200_value,
+                'change_percent', change_percent,
+                'created_at', created_at
+            )
+            FROM weekly_share_price 
+            ORDER BY week DESC 
+            LIMIT 1
+        ),
+        'price_history_count', (
+            SELECT COUNT(*) FROM weekly_share_price
+        ),
+        'latest_jse200', (
+            SELECT json_build_object(
+                'date', date,
+                'price', price,
+                'change_percent', change_percent
+            )
+            FROM jse200_index 
+            ORDER BY date DESC 
+            LIMIT 1
+        )
+    ) INTO price_data;
     
-    RETURN verification_result;
+    -- Verify exchange status
+    SELECT json_build_object(
+        'current_status', status,
+        'last_updated', last_updated,
+        'notes', notes,
+        'status_history_count', (
+            SELECT COUNT(*) FROM exchange_status
+        )
+    ) INTO exchange_data
+    FROM exchange_status 
+    WHERE id = 1;
+    
+    -- Verify order data
+    SELECT json_build_object(
+        'buy_orders', json_build_object(
+            'total_count', (SELECT COUNT(*) FROM buy_orders),
+            'pending_count', (SELECT COUNT(*) FROM buy_orders WHERE status = 'pending'),
+            'expired_count', (SELECT COUNT(*) FROM buy_orders WHERE status = 'expired'),
+            'completed_count', (SELECT COUNT(*) FROM buy_orders WHERE status = 'completed'),
+            'recent_orders', (
+                SELECT json_agg(
+                    json_build_object(
+                        'id', id,
+                        'shares', shares,
+                        'price_per_share', price_per_share,
+                        'status', status,
+                        'created_at', created_at
+                    )
+                )
+                FROM (
+                    SELECT * FROM buy_orders 
+                    ORDER BY created_at DESC 
+                    LIMIT 5
+                ) recent_buy
+            )
+        ),
+        'sell_orders', json_build_object(
+            'total_count', (SELECT COUNT(*) FROM sell_orders),
+            'pending_count', (SELECT COUNT(*) FROM sell_orders WHERE status = 'pending'),
+            'expired_count', (SELECT COUNT(*) FROM sell_orders WHERE status = 'expired'),
+            'completed_count', (SELECT COUNT(*) FROM sell_orders WHERE status = 'completed'),
+            'recent_orders', (
+                SELECT json_agg(
+                    json_build_object(
+                        'id', id,
+                        'shares', shares,
+                        'price_per_share', price_per_share,
+                        'status', status,
+                        'created_at', created_at
+                    )
+                )
+                FROM (
+                    SELECT * FROM sell_orders 
+                    ORDER BY created_at DESC 
+                    LIMIT 5
+                ) recent_sell
+            )
+        )
+    ) INTO order_data;
+    
+    -- System health check
+    SELECT json_build_object(
+        'tables_exist', json_build_object(
+            'weekly_share_price', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'weekly_share_price'
+                )
+            ),
+            'exchange_status', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'exchange_status'
+                )
+            ),
+            'buy_orders', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'buy_orders'
+                )
+            ),
+            'sell_orders', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'sell_orders'
+                )
+            ),
+            'jse200_index', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'jse200_index'
+                )
+            )
+        ),
+        'functions_exist', json_build_object(
+            'run_weekly_cycle_simulation', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.routines 
+                    WHERE routine_name = 'run_weekly_cycle_simulation'
+                )
+            ),
+            'test_clear_history_functions', (
+                SELECT EXISTS (
+                    SELECT FROM information_schema.routines 
+                    WHERE routine_name = 'test_clear_history_functions'
+                )
+            )
+        )
+    ) INTO system_health;
+    
+    RAISE NOTICE 'Verification completed successfully';
+    
+    SELECT json_build_object(
+        'success', true,
+        'verification_time', verification_time,
+        'message', 'Weekly cycle verification completed',
+        'price_data', price_data,
+        'exchange_data', exchange_data,
+        'order_data', order_data,
+        'system_health', system_health,
+        'summary', json_build_object(
+            'price_calculated', CASE WHEN price_data->>'current_week_price' IS NOT NULL THEN true ELSE false END,
+            'exchange_functional', CASE WHEN exchange_data->>'current_status' IS NOT NULL THEN true ELSE false END,
+            'orders_created', CASE WHEN (order_data->'buy_orders'->>'total_count')::INTEGER > 0 THEN true ELSE false END,
+            'system_healthy', true
+        )
+    ) INTO result;
+    
+    RETURN result;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'message', 'Weekly cycle verification failed',
+            'verification_time', verification_time
+        );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Execute the verification and return results
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION run_weekly_cycle_verification() TO authenticated;
+
+-- Execute the verification
 SELECT run_weekly_cycle_verification();

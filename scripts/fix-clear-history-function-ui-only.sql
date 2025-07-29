@@ -248,55 +248,60 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION test_clear_history_functions()
 RETURNS JSON AS $$
 DECLARE
-    test_results JSON;
+    result JSON;
+    orders_cleared INTEGER := 0;
+    transactions_cleared INTEGER := 0;
+    start_time TIMESTAMPTZ;
+    end_time TIMESTAMPTZ;
 BEGIN
-    RAISE NOTICE '';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '█                    CLEAR HISTORY FUNCTION FIXED                             █';
-    RAISE NOTICE '█                                                                              █';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    RAISE NOTICE '✅ FIXED ISSUES:';
-    RAISE NOTICE '   1. clear_weekly_order_history() now PRESERVES all data';
-    RAISE NOTICE '   2. Orders marked as "archived_for_ui" instead of deleted';
-    RAISE NOTICE '   3. calculate_weekly_share_price_simplified() uses correct table name';
-    RAISE NOTICE '   4. All transaction history maintained for compliance';
-    RAISE NOTICE '';
-    RAISE NOTICE '🎯 UI IMPACT:';
-    RAISE NOTICE '   - "Your Buy Orders" card: Shows only non-archived orders';
-    RAISE NOTICE '   - "Your Sell Orders" card: Shows only non-archived orders';
-    RAISE NOTICE '   - Market orders: Always show only active (pending/partial/available)';
-    RAISE NOTICE '';
-    RAISE NOTICE '💾 DATA PRESERVATION:';
-    RAISE NOTICE '   - ALL order data remains in database tables';
-    RAISE NOTICE '   - Transaction history intact for accounting';
-    RAISE NOTICE '   - Compliance and audit trails preserved';
-    RAISE NOTICE '';
-    RAISE NOTICE '🚀 READY TO TEST: Run the simulation script now!';
-    RAISE NOTICE '';
-    RAISE NOTICE '████████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    RAISE NOTICE 'Fixed clear_weekly_order_history_ui_only() function';
-    RAISE NOTICE 'Added archived_for_ui columns to preserve transaction history';
-    RAISE NOTICE 'UI will now filter out archived orders while keeping all data';
+    start_time := NOW();
     
-    test_results := json_build_object(
-        'functions_created', json_array(
-            'clear_weekly_order_history_ui_only()',
-            'clear_weekly_order_history()',
-            'clear_history_with_retries()',
-            'calculate_weekly_share_price_simplified()'
-        ),
-        'data_preservation', 'All transaction history preserved',
-        'ui_filtering', 'Orders marked as archived_for_ui instead of deleted',
-        'ready_for_testing', true,
-        'created_at', NOW()
-    );
+    RAISE NOTICE 'Starting clear history function test at %', start_time;
     
-    RETURN test_results;
+    -- Clear expired/completed orders for UI cleanup
+    UPDATE buy_orders 
+    SET status = 'expired', updated_at = NOW()
+    WHERE status IN ('completed', 'cancelled') 
+    AND created_at < NOW() - INTERVAL '7 days';
+    
+    GET DIAGNOSTICS orders_cleared = ROW_COUNT;
+    
+    -- Clear old transaction history for UI
+    UPDATE share_transactions 
+    SET status = 'archived', updated_at = NOW()
+    WHERE status = 'completed' 
+    AND created_at < NOW() - INTERVAL '30 days';
+    
+    GET DIAGNOSTICS transactions_cleared = ROW_COUNT;
+    
+    end_time := NOW();
+    
+    RAISE NOTICE 'Clear history completed. Orders: %, Transactions: %', orders_cleared, transactions_cleared;
+    
+    SELECT json_build_object(
+        'success', true,
+        'message', 'History cleanup completed successfully',
+        'orders_cleared', orders_cleared,
+        'transactions_cleared', transactions_cleared,
+        'start_time', start_time,
+        'end_time', end_time,
+        'duration_seconds', EXTRACT(EPOCH FROM (end_time - start_time))
+    ) INTO result;
+    
+    RETURN result;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'success', false,
+            'error', SQLERRM,
+            'message', 'Failed to clear history'
+        );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION test_clear_history_functions() TO authenticated;
 
 -- Execute the test to show results
 SELECT test_clear_history_functions();
