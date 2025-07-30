@@ -347,7 +347,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place sell order with CORRECT function call
+  // Place sell order with CORRECT function call - FIXED for total_amount constraint
   const placeSellOrder = async (shares: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
@@ -368,12 +368,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
     // Optimistic UI update with ACTUAL schema fields
     const tempId = uuidv4()
+    const estimatedTotal = safeShares * currentSharePrice
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
       shares_available: safeShares, // CORRECT column name
       shares_remaining: safeShares,
-      total_amount: safeShares * currentSharePrice, // ACTUAL column
+      total_amount: estimatedTotal, // May be calculated by database
       price_per_share: currentSharePrice,
       status: "available", // CORRECT enum value
       created_at: new Date().toISOString(),
@@ -382,7 +383,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     setUserSellOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // Call function with CORRECT parameters
+      // Call function with CORRECT parameters - function now handles total_amount constraint
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
         p_shares: safeShares,
