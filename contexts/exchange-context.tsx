@@ -9,12 +9,16 @@ import { v4 as uuidv4 } from "uuid"
 type MarketOrder = {
   id: string
   total_amount?: number
-  shares_available?: number // CORRECT column name
+  shares_available?: number
   shares_remaining?: number
+  shares_requested?: number // Buy orders have this
+  shares_filled?: number // Buy orders have this
+  amount_filled?: number // Buy orders have this
   price_per_share: number
-  amount_filled?: number
   status: string
   created_at: string
+  buy_ref?: string // Buy orders
+  sell_ref?: string // Sell orders
 }
 
 type UserOrder = MarketOrder & {
@@ -171,17 +175,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (buyError) throw buyError
 
-      // Filter valid buy orders
+      // Filter valid buy orders using ACTUAL schema columns
       const validBuyOrders = (buyOrders || []).filter((order) => {
         const totalAmount = Number(order.total_amount)
         const amountFilled = Number(order.amount_filled) || 0
+        const sharesRequested = Number(order.shares_requested) || 0
         const pricePerShare = Number(order.price_per_share)
 
         return (
           !isNaN(totalAmount) &&
           !isNaN(amountFilled) &&
+          !isNaN(sharesRequested) &&
           !isNaN(pricePerShare) &&
           totalAmount > 0 &&
+          sharesRequested > 0 &&
           pricePerShare > 0 &&
           amountFilled < totalAmount
         )
@@ -232,12 +239,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (buyError) throw buyError
 
-      // Filter valid user buys
+      // Filter valid user buys using ACTUAL schema columns
       const validUserBuys = (userBuys || []).filter((order) => {
         const totalAmount = Number(order.total_amount)
+        const sharesRequested = Number(order.shares_requested) || 0
         const pricePerShare = Number(order.price_per_share)
 
-        return !isNaN(totalAmount) && !isNaN(pricePerShare) && totalAmount > 0 && pricePerShare > 0
+        return (
+          !isNaN(totalAmount) &&
+          !isNaN(sharesRequested) &&
+          !isNaN(pricePerShare) &&
+          totalAmount > 0 &&
+          sharesRequested > 0 &&
+          pricePerShare > 0
+        )
       })
 
       setUserSellOrders(validUserSells)
@@ -292,16 +307,20 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "Invalid amount" }
     }
 
-    // Optimistic UI update
+    // Optimistic UI update with ACTUAL schema fields
     const tempId = uuidv4()
+    const estimatedShares = safeAmount / currentSharePrice
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
       total_amount: safeAmount,
+      shares_requested: estimatedShares, // ACTUAL column
+      shares_filled: 0, // ACTUAL column
+      amount_filled: 0, // ACTUAL column
       price_per_share: currentSharePrice,
       status: "pending", // CORRECT enum value
       created_at: new Date().toISOString(),
-      amount_filled: 0,
+      buy_ref: `Buy_${tempId.slice(-6)}`,
     }
     setUserBuyOrders((prev) => [optimisticOrder, ...prev])
 
@@ -347,16 +366,18 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "Invalid number of shares" }
     }
 
-    // Optimistic UI update
+    // Optimistic UI update with ACTUAL schema fields
     const tempId = uuidv4()
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
       shares_available: safeShares, // CORRECT column name
       shares_remaining: safeShares,
+      total_amount: safeShares * currentSharePrice, // ACTUAL column
       price_per_share: currentSharePrice,
       status: "available", // CORRECT enum value
       created_at: new Date().toISOString(),
+      sell_ref: `Sell_${tempId.slice(-6)}`,
     }
     setUserSellOrders((prev) => [optimisticOrder, ...prev])
 
