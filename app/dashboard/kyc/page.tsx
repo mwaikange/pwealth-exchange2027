@@ -1,423 +1,771 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { Upload, Shield, CheckCircle, AlertCircle, Mail, User, CreditCard } from "lucide-react"
+import type React from "react"
+
 import { useState, useEffect } from "react"
-import { updatePassword } from "@/actions/user-actions"
-import { useAuth } from "@/contexts/auth-context"
-import { supabase } from "@/lib/supabase"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Shield, CheckCircle, AlertCircle, Upload, Mail, User, CreditCard, Lock, Eye, EyeOff } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { supabase } from "@/lib/supabase-singleton"
+import { useAuth } from "@/contexts/auth-context"
+
+interface KYCData {
+  level: number
+  email_verified: boolean
+  mobile_number?: string
+  mobile_verified: boolean
+  id_number?: string
+  home_address?: string
+  region?: string
+  town?: string
+  street?: string
+  id_document_uploaded: boolean
+  bank_confirmation_uploaded: boolean
+  created_at: string
+  updated_at: string
+}
 
 export default function KYCPage() {
-  const router = useRouter()
-  const [copied, setCopied] = useState(false)
-  const [showCopyNotification, setShowCopyNotification] = useState(false)
-  const [userData, setUserData] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [passwordError, setPasswordError] = useState<string | null>(null)
-  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
-  const [kycLevel, setKycLevel] = useState(1)
   const { user } = useAuth()
-  const [sessionToken, setSessionToken] = useState<string | null>(null)
+  const [kycData, setKycData] = useState<KYCData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
-  // Get the session token
-  useEffect(() => {
-    async function getSessionToken() {
-      const { data } = await supabase.auth.getSession()
-      if (data.session) {
-        setSessionToken(data.session.access_token)
-      }
-    }
-    getSessionToken()
-  }, [])
+  // Form states
+  const [formData, setFormData] = useState({
+    oldPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+    mobileNumber: "",
+    idNumber: "",
+    region: "",
+    town: "",
+    street: "",
+  })
 
-  // Fetch user data from Supabase
-  async function fetchUserData() {
+  const fetchKYCData = async () => {
     if (!user) return
 
-    setLoading(true)
-
     try {
-      const { data: userProfile, error } = await supabase
-        .from("app_users")
-        .select("*")
-        .eq("user_uuid", user.id)
-        .single()
+      setLoading(true)
+      setError(null)
 
-      if (error) {
-        console.error("Error fetching user data:", error)
-        return
+      const { data, error } = await supabase.from("user_kyc").select("*").eq("user_uuid", user.id).single()
+
+      if (error && error.code !== "PGRST116") {
+        throw error
       }
 
-      // Also fetch referral code
-      const { data: settingsData } = await supabase
-        .from("usersettings")
-        .select("referral_code")
-        .eq("user_uuid", user.id)
-        .single()
+      if (data) {
+        setKycData(data)
+        setFormData((prev) => ({
+          ...prev,
+          mobileNumber: data.mobile_number || "",
+          idNumber: data.id_number || "",
+          region: data.region || "",
+          town: data.town || "",
+          street: data.street || "",
+        }))
+      } else {
+        // Create initial KYC record
+        const { data: newKyc, error: createError } = await supabase
+          .from("user_kyc")
+          .insert({
+            user_uuid: user.id,
+            level: 0,
+            email_verified: !!user.email_confirmed_at,
+            mobile_verified: false,
+            id_document_uploaded: false,
+            bank_confirmation_uploaded: false,
+          })
+          .select()
+          .single()
 
-      const userData = {
-        ...userProfile,
-        referral_code: settingsData?.referral_code,
+        if (createError) throw createError
+        setKycData(newKyc)
       }
-
-      setUserData(userData)
-
-      // Determine KYC level based on available data
-      let level = 1
-      if (userData.mobile_number && userData.email) {
-        level = 1
-      }
-      if (userData.id_number && userData.home_address && userData.region && userData.town) {
-        level = 2
-      }
-      if (userData.bank_confirmation_letter) {
-        level = 3
-      }
-      setKycLevel(level)
-    } catch (error) {
-      console.error("Error in fetchUserData:", error)
+    } catch (err: any) {
+      console.error("Error fetching KYC data:", err)
+      setError(err.message || "Failed to load KYC data")
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchUserData()
-  }, [user])
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setShowCopyNotification(true)
-    setTimeout(() => {
-      setCopied(false)
-      setShowCopyNotification(false)
-    }, 2000)
-  }
-
-  async function handlePasswordUpdate(formData: FormData) {
-    setPasswordError(null)
-    setPasswordSuccess(null)
-
-    const newPassword = formData.get("newPassword") as string
-    const confirmPassword = formData.get("confirmPassword") as string
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match")
+    if (formData.newPassword !== formData.confirmPassword) {
+      setError("New passwords do not match")
       return
     }
 
-    // Add the session token to the form data
-    if (sessionToken) {
-      formData.append("sessionToken", sessionToken)
-      formData.append("userId", user?.id || "")
+    if (formData.newPassword.length < 6) {
+      setError("New password must be at least 6 characters long")
+      return
     }
 
-    const result = await updatePassword(formData)
+    try {
+      setSaving(true)
+      setError(null)
 
-    if (result.success) {
-      setPasswordSuccess(result.message)
-      // Clear form
-      const form = document.getElementById("password-form") as HTMLFormElement
-      if (form) form.reset()
-    } else {
-      setPasswordError(result.message)
+      const { error } = await supabase.auth.updateUser({
+        password: formData.newPassword,
+      })
+
+      if (error) throw error
+
+      setSuccess("Password updated successfully")
+      setFormData((prev) => ({
+        ...prev,
+        oldPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      }))
+    } catch (err: any) {
+      setError(err.message || "Failed to update password")
+    } finally {
+      setSaving(false)
     }
   }
 
-  const getKycLevelBadge = (level: number) => {
-    const colors = {
-      1: "bg-yellow-500 text-white",
-      2: "bg-blue-500 text-white",
-      3: "bg-green-500 text-white",
+  const handleKYCUpdate = async (level: number) => {
+    if (!user || !kycData) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      const updateData: any = {
+        level: Math.max(level, kycData.level),
+        updated_at: new Date().toISOString(),
+      }
+
+      if (level >= 1) {
+        updateData.mobile_number = formData.mobileNumber
+        updateData.mobile_verified = !!formData.mobileNumber
+      }
+
+      if (level >= 2) {
+        updateData.id_number = formData.idNumber
+        updateData.region = formData.region
+        updateData.town = formData.town
+        updateData.street = formData.street
+      }
+
+      const { data, error } = await supabase
+        .from("user_kyc")
+        .update(updateData)
+        .eq("user_uuid", user.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setKycData(data)
+      setSuccess(`KYC Level ${level} information updated successfully`)
+    } catch (err: any) {
+      setError(err.message || "Failed to update KYC information")
+    } finally {
+      setSaving(false)
     }
-    return <Badge className={colors[level as keyof typeof colors]}>Level {level}</Badge>
   }
 
-  const getKycBenefits = (level: number) => {
-    const benefits = {
-      1: {
-        cashout: "Mobile Number Only",
-        limit: "N$200.00 per month",
-        fee: "5% on Withdrawals",
-      },
-      2: {
-        cashout: "Mobile Number",
-        limit: "N$5,000 per week",
-        fee: "3% per withdrawal",
-      },
-      3: {
-        cashout: "Mobile + Bank EFT",
-        limit: "Mobile: N$5,000/day, EFT: N$50,000/day",
-        fee: "Reduced fees",
-      },
+  const handleDocumentUpload = (type: "id" | "bank") => {
+    // Placeholder for document upload - inactive as requested
+    setError(`Document upload for ${type === "id" ? "ID/Passport" : "Bank Confirmation"} is not yet available`)
+  }
+
+  useEffect(() => {
+    fetchKYCData()
+  }, [user])
+
+  const getKYCProgress = () => {
+    if (!kycData) return 0
+    let progress = 0
+
+    if (kycData.email_verified) progress += 10
+    if (kycData.mobile_verified) progress += 20
+    if (kycData.id_number) progress += 25
+    if (kycData.region && kycData.town && kycData.street) progress += 25
+    if (kycData.id_document_uploaded) progress += 10
+    if (kycData.bank_confirmation_uploaded) progress += 10
+
+    return progress
+  }
+
+  const getKYCLevel = () => {
+    if (!kycData) return 0
+
+    if (
+      kycData.bank_confirmation_uploaded &&
+      kycData.id_document_uploaded &&
+      kycData.id_number &&
+      kycData.region &&
+      kycData.mobile_verified &&
+      kycData.email_verified
+    ) {
+      return 3
     }
-    return benefits[level as keyof typeof benefits]
+    if (
+      kycData.id_document_uploaded &&
+      kycData.id_number &&
+      kycData.region &&
+      kycData.mobile_verified &&
+      kycData.email_verified
+    ) {
+      return 2
+    }
+    if (kycData.mobile_verified && kycData.email_verified) {
+      return 1
+    }
+    return 0
   }
 
   if (loading) {
     return (
-      <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden p-6">
-        <h1 className="text-2xl font-bold">KYC Verification</h1>
-        <p className="text-gray-400 text-sm">Loading your KYC information...</p>
-
-        <div className="mt-8 grid grid-cols-2 gap-6">
-          {[1, 2].map((i) => (
-            <div key={i} className="bg-[#2a2d3a] rounded-lg p-6 h-80 animate-pulse">
-              <div className="h-6 bg-gray-700 rounded w-3/4 mb-4"></div>
-              <div className="h-4 bg-gray-700 rounded w-1/2 mb-2"></div>
-              <div className="h-4 bg-gray-700 rounded w-full mb-6"></div>
-              <div className="h-10 bg-gray-700 rounded w-full mb-4"></div>
-              <div className="h-10 bg-gray-700 rounded w-full"></div>
-            </div>
-          ))}
+      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-slate-700 rounded w-1/4"></div>
+          <div className="h-4 bg-slate-700 rounded w-1/2"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-96 bg-slate-700 rounded"></div>
+            ))}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-[calc(100vh-130px)] bg-[#1c1e26] overflow-hidden">
-      {/* Page Title */}
-      <div className="px-6 pt-4 pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">KYC Verification</h1>
-            <p className="text-gray-400 text-sm">Complete your Know Your Customer verification</p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-400">Current Level:</span>
-            {getKycLevelBadge(kycLevel)}
-          </div>
+    <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">KYC Verification</h1>
+          <p className="text-gray-400 mt-1">Complete your Know Your Customer verification to unlock higher limits</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Shield className="h-5 w-5 text-blue-400" />
+          <Badge variant="outline" className="text-lg px-4 py-2 border-blue-400 text-blue-400">
+            Level {getKYCLevel()}
+          </Badge>
         </div>
       </div>
 
-      {/* KYC Grid */}
-      <div className="px-6">
-        <div
-          className="grid gap-5 h-[calc(100vh-200px)]"
-          style={{
-            transform: "scale(0.85)",
-            transformOrigin: "top left",
-            width: "118%",
-            marginTop: "0.5rem",
-            gridTemplateColumns: "1fr 1fr",
-          }}
-        >
-          {/* Block 1 (Left): Password Change + MFA */}
-          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
-            {/* Setup MFA Section */}
-            <div className="mb-6">
-              <h2 className="text-xl font-bold mb-4 text-center flex items-center justify-center">
-                <Shield className="h-5 w-5 mr-2" />
-                SETUP MFA
-              </h2>
-              <div className="flex justify-center mb-8">
-                <button className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm">
-                  start
-                </button>
+      {/* Progress Overview */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white">KYC Progress</CardTitle>
+          <CardDescription>Complete all levels to unlock maximum benefits</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-300">Verification Progress</span>
+              <span className="text-slate-300">{getKYCProgress()}% Complete</span>
+            </div>
+            <Progress value={getKYCProgress()} className="h-3" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-400">Level 1</div>
+                <div className="text-xs text-slate-400">N$200/month • 5% fee</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-400">Level 2</div>
+                <div className="text-xs text-slate-400">N$5,000/week • 3% fee</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-400">Level 3</div>
+                <div className="text-xs text-slate-400">N$50,000/day • EFT enabled</div>
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
 
-            {/* Divider */}
-            <div className="border-t border-gray-700 my-4"></div>
+      {/* Error/Success Messages */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-            {/* Change Password Section */}
-            <div className="mt-2">
-              <div className="flex justify-between mb-4">
-                <div>
-                  <div className="text-sm text-gray-400">Email :</div>
-                  <div className="text-sm text-gray-400">Country :</div>
+      {success && (
+        <Alert className="border-green-500 bg-green-500/10">
+          <CheckCircle className="h-4 w-4 text-green-500" />
+          <AlertDescription className="text-green-500">{success}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Password Change & MFA */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center">
+              <Lock className="h-5 w-5 mr-2" />
+              Security Settings
+            </CardTitle>
+            <CardDescription>Update your password and enable MFA</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* MFA Section */}
+            <div className="text-center">
+              <h3 className="text-lg font-medium text-white mb-4">Setup MFA</h3>
+              <Button
+                variant="outline"
+                className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                disabled
+              >
+                Coming Soon
+              </Button>
+            </div>
+
+            <div className="border-t border-slate-600 pt-6">
+              <h3 className="text-lg font-medium text-white mb-4">Change Password</h3>
+
+              {/* User Info */}
+              <div className="mb-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Email:</span>
+                  <span className="text-green-400">{user?.email}</span>
                 </div>
-                <div>
-                  <div className="text-sm text-green-500">{userData?.email || user?.email}</div>
-                  <div className="text-sm text-green-500">{userData?.country || "Not set"}</div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Status:</span>
+                  <span className="text-green-400">{user?.email_confirmed_at ? "Verified" : "Unverified"}</span>
                 </div>
               </div>
 
-              <h3 className="text-lg font-medium mb-3">Change Password</h3>
-
-              {passwordError && (
-                <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded-md text-xs mb-3">
-                  {passwordError}
-                </div>
-              )}
-
-              {passwordSuccess && (
-                <div className="bg-green-500/20 border border-green-500 text-green-300 px-3 py-2 rounded-md text-xs mb-3">
-                  {passwordSuccess}
-                </div>
-              )}
-
-              <form id="password-form" action={handlePasswordUpdate} className="space-y-3 mb-4">
-                <input
-                  type="password"
-                  name="oldPassword"
-                  placeholder="Old Password"
-                  className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
-                  required
-                />
-                <input
-                  type="password"
-                  name="newPassword"
-                  placeholder="New Password"
-                  className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
-                  required
-                />
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  placeholder="Confirm New Password"
-                  className="w-full p-3 rounded bg-[#f5f5f5] text-[#c5c6c8] border-0"
-                  required
-                />
-
-                <div className="flex-grow"></div>
-
-                <div className="flex justify-center mt-6">
+              <form onSubmit={handlePasswordChange} className="space-y-4">
+                <div className="relative">
+                  <Label htmlFor="oldPassword" className="text-slate-300">
+                    Current Password
+                  </Label>
+                  <Input
+                    id="oldPassword"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.oldPassword}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, oldPassword: e.target.value }))}
+                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    required
+                  />
                   <button
-                    type="submit"
-                    className="bg-[#f5f5f5] hover:bg-gray-200 text-black px-6 py-2 rounded-md text-sm"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-8 text-slate-400 hover:text-slate-200"
                   >
-                    Confirm
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-              </form>
-            </div>
-          </div>
 
-          {/* Block 2 (Right): KYC Levels */}
-          <div className="bg-[#2a2d3a] rounded-lg p-5 flex flex-col">
-            <h2 className="text-xl font-bold mb-4 text-center underline">KYC VERIFICATION LEVELS</h2>
-
-            <div className="space-y-6 flex-1">
-              {/* Level 1 KYC */}
-              <div
-                className={`p-4 rounded-lg border-2 ${kycLevel >= 1 ? "border-green-500 bg-green-500/10" : "border-gray-600"}`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <Mail className="h-4 w-4" />
-                    <span className="font-semibold">Level 1 KYC</span>
-                  </div>
-                  {kycLevel >= 1 ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-yellow-500" />
-                  )}
-                </div>
-
-                <div className="text-sm space-y-2">
-                  <div>
-                    <strong>Requirements:</strong> Email + Mobile Number
-                  </div>
-                  <div>
-                    <strong>Benefits:</strong>
-                  </div>
-                  <ul className="text-xs ml-4 space-y-1">
-                    <li>• Cashouts to Mobile Number Only</li>
-                    <li>• Limit: N$200.00 per month</li>
-                    <li>• Fee: 5% on Withdrawals</li>
-                  </ul>
-                </div>
-
-                <div className="mt-3 space-y-2">
+                <div className="relative">
+                  <Label htmlFor="newPassword" className="text-slate-300">
+                    New Password
+                  </Label>
                   <Input
-                    placeholder="Mobile Number"
-                    value={userData?.mobile_number || ""}
-                    className="bg-[#f5f5f5] text-[#c5c6c8] text-sm"
-                    disabled
+                    id="newPassword"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.newPassword}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, newPassword: e.target.value }))}
+                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    required
                   />
                 </div>
+
+                <div className="relative">
+                  <Label htmlFor="confirmPassword" className="text-slate-300">
+                    Confirm New Password
+                  </Label>
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-8 text-slate-400 hover:text-slate-200"
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={saving}>
+                  {saving ? "Updating..." : "Update Password"}
+                </Button>
+              </form>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* KYC Level 1 */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center">
+              <Mail className="h-5 w-5 mr-2" />
+              KYC Level 1{getKYCLevel() >= 1 && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
+            </CardTitle>
+            <CardDescription>Basic verification - Email & Mobile</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-slate-700 p-4 rounded-lg">
+              <h4 className="font-medium text-white mb-2">Benefits</h4>
+              <ul className="text-sm text-slate-300 space-y-1">
+                <li>• Mobile cashouts only</li>
+                <li>• N$200 per month limit</li>
+                <li>• 5% withdrawal fee</li>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="email" className="text-slate-300">
+                  Email Address
+                </Label>
+                <div className="flex items-center mt-1">
+                  <Input
+                    id="email"
+                    type="email"
+                    value={user?.email || ""}
+                    disabled
+                    className="bg-slate-700 border-slate-600 text-slate-200"
+                  />
+                  {user?.email_confirmed_at && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
+                </div>
               </div>
 
-              {/* Level 2 KYC */}
-              <div
-                className={`p-4 rounded-lg border-2 ${kycLevel >= 2 ? "border-green-500 bg-green-500/10" : "border-gray-600"}`}
+              <div>
+                <Label htmlFor="mobile" className="text-slate-300">
+                  Mobile Number
+                </Label>
+                <div className="flex items-center mt-1">
+                  <Input
+                    id="mobile"
+                    type="tel"
+                    value={formData.mobileNumber}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, mobileNumber: e.target.value }))}
+                    placeholder="+264 81 123 4567"
+                    className="bg-slate-700 border-slate-600 text-slate-200"
+                  />
+                  {kycData?.mobile_verified && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
+                </div>
+              </div>
+
+              <Button
+                onClick={() => handleKYCUpdate(1)}
+                className="w-full bg-green-600 hover:bg-green-700"
+                disabled={saving || !formData.mobileNumber}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <User className="h-4 w-4" />
-                    <span className="font-semibold">Level 2 KYC</span>
-                  </div>
-                  {kycLevel >= 2 ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-yellow-500" />
-                  )}
-                </div>
+                {saving ? "Updating..." : "Complete Level 1"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-                <div className="text-sm space-y-2">
-                  <div>
-                    <strong>Requirements:</strong> Level 1 + Personal Info + ID Document
-                  </div>
-                  <div>
-                    <strong>Benefits:</strong>
-                  </div>
-                  <ul className="text-xs ml-4 space-y-1">
-                    <li>• Cashout to Mobile - N$5,000 per week</li>
-                    <li>• Fee: 3% per withdrawal</li>
-                  </ul>
-                </div>
+        {/* KYC Level 2 */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center">
+              <User className="h-5 w-5 mr-2" />
+              KYC Level 2{getKYCLevel() >= 2 && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
+            </CardTitle>
+            <CardDescription>Enhanced verification - Personal Info & ID</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-slate-700 p-4 rounded-lg">
+              <h4 className="font-medium text-white mb-2">Benefits</h4>
+              <ul className="text-sm text-slate-300 space-y-1">
+                <li>• Mobile cashouts</li>
+                <li>• N$5,000 per week limit</li>
+                <li>• 3% withdrawal fee</li>
+              </ul>
+            </div>
 
-                <div className="mt-3 space-y-2">
-                  <Input placeholder="ID Number" className="bg-[#f5f5f5] text-[#c5c6c8] text-sm" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input placeholder="Region" className="bg-[#f5f5f5] text-[#c5c6c8] text-sm" />
-                    <Input placeholder="Town" className="bg-[#f5f5f5] text-[#c5c6c8] text-sm" />
-                  </div>
-                  <Input placeholder="Street Address" className="bg-[#f5f5f5] text-[#c5c6c8] text-sm" />
-                  <Button className="w-full bg-gray-500 text-gray-300 cursor-not-allowed" disabled>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload ID/Passport (Coming Soon)
-                  </Button>
-                </div>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="idNumber" className="text-slate-300">
+                  ID Number
+                </Label>
+                <Input
+                  id="idNumber"
+                  value={formData.idNumber}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, idNumber: e.target.value }))}
+                  placeholder="Enter your ID number"
+                  className="bg-slate-700 border-slate-600 text-slate-200"
+                />
               </div>
 
-              {/* Level 3 KYC */}
-              <div
-                className={`p-4 rounded-lg border-2 ${kycLevel >= 3 ? "border-green-500 bg-green-500/10" : "border-gray-600"}`}
+              <div>
+                <Label htmlFor="region" className="text-slate-300">
+                  Region
+                </Label>
+                <Select
+                  value={formData.region}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, region: value }))}
+                >
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200">
+                    <SelectValue placeholder="Select your region" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-700 border-slate-600 text-slate-200">
+                    <SelectItem value="khomas" className="text-slate-200">
+                      Khomas
+                    </SelectItem>
+                    <SelectItem value="erongo" className="text-slate-200">
+                      Erongo
+                    </SelectItem>
+                    <SelectItem value="otjozondjupa" className="text-slate-200">
+                      Otjozondjupa
+                    </SelectItem>
+                    <SelectItem value="oshana" className="text-slate-200">
+                      Oshana
+                    </SelectItem>
+                    <SelectItem value="omusati" className="text-slate-200">
+                      Omusati
+                    </SelectItem>
+                    <SelectItem value="oshikoto" className="text-slate-200">
+                      Oshikoto
+                    </SelectItem>
+                    <SelectItem value="ohangwena" className="text-slate-200">
+                      Ohangwena
+                    </SelectItem>
+                    <SelectItem value="caprivi" className="text-slate-200">
+                      Zambezi
+                    </SelectItem>
+                    <SelectItem value="kavango_east" className="text-slate-200">
+                      Kavango East
+                    </SelectItem>
+                    <SelectItem value="kavango_west" className="text-slate-200">
+                      Kavango West
+                    </SelectItem>
+                    <SelectItem value="kunene" className="text-slate-200">
+                      Kunene
+                    </SelectItem>
+                    <SelectItem value="omaheke" className="text-slate-200">
+                      Omaheke
+                    </SelectItem>
+                    <SelectItem value="hardap" className="text-slate-200">
+                      Hardap
+                    </SelectItem>
+                    <SelectItem value="karas" className="text-slate-200">
+                      Karas
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="town" className="text-slate-300">
+                  Town/City
+                </Label>
+                <Input
+                  id="town"
+                  value={formData.town}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, town: e.target.value }))}
+                  placeholder="Enter your town/city"
+                  className="bg-slate-700 border-slate-600 text-slate-200"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="street" className="text-slate-300">
+                  Street Address
+                </Label>
+                <Textarea
+                  id="street"
+                  value={formData.street}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
+                  placeholder="Enter your street address"
+                  className="bg-slate-700 border-slate-600 text-slate-200"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label className="text-slate-300">ID/Passport Document</Label>
+                <Button
+                  onClick={() => handleDocumentUpload("id")}
+                  variant="outline"
+                  className="w-full bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                  disabled
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload ID Document (Coming Soon)
+                </Button>
+              </div>
+
+              <Button
+                onClick={() => handleKYCUpdate(2)}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                disabled={
+                  saving ||
+                  getKYCLevel() < 1 ||
+                  !formData.idNumber ||
+                  !formData.region ||
+                  !formData.town ||
+                  !formData.street
+                }
               >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <CreditCard className="h-4 w-4" />
-                    <span className="font-semibold">Level 3 KYC</span>
-                  </div>
-                  {kycLevel >= 3 ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-yellow-500" />
-                  )}
-                </div>
+                {saving ? "Updating..." : "Complete Level 2"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-                <div className="text-sm space-y-2">
-                  <div>
-                    <strong>Requirements:</strong> Level 1+2 + Bank Confirmation Letter
-                  </div>
-                  <div>
-                    <strong>Benefits:</strong>
-                  </div>
-                  <ul className="text-xs ml-4 space-y-1">
-                    <li>• Mobile: N$5,000 per day</li>
-                    <li>• Bank EFT: N$50,000 per day</li>
-                    <li>• Reduced fees</li>
-                  </ul>
-                </div>
+      {/* KYC Level 3 */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center">
+            <CreditCard className="h-5 w-5 mr-2" />
+            KYC Level 3 - Premium Verification
+            {getKYCLevel() >= 3 && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
+          </CardTitle>
+          <CardDescription>Full verification - Bank Confirmation Required</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-slate-700 p-4 rounded-lg">
+              <h4 className="font-medium text-white mb-2">Premium Benefits</h4>
+              <ul className="text-sm text-slate-300 space-y-1">
+                <li>• Mobile cashouts: N$5,000/day</li>
+                <li>• Bank EFT transfers: N$50,000/day</li>
+                <li>• Reduced fees</li>
+                <li>• Priority support</li>
+              </ul>
+            </div>
 
-                <div className="mt-3">
-                  <Button className="w-full bg-gray-500 text-gray-300 cursor-not-allowed" disabled>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Bank Letter (Coming Soon)
-                  </Button>
-                </div>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-slate-300">Bank Confirmation Letter</Label>
+                <p className="text-xs text-slate-400 mb-2">Upload an official bank confirmation letter or statement</p>
+                <Button
+                  onClick={() => handleDocumentUpload("bank")}
+                  variant="outline"
+                  className="w-full bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                  disabled
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Bank Document (Coming Soon)
+                </Button>
               </div>
+
+              <Button className="w-full bg-purple-600 hover:bg-purple-700" disabled={getKYCLevel() < 2}>
+                Complete Level 3 (Coming Soon)
+              </Button>
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
+
+      {/* Requirements Summary */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white">KYC Requirements Summary</CardTitle>
+          <CardDescription>Complete overview of all verification levels</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-3">
+              <h4 className="font-medium text-white flex items-center">
+                <div className="w-6 h-6 rounded-full bg-green-500 text-white text-xs flex items-center justify-center mr-2">
+                  1
+                </div>
+                Level 1 Requirements
+              </h4>
+              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+                <li className="flex items-center">
+                  {user?.email_confirmed_at ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  Email verification
+                </li>
+                <li className="flex items-center">
+                  {kycData?.mobile_verified ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  Mobile number
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-white flex items-center">
+                <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center mr-2">
+                  2
+                </div>
+                Level 2 Requirements
+              </h4>
+              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+                <li className="flex items-center">
+                  {kycData?.id_number ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  ID Number
+                </li>
+                <li className="flex items-center">
+                  {kycData?.region && kycData?.town && kycData?.street ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  Home Address
+                </li>
+                <li className="flex items-center">
+                  {kycData?.id_document_uploaded ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  ID Document Upload
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="font-medium text-white flex items-center">
+                <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center mr-2">
+                  3
+                </div>
+                Level 3 Requirements
+              </h4>
+              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+                <li className="flex items-center">
+                  {kycData?.bank_confirmation_uploaded ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  )}
+                  Bank Confirmation
+                </li>
+                <li className="text-xs text-slate-400">+ All Level 1 & 2 requirements</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
