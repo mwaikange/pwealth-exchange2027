@@ -20,7 +20,7 @@ interface VestingSlot {
   level: number | null
   slot_number: number | null
   amount: number
-  status: "vest" | "locked" | "claim" | "claimable" | "claimed"
+  status: "locked" | "claimable" | "claimed"
   start_time: string | null
   end_time: string | null
   claimed_at: string | null
@@ -112,11 +112,9 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
     // Map database status to UI status
     switch (slot.status) {
-      case "vest":
       case "locked":
         status = "in_progress"
         break
-      case "claim":
       case "claimable":
         status = "claimable"
         break
@@ -180,8 +178,8 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       console.log("✅ Vesting data refreshed:", {
         totalSlots: processedSlots.length,
         slots: processedSlots,
-        locked: processedSlots.filter((s) => s.status === "locked" || s.status === "vest").length,
-        claimable: processedSlots.filter((s) => s.status === "claim" || s.status === "claimable").length,
+        locked: processedSlots.filter((s) => s.status === "locked").length,
+        claimable: processedSlots.filter((s) => s.status === "claimable").length,
         claimed: processedSlots.filter((s) => s.status === "claimed").length,
       })
     } catch (err: any) {
@@ -229,6 +227,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
       console.log(`📝 Vesting ${amount} shares in Level ${level}, Slot ${slotNumber} (UI index ${slotIndex})`)
 
+      // Call the unified vest_shares function
       const { data, error } = await supabase.rpc("vest_shares", {
         p_user_uuid: user.id,
         p_level: level,
@@ -239,6 +238,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error("Error vesting shares:", error)
         throw new Error(`Failed to vest shares: ${error.message}`)
+      }
+
+      // Check if the function returned success
+      if (data && !data.success) {
+        console.error("Vesting failed:", data.message)
+        throw new Error(data.message || "Failed to vest shares")
       }
 
       console.log("✅ Shares vested successfully:", data)
@@ -275,6 +280,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Failed to claim shares: ${error.message}`)
       }
 
+      // Check if the function returned success
+      if (data && !data.success) {
+        console.error("Claiming failed:", data.message)
+        throw new Error(data.message || "Failed to claim shares")
+      }
+
       console.log("✅ Shares claimed successfully:", data)
 
       // Refresh data
@@ -309,6 +320,12 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Failed to vest shares: ${error.message}`)
       }
 
+      // Check if the function returned success
+      if (data && !data.success) {
+        console.error("Vesting failed:", data.message)
+        throw new Error(data.message || "Failed to vest shares")
+      }
+
       console.log("✅ Shares vested successfully:", data)
 
       // Refresh data
@@ -322,13 +339,13 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
   const getTotalVestingInProgress = () => {
     return vestingSlots
-      .filter((slot) => slot.status === "locked" || slot.status === "vest")
+      .filter((slot) => slot.status === "locked")
       .reduce((sum, slot) => sum + safeNumber(slot.amount), 0)
   }
 
   const getTotalClaimableShares = () => {
     return vestingSlots
-      .filter((slot) => slot.status === "claim" || slot.status === "claimable")
+      .filter((slot) => slot.status === "claimable")
       .reduce((sum, slot) => sum + safeNumber(slot.amount), 0)
   }
 
@@ -368,7 +385,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
   }
 
   const getClaimableSlots = () => {
-    return vestingSlots.filter((slot) => slot.status === "claim" || slot.status === "claimable")
+    return vestingSlots.filter((slot) => slot.status === "claimable")
   }
 
   const claimSlot = async (slotId: string) => {

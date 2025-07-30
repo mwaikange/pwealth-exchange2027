@@ -9,8 +9,8 @@ import { v4 as uuidv4 } from "uuid"
 type MarketOrder = {
   id: string
   total_amount?: number
+  quantity?: number
   shares_remaining?: number
-  shares_available?: number
   price_per_share: number
   amount_filled?: number
   status: string
@@ -60,7 +60,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   const [marketBuyOrders, setMarketBuyOrders] = useState<MarketOrder[]>([])
   const [userSellOrders, setUserSellOrders] = useState<UserOrder[]>([])
   const [userBuyOrders, setUserBuyOrders] = useState<UserOrder[]>([])
-  const [currentSharePrice, setCurrentSharePrice] = useState<number>(108.2)
+  const [currentSharePrice, setCurrentSharePrice] = useState<number>(99.68)
   const [exchangeStatus, setExchangeStatus] = useState<ExchangeStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,19 +72,19 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.rpc("get_current_share_price")
       if (error) throw error
 
-      const price = Number(data) || 108.2
+      const price = Number(data) || 99.68
       // Additional NaN protection
-      const safePrice = isNaN(price) ? 108.2 : price
+      const safePrice = isNaN(price) ? 99.68 : price
       setCurrentSharePrice(safePrice)
 
       console.log("Current share price fetched:", safePrice)
     } catch (err) {
       console.error("Error fetching current price:", err)
-      setCurrentSharePrice(108.2) // Fallback price
+      setCurrentSharePrice(99.68) // Fallback price
     }
   }
 
-  // FIXED: Fetch exchange status using correct function and column names
+  // Fetch exchange status using correct function and column names
   const fetchExchangeStatus = async () => {
     try {
       const { data, error } = await supabase.rpc("get_exchange_status")
@@ -115,7 +115,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       setExchangeStatus({
         is_trading_open: false,
         status_message: "Exchange status unavailable",
-        current_price: 108.2,
+        current_price: 99.68,
         current_week_start: new Date().toISOString(),
         last_price_update: new Date().toISOString(),
         last_updated: new Date().toISOString(),
@@ -133,11 +133,11 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
   // Fetch market orders - ONLY ACTIVE ORDERS (not fully filled/matched)
   const fetchMarketOrders = async () => {
     try {
-      // Fetch market sell orders - ONLY available and partial (NOT matched, completed, expired, cancelled)
+      // Fetch market sell orders - ONLY open and partial (NOT matched, expired, cancelled)
       const { data: sellOrders, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
-        .in("status", ["available", "partial"]) // Only active sell orders
+        .in("status", ["open", "partial"]) // Only active sell orders
         .gt("shares_remaining", 0) // Ensure shares_remaining is not 0 or null
         .not("shares_remaining", "is", null) // Exclude null shares_remaining
         .order("created_at", { ascending: false })
@@ -148,24 +148,24 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       // Filter out any orders with NaN or invalid data
       const validSellOrders = (sellOrders || []).filter((order) => {
         const sharesRemaining = Number(order.shares_remaining)
-        const sharesAvailable = Number(order.shares_available)
+        const quantity = Number(order.quantity)
         const pricePerShare = Number(order.price_per_share)
 
         return (
           !isNaN(sharesRemaining) &&
-          !isNaN(sharesAvailable) &&
+          !isNaN(quantity) &&
           !isNaN(pricePerShare) &&
           sharesRemaining > 0 &&
-          sharesAvailable > 0 &&
+          quantity > 0 &&
           pricePerShare > 0
         )
       })
 
-      // Fetch market buy orders - ONLY pending and partial (NOT filled, completed, cancelled)
+      // Fetch market buy orders - ONLY open and partial (NOT filled, expired, cancelled)
       const { data: buyOrders, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
-        .in("status", ["pending", "partial"]) // Only active buy orders
+        .in("status", ["open", "partial"]) // Only active buy orders
         .gt("total_amount", 0) // Ensure total_amount is not 0 or null
         .not("total_amount", "is", null) // Exclude null amounts
         .order("created_at", { ascending: false })
@@ -219,10 +219,10 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       // Filter out invalid data but keep all statuses
       const validUserSells = (userSells || []).filter((order) => {
-        const sharesAvailable = Number(order.shares_available)
+        const quantity = Number(order.quantity)
         const pricePerShare = Number(order.price_per_share)
 
-        return !isNaN(sharesAvailable) && !isNaN(pricePerShare) && sharesAvailable > 0 && pricePerShare > 0
+        return !isNaN(quantity) && !isNaN(pricePerShare) && quantity > 0 && pricePerShare > 0
       })
 
       // Fetch user buy orders - ALL STATUSES for user history
@@ -276,7 +276,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     await fetchExchangeStatus()
   }
 
-  // Place buy order - check if exchange is open
+  // Place buy order - check if exchange is open (NO expires_at)
   const placeBuyOrder = async (amount: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
@@ -303,14 +303,14 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       user_uuid: user.id,
       total_amount: safeAmount,
       price_per_share: currentSharePrice,
-      status: "pending",
+      status: "open",
       created_at: new Date().toISOString(),
       amount_filled: 0,
     }
     setUserBuyOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // 2. Call Supabase
+      // 2. Call Supabase (NO expires_at parameter)
       const { data, error } = await supabase.rpc("place_buy_order", {
         p_user_uuid: user.id,
         p_total_amount: safeAmount,
@@ -333,7 +333,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place sell order - check if exchange is open
+  // Place sell order - check if exchange is open (NO expires_at)
   const placeSellOrder = async (shares: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
@@ -358,16 +358,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
-      shares_available: safeShares,
+      quantity: safeShares,
       shares_remaining: safeShares,
       price_per_share: currentSharePrice,
-      status: "available",
+      status: "open",
       created_at: new Date().toISOString(),
     }
     setUserSellOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // 2. Call Supabase
+      // 2. Call Supabase (NO expires_at parameter)
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
         p_shares: safeShares,
