@@ -29,7 +29,6 @@ export function OverviewComponent() {
     holdWalletPreHold = 0,
     holdWalletPostHold = 0,
     cashoutWalletBalance = 0,
-    totalCashBalance = 0,
     loading: walletLoading,
     error: walletError,
   } = useWallet() || {}
@@ -45,11 +44,10 @@ export function OverviewComponent() {
     error: vestingError,
   } = useVesting() || {}
 
-  // Calculate total share value
+  // Calculate totals - FIXED: Total Cash Balance = Buy Wallet + Cashout Wallet
+  const totalCashBalance = buyWalletBalance + cashoutWalletBalance
   const totalShares = holdWalletPreHold + holdWalletPostHold
   const totalShareValue = totalShares * currentSharePrice
-
-  // Calculate total portfolio value (cash + shares)
   const totalPortfolioValue = totalCashBalance + totalShareValue
 
   // Loading state
@@ -75,7 +73,7 @@ export function OverviewComponent() {
     <div className="p-6 space-y-6">
       {/* Top 4 Cards with Colors */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Cash Balance - Green */}
+        {/* Total Cash Balance - Green - FIXED CALCULATION */}
         <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center">

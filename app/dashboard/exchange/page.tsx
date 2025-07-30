@@ -177,31 +177,31 @@ export default function ExchangePage() {
 
   const getStatusBadge = (order: any) => {
     const actualStatus = getActualStatus(order)
-    const isExpired = actualStatus === "expired"
-    const isCancelled = actualStatus === "cancelled"
 
-    // Special styling for expired and cancelled orders - black/grey
-    if (isExpired || isCancelled) {
-      return (
-        <Badge className="bg-gray-500 text-gray-300 hover:bg-gray-500">
-          {actualStatus.replace("_", " ").toUpperCase()}
-        </Badge>
-      )
+    // Apply specific colors for each status
+    const getStatusBadgeClass = (status: string): string => {
+      switch (status.toLowerCase()) {
+        case "expired":
+        case "cancelled":
+          return "bg-gray-700 text-white hover:bg-gray-700" // Black/Grey
+        case "available":
+          return "bg-green-500 text-white hover:bg-green-600" // Green
+        case "partial":
+          return "bg-orange-500 text-white hover:bg-orange-600" // Orange
+        case "matched":
+          return "bg-yellow-600 text-white hover:bg-yellow-700" // Olive/Yellow
+        case "completed":
+          return "bg-blue-500 text-white hover:bg-blue-600" // Blue
+        case "filled":
+          return "bg-purple-500 text-white hover:bg-purple-600" // Purple
+        case "pending":
+          return "bg-yellow-500 text-white hover:bg-yellow-600" // Yellow
+        default:
+          return "bg-gray-500 text-white hover:bg-gray-600" // Fallback
+      }
     }
 
-    const variants = {
-      pending: "secondary",
-      partial: "outline",
-      filled: "default",
-      completed: "default",
-      available: "default",
-      matched: "default",
-      unknown: "secondary",
-    } as const
-
-    const variant = variants[actualStatus as keyof typeof variants] || "secondary"
-
-    return <Badge variant={variant}>{actualStatus.replace("_", " ").toUpperCase()}</Badge>
+    return <Badge className={getStatusBadgeClass(actualStatus)}>{actualStatus.replace("_", " ").toUpperCase()}</Badge>
   }
 
   const getProgressBar = (order: any, orderType: "buy" | "sell") => {
@@ -216,7 +216,6 @@ export default function ExchangePage() {
     let refundText = ""
 
     if (orderType === "buy") {
-      // Use ACTUAL schema columns
       const amountFilled = Number(order.amount_filled) || 0
       const totalAmount = Number(order.total_amount) || 0
       const sharesRequested = Number(order.shares_requested) || 0
@@ -229,7 +228,6 @@ export default function ExchangePage() {
         refundText = ` - Refunded ${formatCurrency(order.refunded_amount)}`
       }
     } else {
-      // Use ACTUAL schema columns
       const sharesRemaining = Number(order.shares_remaining) || 0
       const sharesAvailable = Number(order.shares_available) || 0
       const sharesSold = sharesAvailable - sharesRemaining
@@ -241,14 +239,14 @@ export default function ExchangePage() {
       }
     }
 
-    // Progress bar colors - ONLY CHANGE THESE COLORS
+    // Progress bar colors
     let progressBarClass = ""
     if (isExpired || isCancelled) {
       progressBarClass = "opacity-50 [&>div]:bg-gray-500" // Grey for expired/cancelled
     } else if (orderType === "buy") {
       progressBarClass = "[&>div]:bg-green-500" // GREEN for buy orders
     } else {
-      progressBarClass = "[&>div]:bg-yellow-500" // YELLOW for sell orders (keep as is)
+      progressBarClass = "[&>div]:bg-yellow-500" // YELLOW for sell orders
     }
 
     return (
