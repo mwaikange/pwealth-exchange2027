@@ -178,33 +178,38 @@ export default function ExchangePage() {
   const getStatusBadge = (order: any) => {
     const actualStatus = getActualStatus(order)
     const isExpired = actualStatus === "expired"
+    const isCancelled = actualStatus === "cancelled"
+
+    // Special styling for expired and cancelled orders
+    if (isExpired || isCancelled) {
+      return (
+        <Badge className="bg-gray-500 text-gray-300 hover:bg-gray-500">
+          {actualStatus.replace("_", " ").toUpperCase()}
+        </Badge>
+      )
+    }
 
     const variants = {
       pending: "secondary",
       partial: "outline",
       filled: "default",
       completed: "default",
-      cancelled: "destructive",
       available: "default",
       matched: "default",
-      expired: "destructive",
       unknown: "secondary",
     } as const
 
-    const baseClasses = isExpired ? "bg-gray-500 text-gray-300 opacity-60" : ""
     const variant = variants[actualStatus as keyof typeof variants] || "secondary"
 
-    return (
-      <Badge variant={variant} className={baseClasses}>
-        {actualStatus.replace("_", " ").toUpperCase()}
-      </Badge>
-    )
+    return <Badge variant={variant}>{actualStatus.replace("_", " ").toUpperCase()}</Badge>
   }
 
   const getProgressBar = (order: any, orderType: "buy" | "sell") => {
     if (!order) return null
 
-    const isExpired = order.status === "expired"
+    const actualStatus = getActualStatus(order)
+    const isExpired = actualStatus === "expired"
+    const isCancelled = actualStatus === "cancelled"
 
     let progress = 0
     let filledText = ""
@@ -226,7 +231,7 @@ export default function ExchangePage() {
     } else {
       // Use ACTUAL schema columns
       const sharesRemaining = Number(order.shares_remaining) || 0
-      const sharesAvailable = Number(order.shares_available) || 0 // CORRECT column name
+      const sharesAvailable = Number(order.shares_available) || 0
       const sharesSold = sharesAvailable - sharesRemaining
       progress = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
       filledText = `Sold: ${formatShares(sharesSold)} / ${formatShares(sharesAvailable)} shares`
@@ -236,13 +241,20 @@ export default function ExchangePage() {
       }
     }
 
+    // Progress bar colors based on status and order type
+    let progressBarClass = ""
+    if (isExpired || isCancelled) {
+      progressBarClass = "opacity-50 [&>div]:bg-gray-500"
+    } else if (orderType === "buy") {
+      progressBarClass = "[&>div]:bg-green-500" // Green for buy orders
+    } else {
+      progressBarClass = "[&>div]:bg-yellow-500" // Yellow for sell orders
+    }
+
     return (
       <div className="space-y-1">
-        <Progress
-          value={progress}
-          className={`h-2 ${isExpired ? "opacity-50" : ""} ${isExpired ? "[&>div]:bg-gray-500" : "[&>div]:bg-yellow-500"}`}
-        />
-        <div className={`text-xs ${isExpired ? "text-gray-500" : "text-slate-400"}`}>
+        <Progress value={progress} className={`h-2 ${progressBarClass}`} />
+        <div className={`text-xs ${isExpired || isCancelled ? "text-gray-500" : "text-slate-400"}`}>
           {filledText}
           {refundText && <span className="text-yellow-400">{refundText}</span>}
         </div>
@@ -610,7 +622,7 @@ export default function ExchangePage() {
               ) : (
                 marketSellOrders.slice(0, 10).map((order) => {
                   const sharesRemaining = Number(order.shares_remaining) || 0
-                  const sharesAvailable = Number(order.shares_available) || 0 // CORRECT column name
+                  const sharesAvailable = Number(order.shares_available) || 0
                   const sharesSold = sharesAvailable - sharesRemaining
                   const filledPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
 
@@ -653,23 +665,15 @@ export default function ExchangePage() {
                 <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
               ) : (
                 userBuyOrders.map((order) => {
-                  const isExpired = order.status === "expired"
                   const sharesRequested = Number(order.shares_requested) || 0
 
                   return (
-                    <div
-                      key={order.id}
-                      className={`p-3 border border-slate-600 rounded-lg bg-slate-700 ${isExpired ? "opacity-60" : ""}`}
-                    >
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className={`font-medium ${isExpired ? "text-gray-400" : "text-slate-100"}`}>
-                            {formatCurrency(order.total_amount)}
-                          </span>
-                          <span className={`text-sm ml-2 ${isExpired ? "text-gray-500" : "text-slate-400"}`}>
-                            ({formatShares(sharesRequested)} shares)
-                          </span>
-                          <div className={`text-xs mt-1 ${isExpired ? "text-gray-500" : "text-slate-500"}`}>
+                          <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                          <span className="text-sm ml-2 text-slate-400">({formatShares(sharesRequested)} shares)</span>
+                          <div className="text-xs mt-1 text-slate-500">
                             {order.buy_ref || `Buy_${order.id.slice(-6)}`}
                           </div>
                         </div>
@@ -697,22 +701,15 @@ export default function ExchangePage() {
                 <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
                 userSellOrders.map((order) => {
-                  const isExpired = order.status === "expired"
-
                   return (
-                    <div
-                      key={order.id}
-                      className={`p-3 border border-slate-600 rounded-lg bg-slate-700 ${isExpired ? "opacity-60" : ""}`}
-                    >
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <span className={`font-medium ${isExpired ? "text-gray-400" : "text-slate-100"}`}>
-                            {formatShares(order.shares_available)} shares {/* CORRECT column name */}
+                          <span className="font-medium text-slate-100">
+                            {formatShares(order.shares_available)} shares
                           </span>
-                          <span className={`text-sm ml-2 ${isExpired ? "text-gray-500" : "text-slate-400"}`}>
-                            @ {formatCurrency(order.price_per_share)}
-                          </span>
-                          <div className={`text-xs mt-1 ${isExpired ? "text-gray-500" : "text-slate-500"}`}>
+                          <span className="text-sm ml-2 text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                          <div className="text-xs mt-1 text-slate-500">
                             {order.sell_ref || `Sell_${order.id.slice(-6)}`}
                           </div>
                         </div>

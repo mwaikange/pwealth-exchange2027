@@ -2,285 +2,203 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/contexts/wallet-context"
 import { usePrice } from "@/contexts/price-context"
-import { supabase } from "@/lib/supabase-singleton"
-import { useAuth } from "@/contexts/auth-context"
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { useVesting } from "@/contexts/vesting-context"
+import { useRouter } from "next/navigation"
+import { TrendingUp, DollarSign, PieChart, ArrowDownRight, Wallet, Gift, Target, Clock } from "lucide-react"
+import { OverviewSkeleton } from "@/components/skeletons/overview-skeleton"
 
-interface VestingStats {
-  totalLockedShares: number
-  totalClaimableShares: number
-  totalClaimedShares: number
-  totalShares: number
-  averageSharesPerUser: number
+// Helper functions
+const formatCurrency = (value: number): string => {
+  return `N$${Number(value).toFixed(2)}`
+}
+
+const formatShares = (value: number): string => {
+  return Number(value).toFixed(4)
 }
 
 export function OverviewComponent() {
-  const { user } = useAuth()
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(true)
+
   const {
     buyWalletBalance = 0,
     holdWalletPreHold = 0,
     holdWalletPostHold = 0,
     cashoutWalletBalance = 0,
+    totalCashBalance = 0,
     loading: walletLoading,
     error: walletError,
-  } = useWallet()
+  } = useWallet() || {}
 
-  const { priceData, loading: priceLoading, error: priceError } = usePrice()
+  const { currentSharePrice = 99.68, loading: priceLoading, error: priceError } = usePrice() || {}
 
-  const [stats, setStats] = useState<VestingStats>({
-    totalLockedShares: 0,
-    totalClaimableShares: 0,
-    totalClaimedShares: 0,
-    totalShares: 0,
-    averageSharesPerUser: 0,
-  })
-  const [statsLoading, setStatsLoading] = useState(false)
-  const [statsError, setStatsError] = useState<string | null>(null)
+  const {
+    vestingSlots = [],
+    totalLockedShares = 0,
+    totalClaimableShares = 0,
+    totalClaimedShares = 0,
+    loading: vestingLoading,
+    error: vestingError,
+  } = useVesting() || {}
 
-  // Helper function to safely convert to number
-  const safeNumber = (value: any): number => {
-    const num = Number(value)
-    return isNaN(num) ? 0 : num
-  }
+  // Calculate total share value
+  const totalShares = holdWalletPreHold + holdWalletPostHold
+  const totalShareValue = totalShares * currentSharePrice
 
-  // Helper function to safely format numbers
-  const safeToFixed = (value: any, decimals = 2): string => {
-    const num = safeNumber(value)
-    return num.toFixed(decimals)
-  }
+  // Calculate total portfolio value (cash + shares)
+  const totalPortfolioValue = totalCashBalance + totalShareValue
 
-  // Fetch vesting statistics
-  const fetchStats = async () => {
-    if (!user) return
-
-    try {
-      setStatsLoading(true)
-      setStatsError(null)
-
-      console.log("📊 Fetching vesting statistics...")
-
-      // Fetch user's vesting data using the correct column name 'amount'
-      const { data: vestingData, error: vestingError } = await supabase
-        .from("pivot_vesting")
-        .select("amount, status")
-        .eq("user_uuid", user.id)
-
-      if (vestingError) {
-        console.error("Error fetching vesting data:", vestingError)
-        throw new Error(`Error fetching vesting data: ${vestingError.message}`)
-      }
-
-      // Process vesting data with safe number conversion
-      const processedData = (vestingData || []).map((item) => ({
-        ...item,
-        amount: safeNumber(item.amount),
-      }))
-
-      // Calculate statistics
-      const totalLockedShares = processedData
-        .filter((item) => item.status === "locked")
-        .reduce((sum, item) => sum + item.amount, 0)
-
-      const totalClaimableShares = processedData
-        .filter((item) => item.status === "claimable" || item.status === "claim")
-        .reduce((sum, item) => sum + item.amount, 0)
-
-      const totalClaimedShares = processedData
-        .filter((item) => item.status === "claimed")
-        .reduce((sum, item) => sum + item.amount, 0)
-
-      const totalShares = totalLockedShares + totalClaimableShares + totalClaimedShares
-
-      setStats({
-        totalLockedShares,
-        totalClaimableShares,
-        totalClaimedShares,
-        totalShares,
-        averageSharesPerUser: totalShares > 0 ? totalShares / 1 : 0, // Single user for now
-      })
-
-      console.log("✅ Vesting statistics loaded:", {
-        totalLockedShares,
-        totalClaimableShares,
-        totalClaimedShares,
-        totalShares,
-      })
-    } catch (err: any) {
-      console.error("❌ Error fetching vesting statistics:", err)
-      setStatsError(err.message || "Failed to fetch vesting statistics")
-    } finally {
-      setStatsLoading(false)
-    }
-  }
-
-  // Load stats when component mounts or user changes
+  // Loading state
   useEffect(() => {
-    if (user) {
-      fetchStats()
+    if (!walletLoading && !priceLoading && !vestingLoading) {
+      setIsLoading(false)
     }
-  }, [user, buyWalletBalance, holdWalletPreHold, holdWalletPostHold, cashoutWalletBalance])
+  }, [walletLoading, priceLoading, vestingLoading])
 
-  // Calculate totals with safe number conversion - NOW USING DYNAMIC SHARE PRICE
-  const sharePrice = safeNumber(priceData.currentPrice) // Use dynamic price from context
-  const totalBalance = safeNumber(buyWalletBalance) + safeNumber(cashoutWalletBalance)
-  const portfolioValue = safeNumber(holdWalletPreHold) + safeNumber(holdWalletPostHold)
-  const totalPortfolioValue = portfolioValue * sharePrice // Use dynamic price
-
-  // Calculate distribution percentages
-  const totalWalletValue = totalBalance + totalPortfolioValue
-  const buyPercentage = totalWalletValue > 0 ? (safeNumber(buyWalletBalance) / totalWalletValue) * 100 : 0
-  const holdPrePercentage =
-    totalWalletValue > 0 ? ((safeNumber(holdWalletPreHold) * sharePrice) / totalWalletValue) * 100 : 0
-  const holdPostPercentage =
-    totalWalletValue > 0 ? ((safeNumber(holdWalletPostHold) * sharePrice) / totalWalletValue) * 100 : 0
-  const cashoutPercentage = totalWalletValue > 0 ? (safeNumber(cashoutWalletBalance) / totalWalletValue) * 100 : 0
-
-  const loading = walletLoading || priceLoading || statsLoading
-  const error = walletError || priceError || statsError
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-slate-600">Loading overview data...</span>
-        </div>
-      </div>
-    )
+  if (isLoading) {
+    return <OverviewSkeleton />
   }
 
-  if (error) {
+  if (walletError || priceError || vestingError) {
     return (
       <div className="p-6 space-y-6">
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-6">
-            <div className="flex items-center text-red-600">
-              <AlertCircle className="h-5 w-5 mr-2" />
-              <span className="font-medium">Error loading overview data</span>
-            </div>
-            <p className="text-red-600 text-sm mt-1">{error}</p>
-          </CardContent>
-        </Card>
+        <div className="text-red-500">Error loading data: {walletError || priceError || vestingError}</div>
       </div>
     )
   }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Portfolio Summary */}
+      {/* Top 4 Cards with Colors */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Balance */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Total Cash Balance</CardTitle>
-            <Wallet className="h-4 w-4 text-slate-400" />
+        {/* Total Cash Balance - Green */}
+        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center">
+              <DollarSign className="h-4 w-4 mr-2" />
+              Total Cash Balance
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-100">N${safeToFixed(totalBalance, 2)}</div>
-            <p className="text-xs text-slate-400">Buy + Cashout wallets</p>
+            <div className="text-2xl font-bold">{formatCurrency(totalCashBalance)}</div>
+            <p className="text-xs opacity-80 mt-1">Buy + Cashout Wallets</p>
           </CardContent>
         </Card>
 
-        {/* Portfolio Value - NOW USING DYNAMIC PRICE */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Portfolio Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-slate-400" />
+        {/* Share Value - Blue */}
+        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Share Value
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-100">N${safeToFixed(totalPortfolioValue, 2)}</div>
-            <p className="text-xs text-slate-400">
-              {safeToFixed(portfolioValue, 4)} shares @ N${safeToFixed(sharePrice, 2)}
+            <div className="text-2xl font-bold">{formatCurrency(totalShareValue)}</div>
+            <p className="text-xs opacity-80 mt-1">
+              {formatShares(totalShares)} shares @ {formatCurrency(currentSharePrice)}
             </p>
           </CardContent>
         </Card>
 
-        {/* Current Share Price - NOW DYNAMIC */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Share Price</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-600" />
+        {/* Share Price - Yellow */}
+        <Card className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white border-0">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center">
+              <PieChart className="h-4 w-4 mr-2" />
+              Share Price
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">N${safeToFixed(sharePrice, 2)}</div>
-            <p className="text-xs text-slate-400">per share</p>
+            <div className="text-2xl font-bold">{formatCurrency(currentSharePrice)}</div>
+            <p className="text-xs opacity-80 mt-1">per share</p>
           </CardContent>
         </Card>
 
-        {/* Total Vesting */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Total Vesting</CardTitle>
-            <PiggyBank className="h-4 w-4 text-slate-400" />
+        {/* Total Portfolio - Purple */}
+        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center">
+              <Wallet className="h-4 w-4 mr-2" />
+              Total Portfolio
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-100">{safeToFixed(stats.totalShares, 0)}</div>
-            <p className="text-xs text-slate-400">shares across all levels</p>
+            <div className="text-2xl font-bold">{formatCurrency(totalPortfolioValue)}</div>
+            <p className="text-xs opacity-80 mt-1">Cash + Share Value</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Wallet Distribution */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-slate-800 border-slate-700 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-slate-100">Wallet Distribution</CardTitle>
+          <CardTitle className="text-lg font-semibold text-slate-200">Wallet Distribution</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Buy Wallet */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center text-slate-300">
-                  <TrendingUp className="h-4 w-4 mr-2 text-blue-600" />
-                  Buy Wallet
+                <span className="text-sm text-slate-300">Buy Wallet</span>
+                <span className="text-sm text-slate-400">
+                  {totalCashBalance > 0 ? ((buyWalletBalance / totalCashBalance) * 100).toFixed(1) : 0}%
                 </span>
-                <span className="text-sm text-slate-400">{safeToFixed(buyPercentage, 1)}%</span>
               </div>
-              <div className="text-lg font-semibold text-slate-100">N${safeToFixed(buyWalletBalance, 2)}</div>
-              <Progress value={buyPercentage} className="h-2" />
+              <div className="text-lg font-semibold">{formatCurrency(buyWalletBalance)}</div>
+              <Progress
+                value={totalCashBalance > 0 ? (buyWalletBalance / totalCashBalance) * 100 : 0}
+                className="h-2 [&>div]:bg-blue-500"
+              />
             </div>
 
-            {/* Hold Wallet (Pre-Hold) */}
+            {/* Pre-Hold */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center text-slate-300">
-                  <Clock className="h-4 w-4 mr-2 text-yellow-600" />
-                  Pre-Hold
+                <span className="text-sm text-slate-300">Pre-Hold</span>
+                <span className="text-sm text-slate-400">
+                  {totalShares > 0 ? ((holdWalletPreHold / totalShares) * 100).toFixed(1) : 0}%
                 </span>
-                <span className="text-sm text-slate-400">{safeToFixed(holdPrePercentage, 1)}%</span>
               </div>
-              <div className="text-lg font-semibold text-slate-100">{safeToFixed(holdWalletPreHold, 4)} shares</div>
-              <Progress value={holdPrePercentage} className="h-2 [&>div]:bg-yellow-500" />
+              <div className="text-lg font-semibold">{formatShares(holdWalletPreHold)} shares</div>
+              <Progress
+                value={totalShares > 0 ? (holdWalletPreHold / totalShares) * 100 : 0}
+                className="h-2 [&>div]:bg-orange-500"
+              />
             </div>
 
-            {/* Hold Wallet (Post-Hold) */}
+            {/* Post-Hold */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center text-slate-300">
-                  <TrendingDown className="h-4 w-4 mr-2 text-green-600" />
-                  Post-Hold
+                <span className="text-sm text-slate-300">Post-Hold</span>
+                <span className="text-sm text-slate-400">
+                  {totalShares > 0 ? ((holdWalletPostHold / totalShares) * 100).toFixed(1) : 0}%
                 </span>
-                <span className="text-sm text-slate-400">{safeToFixed(holdPostPercentage, 1)}%</span>
               </div>
-              <div className="text-lg font-semibold text-slate-100">{safeToFixed(holdWalletPostHold, 4)} shares</div>
-              <Progress value={holdPostPercentage} className="h-2 [&>div]:bg-green-500" />
+              <div className="text-lg font-semibold">{formatShares(holdWalletPostHold)} shares</div>
+              <Progress
+                value={totalShares > 0 ? (holdWalletPostHold / totalShares) * 100 : 0}
+                className="h-2 [&>div]:bg-green-500"
+              />
             </div>
 
-            {/* Cashout Wallet */}
+            {/* Cashout */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center text-slate-300">
-                  <Wallet className="h-4 w-4 mr-2 text-orange-600" />
-                  Cashout
+                <span className="text-sm text-slate-300">Cashout</span>
+                <span className="text-sm text-slate-400">
+                  {totalCashBalance > 0 ? ((cashoutWalletBalance / totalCashBalance) * 100).toFixed(1) : 0}%
                 </span>
-                <span className="text-sm text-slate-400">{safeToFixed(cashoutPercentage, 1)}%</span>
               </div>
-              <div className="text-lg font-semibold text-slate-100">N${safeToFixed(cashoutWalletBalance, 2)}</div>
-              <Progress value={cashoutPercentage} className="h-2 [&>div]:bg-orange-500" />
+              <div className="text-lg font-semibold">{formatCurrency(cashoutWalletBalance)}</div>
+              <Progress
+                value={totalCashBalance > 0 ? (cashoutWalletBalance / totalCashBalance) * 100 : 0}
+                className="h-2 [&>div]:bg-purple-500"
+              />
             </div>
           </div>
         </CardContent>
@@ -289,80 +207,81 @@ export function OverviewComponent() {
       {/* Vesting Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Locked Shares */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Locked Shares</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-600" />
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+              <Clock className="h-4 w-4 mr-2 text-orange-400" />
+              Locked Shares
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{safeToFixed(stats.totalLockedShares, 4)}</div>
-            <p className="text-xs text-slate-400">Currently vesting</p>
+            <div className="text-2xl font-bold text-orange-400">{formatShares(totalLockedShares)}</div>
+            <p className="text-xs text-slate-400 mt-1">Currently vesting</p>
           </CardContent>
         </Card>
 
         {/* Claimable Shares */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Claimable Shares</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+              <Gift className="h-4 w-4 mr-2 text-green-400" />
+              Claimable Shares
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{safeToFixed(stats.totalClaimableShares, 4)}</div>
-            <p className="text-xs text-slate-400">Ready to claim</p>
+            <div className="text-2xl font-bold text-green-400">{formatShares(totalClaimableShares)}</div>
+            <p className="text-xs text-slate-400 mt-1">Ready to claim</p>
           </CardContent>
         </Card>
 
         {/* Claimed Shares */}
-        <Card className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-300">Claimed Shares</CardTitle>
-            <Badge variant="secondary" className="text-xs bg-slate-700 text-slate-300">
-              Total
-            </Badge>
+        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center text-slate-300">
+              <Target className="h-4 w-4 mr-2 text-slate-400" />
+              Claimed Shares
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-slate-100">{safeToFixed(stats.totalClaimedShares, 4)}</div>
-            <p className="text-xs text-slate-400">Historical claims</p>
+            <div className="text-2xl font-bold text-slate-400">{formatShares(totalClaimedShares)}</div>
+            <p className="text-xs text-slate-400 mt-1">Historical claims</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Quick Actions */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-slate-800 border-slate-700 text-slate-100">
         <CardHeader>
-          <CardTitle className="text-slate-100">Quick Actions</CardTitle>
+          <CardTitle className="text-lg font-semibold text-slate-200">Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
-              <div className="flex items-center space-x-3">
-                <TrendingUp className="h-8 w-8 text-blue-600" />
-                <div>
-                  <h3 className="font-medium text-slate-100">Buy Shares</h3>
-                  <p className="text-sm text-slate-400">Purchase shares on the exchange</p>
-                </div>
-              </div>
-            </div>
+            {/* Buy Shares - Links to Exchange */}
+            <Button
+              onClick={() => router.push("/dashboard/exchange")}
+              className="h-16 bg-blue-600 hover:bg-blue-700 text-white flex flex-col items-center justify-center space-y-1"
+            >
+              <TrendingUp className="h-5 w-5" />
+              <span className="text-sm font-medium">Buy Shares</span>
+            </Button>
 
-            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
-              <div className="flex items-center space-x-3">
-                <PiggyBank className="h-8 w-8 text-yellow-600" />
-                <div>
-                  <h3 className="font-medium text-slate-100">Vest Shares</h3>
-                  <p className="text-sm text-slate-400">Lock shares for higher returns</p>
-                </div>
-              </div>
-            </div>
+            {/* Vest Shares - Links to Vesting */}
+            <Button
+              onClick={() => router.push("/dashboard/vesting")}
+              className="h-16 bg-green-600 hover:bg-green-700 text-white flex flex-col items-center justify-center space-y-1"
+            >
+              <Clock className="h-5 w-5" />
+              <span className="text-sm font-medium">Vest Shares</span>
+            </Button>
 
-            <div className="p-4 border border-slate-600 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors">
-              <div className="flex items-center space-x-3">
-                <Wallet className="h-8 w-8 text-orange-600" />
-                <div>
-                  <h3 className="font-medium text-slate-100">Cashout</h3>
-                  <p className="text-sm text-slate-400">Withdraw your earnings</p>
-                </div>
-              </div>
-            </div>
+            {/* Cashout - No link for now */}
+            <Button
+              disabled
+              className="h-16 bg-orange-600 hover:bg-orange-700 text-white flex flex-col items-center justify-center space-y-1 opacity-50 cursor-not-allowed"
+            >
+              <ArrowDownRight className="h-5 w-5" />
+              <span className="text-sm font-medium">Cashout</span>
+            </Button>
           </div>
         </CardContent>
       </Card>
