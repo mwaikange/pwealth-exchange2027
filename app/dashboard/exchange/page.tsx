@@ -20,7 +20,7 @@ const formatCurrency = (value: number): string => {
 }
 
 const formatShares = (value: number): string => {
-  return Number(value).toFixed(4)
+  return Number(value).toFixed(4) // FIXED: Always 4 decimal places
 }
 
 export default function ExchangePage() {
@@ -76,7 +76,15 @@ export default function ExchangePage() {
     try {
       const result = await placeBuyOrder?.(amount)
       const success = result?.success ?? false
-      const resultMessage = result?.message ?? (success ? "Buy order placed successfully" : "Failed to place buy order")
+
+      // FIXED: Format notification message with 4 decimal places
+      let resultMessage = result?.message ?? (success ? "Buy order placed successfully" : "Failed to place buy order")
+
+      if (success) {
+        const estimatedShares = amount / currentSharePrice
+        const buyRef = `Buy_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+        resultMessage = `Buy order placed: ${formatCurrency(amount)} for ${formatShares(estimatedShares)} shares at ${formatCurrency(currentSharePrice)} each. Ref: ${buyRef}`
+      }
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
@@ -121,8 +129,14 @@ export default function ExchangePage() {
     try {
       const result = await placeSellOrder?.(shares)
       const success = result?.success ?? false
-      const resultMessage =
-        result?.message ?? (success ? "Sell order placed successfully" : "Failed to place sell order")
+
+      // FIXED: Format notification message with 4 decimal places
+      let resultMessage = result?.message ?? (success ? "Sell order placed successfully" : "Failed to place sell order")
+
+      if (success) {
+        const sellRef = `Sell_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+        resultMessage = `Sell order placed: ${formatShares(shares)} shares at ${formatCurrency(currentSharePrice)} each. Ref: ${sellRef}`
+      }
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
