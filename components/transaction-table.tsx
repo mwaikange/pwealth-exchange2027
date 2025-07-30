@@ -2,170 +2,207 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronLeft, ChevronRight, Search, Filter, Download, Calendar } from "lucide-react"
+import { CalendarIcon, Download, Filter, Search, RefreshCw } from "lucide-react"
+import { format } from "date-fns"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
-import { TransactionTableSkeleton } from "@/components/skeletons/transaction-table-skeleton"
+import { cn } from "@/lib/utils"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 interface Transaction {
   id: string
-  user_uuid: string
-  transaction_type: string
-  shares?: number
+  transaction_type: "buy" | "sell" | "deposit" | "withdrawal" | "vesting" | "claim"
+  shares: number
+  price_per_share: number
   total_amount: number
-  from_wallet?: string
-  to_wallet?: string
-  status: string
-  description: string
+  status: "pending" | "completed" | "failed" | "cancelled"
   created_at: string
-  reference_id?: string
   buy_ref?: string
   sell_ref?: string
+  reference?: string
+  description?: string
 }
 
 export function TransactionTable() {
   const { user } = useAuth()
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
+
+  // Filter states
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [dateRange, setDateRange] = useState("all")
-  const itemsPerPage = 15
-
-  useEffect(() => {
-    if (user) {
-      fetchTransactions()
-    }
-  }, [user])
-
-  useEffect(() => {
-    filterTransactions()
-  }, [transactions, searchTerm, statusFilter, typeFilter, dateRange])
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [dateFrom, setDateFrom] = useState<Date>()
+  const [dateTo, setDateTo] = useState<Date>()
 
   const fetchTransactions = async () => {
+    if (!user) return
+
     try {
       setLoading(true)
       setError(null)
 
-      console.log("🔄 Fetching transaction history...")
+      // Fetch from multiple sources and combine
+      const [buyOrders, sellOrders, userTransactions] = await Promise.all([
+        supabase
+          .from("buy_orders")
+          .select("id, shares, price_per_share, total_amount, status, created_at, buy_ref")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false }),
 
-      // Fetch from share_transactions and join with buy_orders and sell_orders for references
-      const { data: shareTransactions, error: shareError } = await supabase
-        .from("share_transactions")
-        .select(`
-          *,
-          buy_orders!left(buy_ref),
-          sell_orders!left(sell_ref)
-        `)
-        .eq("user_uuid", user?.id)
-        .order("created_at", { ascending: false })
-        .limit(200)
+        supabase
+          .from("sell_orders")
+          .select("id, shares, price_per_share, total_amount, status, created_at, sell_ref")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false }),
 
-      if (shareError) {
-        console.error("Error fetching share transactions:", shareError)
-        throw new Error("Failed to fetch transactions: " + shareError.message)
+        supabase
+          .from("user_transactions")
+          .select("*")
+          .eq("user_uuid", user.id)
+          .order("created_at", { ascending: false }),
+      ])
+
+      const combinedTransactions: Transaction[] = []
+
+      // Add buy orders
+      if (buyOrders.data) {
+        buyOrders.data.forEach((order) => {
+          combinedTransactions.push({
+            id: order.id,
+            transaction_type: "buy",
+            shares: Number(order.shares) || 0,
+            price_per_share: Number(order.price_per_share) || 0,
+            total_amount: Number(order.total_amount) || 0,
+            status: order.status as any,
+            created_at: order.created_at,
+            buy_ref: order.buy_ref,
+            reference: order.buy_ref,
+            description: `Buy order: ${order.buy_ref || "N/A"}`,
+          })
+        })
       }
 
-      // Format share transactions data with proper references
-      const formattedTransactions = (shareTransactions || []).map((tx: any) => ({
-        id: tx.id,
-        user_uuid: tx.user_uuid,
-        transaction_type: tx.transaction_type || "unknown",
-        shares: Number(tx.shares) || 0,
-        total_amount: Number(tx.total_amount) || 0,
-        from_wallet: tx.from_wallet,
-        to_wallet: tx.to_wallet,
-        status: tx.status || "completed",
-        description: tx.description || "No description",
-        created_at: tx.created_at,
-        reference_id: tx.reference_id,
-        buy_ref: tx.buy_orders?.buy_ref,
-        sell_ref: tx.sell_orders?.sell_ref,
-      }))
+      // Add sell orders
+      if (sellOrders.data) {
+        sellOrders.data.forEach((order) => {
+          combinedTransactions.push({
+            id: order.id,
+            transaction_type: "sell",
+            shares: Number(order.shares) || 0,
+            price_per_share: Number(order.price_per_share) || 0,
+            total_amount: Number(order.total_amount) || 0,
+            status: order.status as any,
+            created_at: order.created_at,
+            sell_ref: order.sell_ref,
+            reference: order.sell_ref,
+            description: `Sell order: ${order.sell_ref || "N/A"}`,
+          })
+        })
+      }
 
-      setTransactions(formattedTransactions)
-      console.log("✅ Transactions loaded:", formattedTransactions.length)
+      // Add user transactions
+      if (userTransactions.data) {
+        userTransactions.data.forEach((transaction) => {
+          combinedTransactions.push({
+            id: transaction.id,
+            transaction_type: transaction.transaction_type,
+            shares: Number(transaction.shares) || 0,
+            price_per_share: Number(transaction.price_per_share) || 0,
+            total_amount: Number(transaction.total_amount) || 0,
+            status: transaction.status,
+            created_at: transaction.created_at,
+            reference: transaction.reference,
+            description: transaction.description,
+          })
+        })
+      }
+
+      // Sort by date (newest first)
+      combinedTransactions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      setTransactions(combinedTransactions)
     } catch (err: any) {
-      console.error("❌ Error fetching transactions:", err)
+      console.error("Error fetching transactions:", err)
       setError(err.message || "Failed to fetch transactions")
     } finally {
       setLoading(false)
     }
   }
 
-  const filterTransactions = () => {
-    let filtered = [...transactions]
+  useEffect(() => {
+    fetchTransactions()
+  }, [user])
 
+  // Filter transactions
+  const filteredTransactions = transactions.filter((transaction) => {
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(
-        (tx) =>
-          tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.reference_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.buy_ref?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.sell_ref?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          tx.transaction_type.toLowerCase().includes(searchTerm.toLowerCase()),
-      )
+      const searchLower = searchTerm.toLowerCase()
+      const matchesSearch =
+        transaction.reference?.toLowerCase().includes(searchLower) ||
+        transaction.description?.toLowerCase().includes(searchLower) ||
+        transaction.transaction_type.toLowerCase().includes(searchLower) ||
+        transaction.id.toLowerCase().includes(searchLower)
+
+      if (!matchesSearch) return false
     }
 
     // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((tx) => tx.status.toLowerCase() === statusFilter.toLowerCase())
+    if (statusFilter !== "all" && transaction.status !== statusFilter) {
+      return false
     }
 
     // Type filter
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((tx) => tx.transaction_type.toLowerCase() === typeFilter.toLowerCase())
+    if (typeFilter !== "all" && transaction.transaction_type !== typeFilter) {
+      return false
     }
 
-    // Date range filter
-    if (dateRange !== "all") {
-      const now = new Date()
-      const startDate = new Date()
-
-      switch (dateRange) {
-        case "today":
-          startDate.setHours(0, 0, 0, 0)
-          break
-        case "week":
-          startDate.setDate(now.getDate() - 7)
-          break
-        case "month":
-          startDate.setMonth(now.getMonth() - 1)
-          break
-        case "quarter":
-          startDate.setMonth(now.getMonth() - 3)
-          break
-      }
-
-      filtered = filtered.filter((tx) => new Date(tx.created_at) >= startDate)
+    // Date filters
+    if (dateFrom && new Date(transaction.created_at) < dateFrom) {
+      return false
+    }
+    if (dateTo && new Date(transaction.created_at) > dateTo) {
+      return false
     }
 
-    setFilteredTransactions(filtered)
-    setCurrentPage(1) // Reset to first page when filtering
+    return true
+  })
+
+  const getStatusBadge = (status: string) => {
+    const variants = {
+      pending: "bg-yellow-500 text-yellow-50 hover:bg-yellow-600",
+      completed: "bg-green-500 text-green-50 hover:bg-green-600",
+      failed: "bg-red-500 text-red-50 hover:bg-red-600",
+      cancelled: "bg-gray-500 text-gray-50 hover:bg-gray-600",
+    }
+    return (
+      <Badge className={variants[status as keyof typeof variants] || "bg-gray-500 text-gray-50"}>
+        {status.toUpperCase()}
+      </Badge>
+    )
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
-
-  const formatShares = (shares: number) => {
-    return Number(shares).toFixed(4)
+  const getTypeBadge = (type: string) => {
+    const variants = {
+      buy: "bg-blue-500 text-blue-50 hover:bg-blue-600",
+      sell: "bg-orange-500 text-orange-50 hover:bg-orange-600",
+      deposit: "bg-green-500 text-green-50 hover:bg-green-600",
+      withdrawal: "bg-red-500 text-red-50 hover:bg-red-600",
+      vesting: "bg-purple-500 text-purple-50 hover:bg-purple-600",
+      claim: "bg-teal-500 text-teal-50 hover:bg-teal-600",
+    }
+    return (
+      <Badge className={variants[type as keyof typeof variants] || "bg-gray-500 text-gray-50"}>
+        {type.toUpperCase()}
+      </Badge>
+    )
   }
 
   const formatCurrency = (amount: number) => {
@@ -176,136 +213,44 @@ export function TransactionTable() {
     }).format(amount)
   }
 
-  const getStatusBadge = (status: string) => {
-    const statusColors: Record<string, string> = {
-      completed: "bg-green-500 hover:bg-green-600 text-white",
-      pending: "bg-yellow-500 hover:bg-yellow-600 text-white",
-      failed: "bg-red-500 hover:bg-red-600 text-white",
-      cancelled: "bg-gray-500 hover:bg-gray-600 text-white",
-      processing: "bg-blue-500 hover:bg-blue-600 text-white",
-    }
-
-    return (
-      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500 text-white"} text-xs px-2 py-1`}>
-        {status.toUpperCase()}
-      </Badge>
-    )
+  const formatShares = (shares: number) => {
+    return Number(shares).toFixed(4)
   }
 
-  const getTransactionTypeDisplay = (type: string) => {
-    const typeMap: Record<string, string> = {
-      purchase: "Purchase",
-      vesting: "Vesting",
-      claim: "Claim",
-      buy_order_placed: "Buy Order",
-      sell_order_placed: "Sell Order",
-      shares_purchased: "Shares Bought",
-      shares_sold: "Shares Sold",
-      transfer: "Transfer",
-      cashout: "Cashout",
-      aft_purchase: "AFT Purchase",
-      deposit: "Deposit",
-      withdrawal: "Withdrawal",
-    }
-    return typeMap[type] || type.replace(/_/g, " ").toUpperCase()
+  const formatDate = (dateString: string) => {
+    return format(new Date(dateString), "MMM dd, yyyy HH:mm")
   }
-
-  const getTransactionTypeBadge = (type: string) => {
-    const typeColors: Record<string, string> = {
-      purchase: "bg-blue-50 text-blue-700 border-blue-200",
-      vesting: "bg-purple-50 text-purple-700 border-purple-200",
-      claim: "bg-green-50 text-green-700 border-green-200",
-      buy_order_placed: "bg-indigo-50 text-indigo-700 border-indigo-200",
-      sell_order_placed: "bg-orange-50 text-orange-700 border-orange-200",
-      shares_purchased: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      shares_sold: "bg-amber-50 text-amber-700 border-amber-200",
-      transfer: "bg-cyan-50 text-cyan-700 border-cyan-200",
-      cashout: "bg-red-50 text-red-700 border-red-200",
-      aft_purchase: "bg-pink-50 text-pink-700 border-pink-200",
-    }
-
-    return (
-      <Badge
-        variant="outline"
-        className={`${typeColors[type] || "bg-gray-50 text-gray-700 border-gray-200"} text-xs font-medium`}
-      >
-        {getTransactionTypeDisplay(type)}
-      </Badge>
-    )
-  }
-
-  const getAmountDisplay = (transaction: Transaction) => {
-    // For AFT transactions, show AFT units
-    if (transaction.transaction_type === "aft_purchase" || transaction.description?.toLowerCase().includes("aft")) {
-      return `${formatShares(transaction.shares || 0)} AFT`
-    }
-    // For share transactions, show shares
-    if (transaction.shares && transaction.shares > 0) {
-      return `${formatShares(transaction.shares)} Shares`
-    }
-    // For monetary transactions, show currency
-    return formatCurrency(transaction.total_amount)
-  }
-
-  const getTransactionReference = (transaction: Transaction) => {
-    // Use buy_ref for buy orders, sell_ref for sell orders, otherwise use reference_id
-    if (transaction.transaction_type === "buy_order_placed" && transaction.buy_ref) {
-      return transaction.buy_ref
-    }
-    if (transaction.transaction_type === "sell_order_placed" && transaction.sell_ref) {
-      return transaction.sell_ref
-    }
-    return transaction.reference_id || "-"
-  }
-
-  const exportTransactions = () => {
-    const csvContent = [
-      ["Date", "Type", "Amount", "Value (N$)", "From", "To", "Status", "Description", "Reference"].join(","),
-      ...filteredTransactions.map((tx) =>
-        [
-          formatDate(tx.created_at),
-          getTransactionTypeDisplay(tx.transaction_type),
-          getAmountDisplay(tx),
-          formatCurrency(tx.total_amount),
-          tx.from_wallet?.replace(/_/g, " ") || "-",
-          tx.to_wallet?.replace(/_/g, " ") || "-",
-          tx.status.toUpperCase(),
-          `"${tx.description}"`,
-          getTransactionReference(tx),
-        ].join(","),
-      ),
-    ].join("\n")
-
-    const blob = new Blob([csvContent], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `transactions_${new Date().toISOString().split("T")[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  }
-
-  // Pagination
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const currentTransactions = filteredTransactions.slice(startIndex, endIndex)
 
   if (loading) {
-    return <TransactionTableSkeleton />
+    return (
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white">Transaction History</CardTitle>
+          <CardDescription>Loading your transaction history...</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-16 bg-slate-700 rounded animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (error) {
     return (
       <Card className="bg-slate-800 border-slate-700">
         <CardHeader>
-          <CardTitle className="text-slate-200">Transaction History</CardTitle>
-          <CardDescription className="text-slate-400">Your recent transactions</CardDescription>
+          <CardTitle className="text-white">Transaction History</CardTitle>
+          <CardDescription className="text-red-400">Error: {error}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <div className="text-red-400">Error: {error}</div>
-          </div>
+          <Button onClick={fetchTransactions} className="bg-blue-600 hover:bg-blue-700">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
         </CardContent>
       </Card>
     )
@@ -313,50 +258,62 @@ export function TransactionTable() {
 
   return (
     <Card className="bg-slate-800 border-slate-700 shadow-xl">
-      <CardHeader className="space-y-6 pb-6">
+      <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-slate-200 text-2xl font-bold">Transaction History</CardTitle>
-            <CardDescription className="text-slate-400 mt-2">
-              Your complete transaction history and order activity
-            </CardDescription>
+            <CardTitle className="text-white text-xl">Transaction History</CardTitle>
+            <CardDescription className="text-slate-400">View and filter your transaction history</CardDescription>
           </div>
-          <Button
-            onClick={exportTransactions}
-            variant="outline"
-            size="sm"
-            className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600 transition-colors"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button
+              onClick={fetchTransactions}
+              variant="outline"
+              size="sm"
+              className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export
+            </Button>
+          </div>
         </div>
+      </CardHeader>
 
-        {/* Enhanced Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <CardContent className="space-y-6">
+        {/* Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 p-4 bg-slate-700 rounded-lg">
+          {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <Input
               placeholder="Search transactions..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
+              className="pl-10 bg-slate-600 border-slate-500 text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
             />
           </div>
 
+          {/* Status Filter */}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
-              <SelectValue placeholder="Filter by status" />
+            <SelectTrigger className="bg-slate-600 border-slate-500 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
+              <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
               <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 All Statuses
               </SelectItem>
-              <SelectItem value="completed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Completed
-              </SelectItem>
               <SelectItem value="pending" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Pending
+              </SelectItem>
+              <SelectItem value="completed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
+                Completed
               </SelectItem>
               <SelectItem value="failed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Failed
@@ -364,225 +321,161 @@ export function TransactionTable() {
               <SelectItem value="cancelled" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Cancelled
               </SelectItem>
-              <SelectItem value="processing" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Processing
-              </SelectItem>
             </SelectContent>
           </Select>
 
+          {/* Type Filter */}
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
-              <SelectValue placeholder="Filter by type" />
+            <SelectTrigger className="bg-slate-600 border-slate-500 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
+              <SelectValue placeholder="All Types" />
             </SelectTrigger>
             <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
               <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 All Types
               </SelectItem>
-              <SelectItem value="purchase" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Purchase
+              <SelectItem value="buy" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
+                Buy Orders
+              </SelectItem>
+              <SelectItem value="sell" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
+                Sell Orders
+              </SelectItem>
+              <SelectItem value="deposit" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
+                Deposits
+              </SelectItem>
+              <SelectItem value="withdrawal" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
+                Withdrawals
               </SelectItem>
               <SelectItem value="vesting" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Vesting
               </SelectItem>
               <SelectItem value="claim" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Claim
-              </SelectItem>
-              <SelectItem value="buy_order_placed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Buy Orders
-              </SelectItem>
-              <SelectItem value="sell_order_placed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Sell Orders
-              </SelectItem>
-              <SelectItem value="shares_purchased" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Shares Bought
-              </SelectItem>
-              <SelectItem value="shares_sold" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Shares Sold
-              </SelectItem>
-              <SelectItem value="cashout" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Cashout
-              </SelectItem>
-              <SelectItem value="aft_purchase" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                AFT Purchase
+                Claims
               </SelectItem>
             </SelectContent>
           </Select>
 
-          <Select value={dateRange} onValueChange={setDateRange}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
-              <Calendar className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Date range" />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
-              <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                All Time
-              </SelectItem>
-              <SelectItem value="today" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Today
-              </SelectItem>
-              <SelectItem value="week" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Last 7 Days
-              </SelectItem>
-              <SelectItem value="month" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Last Month
-              </SelectItem>
-              <SelectItem value="quarter" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
-                Last 3 Months
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Date From */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "justify-start text-left font-normal bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500",
+                  !dateFrom && "text-slate-400",
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateFrom ? format(dateFrom, "MMM dd, yyyy") : "From date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 bg-slate-700 border-slate-600" align="start">
+              <Calendar
+                mode="single"
+                selected={dateFrom}
+                onSelect={setDateFrom}
+                initialFocus
+                className="bg-slate-700 text-slate-200"
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* Date To */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "justify-start text-left font-normal bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500",
+                  !dateTo && "text-slate-400",
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateTo ? format(dateTo, "MMM dd, yyyy") : "To date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 bg-slate-700 border-slate-600" align="start">
+              <Calendar
+                mode="single"
+                selected={dateTo}
+                onSelect={setDateTo}
+                initialFocus
+                className="bg-slate-700 text-slate-200"
+              />
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Results Summary */}
-        <div className="flex items-center justify-between text-sm text-slate-400 bg-slate-700 px-4 py-2 rounded-lg">
+        <div className="flex items-center justify-between text-sm text-slate-400">
           <span>
-            Showing {currentTransactions.length} of {filteredTransactions.length} transactions
-            {filteredTransactions.length !== transactions.length && ` (filtered from ${transactions.length} total)`}
+            Showing {filteredTransactions.length} of {transactions.length} transactions
           </span>
-          <div className="flex items-center space-x-2">
-            <Filter className="h-4 w-4" />
-            <span>
-              {[
-                searchTerm && "Search",
-                statusFilter !== "all" && "Status",
-                typeFilter !== "all" && "Type",
-                dateRange !== "all" && "Date",
-              ]
-                .filter(Boolean)
-                .join(", ") || "No filters"}
-            </span>
+          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || dateFrom || dateTo) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearchTerm("")
+                setStatusFilter("all")
+                setTypeFilter("all")
+                setDateFrom(undefined)
+                setDateTo(undefined)
+              }}
+              className="text-slate-400 hover:text-slate-200"
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+
+        {/* Transaction Table */}
+        <div className="overflow-x-auto">
+          <div className="min-w-full">
+            {/* Table Header */}
+            <div className="grid grid-cols-7 gap-4 p-4 bg-slate-700 rounded-t-lg text-sm font-medium text-slate-300 border-b border-slate-600">
+              <div>Date</div>
+              <div>Type</div>
+              <div>Reference</div>
+              <div>Shares</div>
+              <div>Price/Share</div>
+              <div>Total</div>
+              <div>Status</div>
+            </div>
+
+            {/* Table Body */}
+            <div className="bg-slate-800 rounded-b-lg">
+              {filteredTransactions.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <Filter className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No transactions found</p>
+                  <p className="text-sm">Try adjusting your filters or search terms</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-700">
+                  {filteredTransactions.map((transaction, index) => (
+                    <div
+                      key={transaction.id}
+                      className={cn(
+                        "grid grid-cols-7 gap-4 p-4 text-sm hover:bg-slate-700 transition-colors",
+                        index % 2 === 0 ? "bg-slate-800" : "bg-slate-750",
+                      )}
+                    >
+                      <div className="text-slate-300">{formatDate(transaction.created_at)}</div>
+                      <div>{getTypeBadge(transaction.transaction_type)}</div>
+                      <div className="text-slate-300 font-mono text-xs">
+                        {transaction.reference || transaction.buy_ref || transaction.sell_ref || "N/A"}
+                      </div>
+                      <div className="text-slate-300 font-medium">{formatShares(transaction.shares)}</div>
+                      <div className="text-slate-300">{formatCurrency(transaction.price_per_share)}</div>
+                      <div className="text-slate-100 font-medium">{formatCurrency(transaction.total_amount)}</div>
+                      <div>{getStatusBadge(transaction.status)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {filteredTransactions.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="text-slate-400 text-lg mb-2">No transactions found</div>
-              <div className="text-slate-500 text-sm">
-                {searchTerm || statusFilter !== "all" || typeFilter !== "all" || dateRange !== "all"
-                  ? "Try adjusting your filters"
-                  : "Your transactions will appear here"}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="rounded-lg border border-slate-600 overflow-hidden shadow-lg">
-              <Table>
-                <TableHeader className="bg-slate-700">
-                  <TableRow className="border-slate-600 hover:bg-slate-700">
-                    <TableHead className="text-slate-300 font-semibold py-4">Date & Time</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Type</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Amount</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Value (N$)</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">From → To</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Status</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Description</TableHead>
-                    <TableHead className="text-slate-300 font-semibold py-4">Reference</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {currentTransactions.map((transaction, index) => (
-                    <TableRow
-                      key={transaction.id}
-                      className={`border-slate-600 hover:bg-slate-700/50 transition-colors ${
-                        index % 2 === 0 ? "bg-slate-800" : "bg-slate-750"
-                      }`}
-                    >
-                      <TableCell className="font-medium text-slate-200 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-medium">{formatDate(transaction.created_at).split(",")[0]}</span>
-                          <span className="text-xs text-slate-400">
-                            {formatDate(transaction.created_at).split(",")[1]}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-4">{getTransactionTypeBadge(transaction.transaction_type)}</TableCell>
-                      <TableCell className="font-mono text-slate-200 py-4 font-medium">
-                        {getAmountDisplay(transaction)}
-                      </TableCell>
-                      <TableCell className="font-mono text-slate-200 py-4 font-medium">
-                        {formatCurrency(transaction.total_amount)}
-                      </TableCell>
-                      <TableCell className="text-slate-300 py-4">
-                        <div className="flex items-center space-x-2 text-sm">
-                          <span className="capitalize">{transaction.from_wallet?.replace(/_/g, " ") || "-"}</span>
-                          <span className="text-slate-500">→</span>
-                          <span className="capitalize">{transaction.to_wallet?.replace(/_/g, " ") || "-"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-4">{getStatusBadge(transaction.status)}</TableCell>
-                      <TableCell className="max-w-xs py-4">
-                        <div className="truncate text-slate-300" title={transaction.description}>
-                          {transaction.description}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-slate-300 py-4">
-                        <div className="text-xs font-mono bg-slate-700 px-2 py-1 rounded">
-                          {getTransactionReference(transaction)}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Enhanced Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between bg-slate-700 px-6 py-4 rounded-lg shadow-lg">
-                <div className="text-sm text-slate-300">
-                  Showing {startIndex + 1} to {Math.min(endIndex, filteredTransactions.length)} of{" "}
-                  {filteredTransactions.length} transactions
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                    className="bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  <div className="flex items-center space-x-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={currentPage === pageNum ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={
-                            currentPage === pageNum
-                              ? "bg-blue-600 text-white hover:bg-blue-700"
-                              : "bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500"
-                          }
-                        >
-                          {pageNum}
-                        </Button>
-                      )
-                    })}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
-                    className="bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500"
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
       </CardContent>
     </Card>
   )

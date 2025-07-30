@@ -1,134 +1,190 @@
 "use client"
 
-import { usePathname, useRouter } from "next/navigation"
-import Link from "next/link"
-import { LayoutDashboard, Clock, BarChart3, Users, Settings, HelpCircle, LogOut, TrendingUp } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useAuth } from "@/contexts/auth-context"
+import type React from "react"
+
 import { useState } from "react"
-import { PeerGPTChat } from "./peer-gpt-chat"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import {
+  BarChart3,
+  TrendingUp,
+  Clock,
+  CreditCard,
+  Users,
+  Shield,
+  HelpCircle,
+  LogOut,
+  Menu,
+  X,
+  User,
+} from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
 
-export function DashboardSidebar() {
+interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const sidebarItems = [
+  {
+    title: "Overview",
+    href: "/dashboard",
+    icon: BarChart3,
+    description: "Dashboard Overview",
+  },
+  {
+    title: "Exchange",
+    href: "/dashboard/exchange",
+    icon: TrendingUp,
+    description: "Buy & Sell Shares",
+  },
+  {
+    title: "Vesting",
+    href: "/dashboard/vesting",
+    icon: Clock,
+    description: "Lock shares for 5 days",
+  },
+  {
+    title: "Transactions",
+    href: "/dashboard/transactions",
+    icon: CreditCard,
+    description: "Transaction History",
+  },
+  {
+    title: "Referrals",
+    href: "/dashboard/referrals",
+    icon: Users,
+    description: "Claim referral rewards",
+  },
+  {
+    title: "KYC",
+    href: "/dashboard/kyc",
+    icon: Shield,
+    description: "Verification & Security",
+  },
+]
+
+export function DashboardSidebar({ className, ...props }: SidebarProps) {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, signOut } = useAuth()
-  const [isChatOpen, setIsChatOpen] = useState(false)
-
-  // Static data for testing - no Supabase calls
-  const mockReferralCode = "DEMO-USER-001"
-
-  const navItems = [
-    {
-      name: "Overview",
-      description: "Dashboard Overview",
-      href: "/dashboard/overview",
-      icon: LayoutDashboard,
-    },
-    {
-      name: "Exchange",
-      description: "Buy & Sell Shares",
-      href: "/dashboard/exchange",
-      icon: TrendingUp,
-    },
-    {
-      name: "Vesting",
-      description: "Lock shares for 5 days",
-      href: "/dashboard/vesting",
-      icon: Clock,
-    },
-    {
-      name: "Transactions",
-      description: "Transactions History",
-      href: "/dashboard/transactions",
-      icon: BarChart3,
-    },
-    {
-      name: "Referrals",
-      description: "Claim referral rewards",
-      href: "/dashboard/referrals",
-      icon: Users,
-    },
-    {
-      name: "Settings",
-      description: "Change password",
-      href: "/dashboard/settings",
-      icon: Settings,
-    },
-  ]
+  const [isMobileOpen, setIsMobileOpen] = useState(false)
 
   const handleSignOut = async () => {
     try {
       await signOut()
-      router.push("/login")
     } catch (error) {
       console.error("Error signing out:", error)
-      // Still try to redirect even if there's an error
-      router.push("/login")
     }
   }
 
+  const toggleMobile = () => setIsMobileOpen(!isMobileOpen)
+
   return (
-    <aside className="w-[200px] bg-[#1e2130] border-r border-gray-800 flex flex-col h-full">
-      <div className="p-3 text-base font-bold">
-        PEER WEALTH
-      </div>
+    <>
+      {/* Mobile Menu Button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden fixed top-4 left-4 z-50 bg-slate-800 text-white hover:bg-slate-700"
+        onClick={toggleMobile}
+      >
+        {isMobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+      </Button>
 
-      <nav className="flex-1 py-1">
-        <div className="flex flex-col gap-1 px-2">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded",
-                  isActive ? "bg-yellow-400 text-black" : "text-gray-300 hover:bg-gray-800",
-                )}
+      {/* Mobile Overlay */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setIsMobileOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <div
+        className={cn(
+          "fixed left-0 top-0 z-40 h-full w-64 transform bg-slate-900 transition-transform duration-200 ease-in-out md:relative md:translate-x-0",
+          isMobileOpen ? "translate-x-0" : "-translate-x-full",
+          className,
+        )}
+        {...props}
+      >
+        <div className="flex h-full flex-col">
+          {/* Header */}
+          <div className="flex h-16 items-center border-b border-slate-800 px-6">
+            <Link href="/dashboard" className="flex items-center space-x-2">
+              <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">PW</span>
+              </div>
+              <span className="text-xl font-bold text-white">PEER WEALTH</span>
+            </Link>
+          </div>
+
+          {/* Navigation */}
+          <ScrollArea className="flex-1 px-3 py-4">
+            <div className="space-y-2">
+              {sidebarItems.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setIsMobileOpen(false)}
+                    className={cn(
+                      "flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      isActive ? "bg-yellow-500 text-black" : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <div className="flex-1">
+                      <div>{item.title}</div>
+                      <div className="text-xs opacity-70">{item.description}</div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </ScrollArea>
+
+          <Separator className="bg-slate-800" />
+
+          {/* User Section */}
+          <div className="p-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center">
+                <User className="h-4 w-4 text-slate-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-white truncate">
+                  User: {user?.email?.split("@")[0] || "DEMO-USER-001"}
+                </div>
+                <div className="text-xs text-slate-400">demo@gmail.com</div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"
+                asChild
               >
-                <div className="w-5 h-5 mr-2 flex items-center justify-center">
-                  <item.icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-medium text-xs">{item.name}</div>
-                  <div className="text-[9px]">{item.description}</div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
+                <Link href="/help">
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  Help & Support
+                </Link>
+              </Button>
 
-      <div className="p-2 border-t border-gray-800">
-        <div className="flex items-center mb-2">
-          <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold mr-2">
-            {user?.email ? user.email.charAt(0).toUpperCase() : "D"}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSignOut}
+                className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-900/20"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </Button>
+            </div>
           </div>
-          <div>
-            <div className="text-[9px]">User: {mockReferralCode}</div>
-            <div className="text-[8px] text-gray-400">{user?.email || "demo@example.com"}</div>
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <button
-            onClick={() => setIsChatOpen(true)}
-            className="w-full flex items-center px-2 py-1.5 bg-white text-black rounded text-xs"
-          >
-            <HelpCircle className="mr-1.5 h-3 w-3" />
-            Help & Support
-          </button>
-
-          <button
-            onClick={handleSignOut}
-            className="w-full flex items-center px-2 py-1.5 bg-red-500 text-white rounded text-xs"
-          >
-            <LogOut className="mr-1.5 h-3 w-3" />
-            Sign Out
-          </button>
         </div>
       </div>
-      {isChatOpen && <PeerGPTChat onClose={() => setIsChatOpen(false)} />}
-    </aside>
+    </>
   )
 }
