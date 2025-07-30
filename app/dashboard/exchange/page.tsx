@@ -180,7 +180,7 @@ export default function ExchangePage() {
     const isExpired = actualStatus === "expired"
     const isCancelled = actualStatus === "cancelled"
 
-    // Special styling for expired and cancelled orders
+    // Special styling for expired and cancelled orders - black/grey
     if (isExpired || isCancelled) {
       return (
         <Badge className="bg-gray-500 text-gray-300 hover:bg-gray-500">
@@ -241,14 +241,14 @@ export default function ExchangePage() {
       }
     }
 
-    // Progress bar colors based on status and order type
+    // Progress bar colors - ONLY CHANGE THESE COLORS
     let progressBarClass = ""
     if (isExpired || isCancelled) {
-      progressBarClass = "opacity-50 [&>div]:bg-gray-500"
+      progressBarClass = "opacity-50 [&>div]:bg-gray-500" // Grey for expired/cancelled
     } else if (orderType === "buy") {
-      progressBarClass = "[&>div]:bg-green-500" // Green for buy orders
+      progressBarClass = "[&>div]:bg-green-500" // GREEN for buy orders
     } else {
-      progressBarClass = "[&>div]:bg-yellow-500" // Yellow for sell orders
+      progressBarClass = "[&>div]:bg-yellow-500" // YELLOW for sell orders (keep as is)
     }
 
     return (
