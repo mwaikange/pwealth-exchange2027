@@ -178,15 +178,15 @@ export function TransactionTable() {
 
   const getStatusBadge = (status: string) => {
     const statusColors: Record<string, string> = {
-      completed: "bg-green-500 hover:bg-green-600",
-      pending: "bg-yellow-500 hover:bg-yellow-600",
-      failed: "bg-red-500 hover:bg-red-600",
-      cancelled: "bg-gray-500 hover:bg-gray-600",
-      processing: "bg-blue-500 hover:bg-blue-600",
+      completed: "bg-green-500 hover:bg-green-600 text-white",
+      pending: "bg-yellow-500 hover:bg-yellow-600 text-white",
+      failed: "bg-red-500 hover:bg-red-600 text-white",
+      cancelled: "bg-gray-500 hover:bg-gray-600 text-white",
+      processing: "bg-blue-500 hover:bg-blue-600 text-white",
     }
 
     return (
-      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500"} text-white text-xs px-2 py-1`}>
+      <Badge className={`${statusColors[status.toLowerCase()] || "bg-gray-500 text-white"} text-xs px-2 py-1`}>
         {status.toUpperCase()}
       </Badge>
     )
@@ -212,22 +212,22 @@ export function TransactionTable() {
 
   const getTransactionTypeBadge = (type: string) => {
     const typeColors: Record<string, string> = {
-      purchase: "bg-blue-100 text-blue-800 border-blue-200",
-      vesting: "bg-purple-100 text-purple-800 border-purple-200",
-      claim: "bg-green-100 text-green-800 border-green-200",
-      buy_order_placed: "bg-indigo-100 text-indigo-800 border-indigo-200",
-      sell_order_placed: "bg-orange-100 text-orange-800 border-orange-200",
-      shares_purchased: "bg-emerald-100 text-emerald-800 border-emerald-200",
-      shares_sold: "bg-amber-100 text-amber-800 border-amber-200",
-      transfer: "bg-cyan-100 text-cyan-800 border-cyan-200",
-      cashout: "bg-red-100 text-red-800 border-red-200",
-      aft_purchase: "bg-pink-100 text-pink-800 border-pink-200",
+      purchase: "bg-blue-50 text-blue-700 border-blue-200",
+      vesting: "bg-purple-50 text-purple-700 border-purple-200",
+      claim: "bg-green-50 text-green-700 border-green-200",
+      buy_order_placed: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      sell_order_placed: "bg-orange-50 text-orange-700 border-orange-200",
+      shares_purchased: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      shares_sold: "bg-amber-50 text-amber-700 border-amber-200",
+      transfer: "bg-cyan-50 text-cyan-700 border-cyan-200",
+      cashout: "bg-red-50 text-red-700 border-red-200",
+      aft_purchase: "bg-pink-50 text-pink-700 border-pink-200",
     }
 
     return (
       <Badge
         variant="outline"
-        className={`${typeColors[type] || "bg-gray-100 text-gray-800 border-gray-200"} text-xs font-medium`}
+        className={`${typeColors[type] || "bg-gray-50 text-gray-700 border-gray-200"} text-xs font-medium`}
       >
         {getTransactionTypeDisplay(type)}
       </Badge>
@@ -312,12 +312,12 @@ export function TransactionTable() {
   }
 
   return (
-    <Card className="bg-slate-800 border-slate-700">
-      <CardHeader className="space-y-4">
+    <Card className="bg-slate-800 border-slate-700 shadow-xl">
+      <CardHeader className="space-y-6 pb-6">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-slate-200 text-xl">Transaction History</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardTitle className="text-slate-200 text-2xl font-bold">Transaction History</CardTitle>
+            <CardDescription className="text-slate-400 mt-2">
               Your complete transaction history and order activity
             </CardDescription>
           </div>
@@ -325,14 +325,14 @@ export function TransactionTable() {
             onClick={exportTransactions}
             variant="outline"
             size="sm"
-            className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+            className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600 transition-colors"
           >
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
         </div>
 
-        {/* Filters */}
+        {/* Enhanced Filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -340,93 +340,93 @@ export function TransactionTable() {
               placeholder="Search transactions..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400"
+              className="pl-10 bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
             />
           </div>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200">
+            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
-            <SelectContent className="bg-slate-700 border-slate-600 text-slate-200">
-              <SelectItem value="all" className="text-slate-200">
+            <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
+              <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 All Statuses
               </SelectItem>
-              <SelectItem value="completed" className="text-slate-200">
+              <SelectItem value="completed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Completed
               </SelectItem>
-              <SelectItem value="pending" className="text-slate-200">
+              <SelectItem value="pending" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Pending
               </SelectItem>
-              <SelectItem value="failed" className="text-slate-200">
+              <SelectItem value="failed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Failed
               </SelectItem>
-              <SelectItem value="cancelled" className="text-slate-200">
+              <SelectItem value="cancelled" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Cancelled
               </SelectItem>
-              <SelectItem value="processing" className="text-slate-200">
+              <SelectItem value="processing" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Processing
               </SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200">
+            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
               <SelectValue placeholder="Filter by type" />
             </SelectTrigger>
-            <SelectContent className="bg-slate-700 border-slate-600 text-slate-200">
-              <SelectItem value="all" className="text-slate-200">
+            <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
+              <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 All Types
               </SelectItem>
-              <SelectItem value="purchase" className="text-slate-200">
+              <SelectItem value="purchase" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Purchase
               </SelectItem>
-              <SelectItem value="vesting" className="text-slate-200">
+              <SelectItem value="vesting" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Vesting
               </SelectItem>
-              <SelectItem value="claim" className="text-slate-200">
+              <SelectItem value="claim" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Claim
               </SelectItem>
-              <SelectItem value="buy_order_placed" className="text-slate-200">
+              <SelectItem value="buy_order_placed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Buy Orders
               </SelectItem>
-              <SelectItem value="sell_order_placed" className="text-slate-200">
+              <SelectItem value="sell_order_placed" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Sell Orders
               </SelectItem>
-              <SelectItem value="shares_purchased" className="text-slate-200">
+              <SelectItem value="shares_purchased" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Shares Bought
               </SelectItem>
-              <SelectItem value="shares_sold" className="text-slate-200">
+              <SelectItem value="shares_sold" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Shares Sold
               </SelectItem>
-              <SelectItem value="cashout" className="text-slate-200">
+              <SelectItem value="cashout" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Cashout
               </SelectItem>
-              <SelectItem value="aft_purchase" className="text-slate-200">
+              <SelectItem value="aft_purchase" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 AFT Purchase
               </SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={dateRange} onValueChange={setDateRange}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200">
+            <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
               <Calendar className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Date range" />
             </SelectTrigger>
-            <SelectContent className="bg-slate-700 border-slate-600 text-slate-200">
-              <SelectItem value="all" className="text-slate-200">
+            <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
+              <SelectItem value="all" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 All Time
               </SelectItem>
-              <SelectItem value="today" className="text-slate-200">
+              <SelectItem value="today" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Today
               </SelectItem>
-              <SelectItem value="week" className="text-slate-200">
+              <SelectItem value="week" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Last 7 Days
               </SelectItem>
-              <SelectItem value="month" className="text-slate-200">
+              <SelectItem value="month" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Last Month
               </SelectItem>
-              <SelectItem value="quarter" className="text-slate-200">
+              <SelectItem value="quarter" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                 Last 3 Months
               </SelectItem>
             </SelectContent>
@@ -434,7 +434,7 @@ export function TransactionTable() {
         </div>
 
         {/* Results Summary */}
-        <div className="flex items-center justify-between text-sm text-slate-400">
+        <div className="flex items-center justify-between text-sm text-slate-400 bg-slate-700 px-4 py-2 rounded-lg">
           <span>
             Showing {currentTransactions.length} of {filteredTransactions.length} transactions
             {filteredTransactions.length !== transactions.length && ` (filtered from ${transactions.length} total)`}
@@ -469,56 +469,60 @@ export function TransactionTable() {
           </div>
         ) : (
           <>
-            <div className="rounded-lg border border-slate-600 overflow-hidden">
+            <div className="rounded-lg border border-slate-600 overflow-hidden shadow-lg">
               <Table>
                 <TableHeader className="bg-slate-700">
                   <TableRow className="border-slate-600 hover:bg-slate-700">
-                    <TableHead className="text-slate-300 font-semibold">Date & Time</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Type</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Amount</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Value (N$)</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">From → To</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Status</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Description</TableHead>
-                    <TableHead className="text-slate-300 font-semibold">Reference</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Date & Time</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Type</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Amount</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Value (N$)</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">From → To</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Status</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Description</TableHead>
+                    <TableHead className="text-slate-300 font-semibold py-4">Reference</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {currentTransactions.map((transaction, index) => (
                     <TableRow
                       key={transaction.id}
-                      className={`border-slate-600 hover:bg-slate-700/50 ${
+                      className={`border-slate-600 hover:bg-slate-700/50 transition-colors ${
                         index % 2 === 0 ? "bg-slate-800" : "bg-slate-750"
                       }`}
                     >
-                      <TableCell className="font-medium text-slate-200">
+                      <TableCell className="font-medium text-slate-200 py-4">
                         <div className="flex flex-col">
-                          <span>{formatDate(transaction.created_at).split(",")[0]}</span>
+                          <span className="font-medium">{formatDate(transaction.created_at).split(",")[0]}</span>
                           <span className="text-xs text-slate-400">
                             {formatDate(transaction.created_at).split(",")[1]}
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell>{getTransactionTypeBadge(transaction.transaction_type)}</TableCell>
-                      <TableCell className="font-mono text-slate-200">{getAmountDisplay(transaction)}</TableCell>
-                      <TableCell className="font-mono text-slate-200">
+                      <TableCell className="py-4">{getTransactionTypeBadge(transaction.transaction_type)}</TableCell>
+                      <TableCell className="font-mono text-slate-200 py-4 font-medium">
+                        {getAmountDisplay(transaction)}
+                      </TableCell>
+                      <TableCell className="font-mono text-slate-200 py-4 font-medium">
                         {formatCurrency(transaction.total_amount)}
                       </TableCell>
-                      <TableCell className="text-slate-300">
+                      <TableCell className="text-slate-300 py-4">
                         <div className="flex items-center space-x-2 text-sm">
                           <span className="capitalize">{transaction.from_wallet?.replace(/_/g, " ") || "-"}</span>
                           <span className="text-slate-500">→</span>
                           <span className="capitalize">{transaction.to_wallet?.replace(/_/g, " ") || "-"}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{getStatusBadge(transaction.status)}</TableCell>
-                      <TableCell className="max-w-xs">
+                      <TableCell className="py-4">{getStatusBadge(transaction.status)}</TableCell>
+                      <TableCell className="max-w-xs py-4">
                         <div className="truncate text-slate-300" title={transaction.description}>
                           {transaction.description}
                         </div>
                       </TableCell>
-                      <TableCell className="text-slate-300">
-                        <div className="text-xs font-mono">{getTransactionReference(transaction)}</div>
+                      <TableCell className="text-slate-300 py-4">
+                        <div className="text-xs font-mono bg-slate-700 px-2 py-1 rounded">
+                          {getTransactionReference(transaction)}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -528,7 +532,7 @@ export function TransactionTable() {
 
             {/* Enhanced Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between bg-slate-700 px-4 py-3 rounded-lg">
+              <div className="flex items-center justify-between bg-slate-700 px-6 py-4 rounded-lg shadow-lg">
                 <div className="text-sm text-slate-300">
                   Showing {startIndex + 1} to {Math.min(endIndex, filteredTransactions.length)} of{" "}
                   {filteredTransactions.length} transactions
@@ -555,7 +559,7 @@ export function TransactionTable() {
                           onClick={() => setCurrentPage(pageNum)}
                           className={
                             currentPage === pageNum
-                              ? "bg-blue-600 text-white"
+                              ? "bg-blue-600 text-white hover:bg-blue-700"
                               : "bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500"
                           }
                         >

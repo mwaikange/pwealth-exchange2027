@@ -196,11 +196,11 @@ export default function KYCPage() {
     if (!kycData) return 0
     let progress = 0
 
-    if (kycData.email_verified) progress += 10
+    if (kycData.email_verified) progress += 15
     if (kycData.mobile_verified) progress += 20
-    if (kycData.id_number) progress += 25
-    if (kycData.region && kycData.town && kycData.street) progress += 25
-    if (kycData.id_document_uploaded) progress += 10
+    if (kycData.id_number) progress += 20
+    if (kycData.region && kycData.town && kycData.street) progress += 20
+    if (kycData.id_document_uploaded) progress += 15
     if (kycData.bank_confirmation_uploaded) progress += 10
 
     return progress
@@ -267,30 +267,36 @@ export default function KYCPage() {
       </div>
 
       {/* Progress Overview */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-slate-800 border-slate-700 shadow-xl">
         <CardHeader>
-          <CardTitle className="text-white">KYC Progress</CardTitle>
+          <CardTitle className="text-white flex items-center">
+            <Shield className="h-5 w-5 mr-2" />
+            KYC Progress Overview
+          </CardTitle>
           <CardDescription>Complete all levels to unlock maximum benefits</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="flex justify-between text-sm">
               <span className="text-slate-300">Verification Progress</span>
-              <span className="text-slate-300">{getKYCProgress()}% Complete</span>
+              <span className="text-slate-300 font-medium">{getKYCProgress()}% Complete</span>
             </div>
-            <Progress value={getKYCProgress()} className="h-3" />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">Level 1</div>
+            <Progress value={getKYCProgress()} className="h-4" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+              <div className="text-center p-4 bg-slate-700 rounded-lg">
+                <div className="text-2xl font-bold text-green-400 mb-2">Level 1</div>
+                <div className="text-sm text-slate-300 mb-1">Mobile Cashouts Only</div>
                 <div className="text-xs text-slate-400">N$200/month • 5% fee</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-400">Level 2</div>
+              <div className="text-center p-4 bg-slate-700 rounded-lg">
+                <div className="text-2xl font-bold text-blue-400 mb-2">Level 2</div>
+                <div className="text-sm text-slate-300 mb-1">Enhanced Limits</div>
                 <div className="text-xs text-slate-400">N$5,000/week • 3% fee</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-400">Level 3</div>
-                <div className="text-xs text-slate-400">N$50,000/day • EFT enabled</div>
+              <div className="text-center p-4 bg-slate-700 rounded-lg">
+                <div className="text-2xl font-bold text-purple-400 mb-2">Level 3</div>
+                <div className="text-sm text-slate-300 mb-1">Premium + EFT</div>
+                <div className="text-xs text-slate-400">N$50,000/day • Reduced fees</div>
               </div>
             </div>
           </div>
@@ -314,7 +320,7 @@ export default function KYCPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Password Change & MFA */}
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-slate-800 border-slate-700 shadow-xl">
           <CardHeader>
             <CardTitle className="text-white flex items-center">
               <Lock className="h-5 w-5 mr-2" />
@@ -324,11 +330,11 @@ export default function KYCPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* MFA Section */}
-            <div className="text-center">
+            <div className="text-center p-4 bg-slate-700 rounded-lg">
               <h3 className="text-lg font-medium text-white mb-4">Setup MFA</h3>
               <Button
                 variant="outline"
-                className="bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                className="bg-slate-600 border-slate-500 text-slate-200 hover:bg-slate-500"
                 disabled
               >
                 Coming Soon
@@ -339,7 +345,7 @@ export default function KYCPage() {
               <h3 className="text-lg font-medium text-white mb-4">Change Password</h3>
 
               {/* User Info */}
-              <div className="mb-4 space-y-2">
+              <div className="mb-4 space-y-2 p-3 bg-slate-700 rounded-lg">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">Email:</span>
                   <span className="text-green-400">{user?.email}</span>
@@ -360,7 +366,7 @@ export default function KYCPage() {
                     type={showPassword ? "text" : "password"}
                     value={formData.oldPassword}
                     onChange={(e) => setFormData((prev) => ({ ...prev, oldPassword: e.target.value }))}
-                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                     required
                   />
                   <button
@@ -381,7 +387,7 @@ export default function KYCPage() {
                     type={showPassword ? "text" : "password"}
                     value={formData.newPassword}
                     onChange={(e) => setFormData((prev) => ({ ...prev, newPassword: e.target.value }))}
-                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                     required
                   />
                 </div>
@@ -395,7 +401,7 @@ export default function KYCPage() {
                     type={showConfirmPassword ? "text" : "password"}
                     value={formData.confirmPassword}
                     onChange={(e) => setFormData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                     required
                   />
                   <button
@@ -416,7 +422,7 @@ export default function KYCPage() {
         </Card>
 
         {/* KYC Level 1 */}
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-slate-800 border-slate-700 shadow-xl">
           <CardHeader>
             <CardTitle className="text-white flex items-center">
               <Mail className="h-5 w-5 mr-2" />
@@ -426,7 +432,7 @@ export default function KYCPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-slate-700 p-4 rounded-lg">
-              <h4 className="font-medium text-white mb-2">Benefits</h4>
+              <h4 className="font-medium text-white mb-2">Level 1 Benefits</h4>
               <ul className="text-sm text-slate-300 space-y-1">
                 <li>• Mobile cashouts only</li>
                 <li>• N$200 per month limit</li>
@@ -462,7 +468,7 @@ export default function KYCPage() {
                     value={formData.mobileNumber}
                     onChange={(e) => setFormData((prev) => ({ ...prev, mobileNumber: e.target.value }))}
                     placeholder="+264 81 123 4567"
-                    className="bg-slate-700 border-slate-600 text-slate-200"
+                    className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                   />
                   {kycData?.mobile_verified && <CheckCircle className="h-5 w-5 ml-2 text-green-500" />}
                 </div>
@@ -480,7 +486,7 @@ export default function KYCPage() {
         </Card>
 
         {/* KYC Level 2 */}
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-slate-800 border-slate-700 shadow-xl">
           <CardHeader>
             <CardTitle className="text-white flex items-center">
               <User className="h-5 w-5 mr-2" />
@@ -490,7 +496,7 @@ export default function KYCPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-slate-700 p-4 rounded-lg">
-              <h4 className="font-medium text-white mb-2">Benefits</h4>
+              <h4 className="font-medium text-white mb-2">Level 2 Benefits</h4>
               <ul className="text-sm text-slate-300 space-y-1">
                 <li>• Mobile cashouts</li>
                 <li>• N$5,000 per week limit</li>
@@ -508,7 +514,7 @@ export default function KYCPage() {
                   value={formData.idNumber}
                   onChange={(e) => setFormData((prev) => ({ ...prev, idNumber: e.target.value }))}
                   placeholder="Enter your ID number"
-                  className="bg-slate-700 border-slate-600 text-slate-200"
+                  className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
 
@@ -520,50 +526,50 @@ export default function KYCPage() {
                   value={formData.region}
                   onValueChange={(value) => setFormData((prev) => ({ ...prev, region: value }))}
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500">
                     <SelectValue placeholder="Select your region" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-700 border-slate-600 text-slate-200">
-                    <SelectItem value="khomas" className="text-slate-200">
+                  <SelectContent className="bg-slate-700 border-slate-600 shadow-xl">
+                    <SelectItem value="khomas" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Khomas
                     </SelectItem>
-                    <SelectItem value="erongo" className="text-slate-200">
+                    <SelectItem value="erongo" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Erongo
                     </SelectItem>
-                    <SelectItem value="otjozondjupa" className="text-slate-200">
+                    <SelectItem value="otjozondjupa" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Otjozondjupa
                     </SelectItem>
-                    <SelectItem value="oshana" className="text-slate-200">
+                    <SelectItem value="oshana" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Oshana
                     </SelectItem>
-                    <SelectItem value="omusati" className="text-slate-200">
+                    <SelectItem value="omusati" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Omusati
                     </SelectItem>
-                    <SelectItem value="oshikoto" className="text-slate-200">
+                    <SelectItem value="oshikoto" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Oshikoto
                     </SelectItem>
-                    <SelectItem value="ohangwena" className="text-slate-200">
+                    <SelectItem value="ohangwena" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Ohangwena
                     </SelectItem>
-                    <SelectItem value="caprivi" className="text-slate-200">
+                    <SelectItem value="zambezi" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Zambezi
                     </SelectItem>
-                    <SelectItem value="kavango_east" className="text-slate-200">
+                    <SelectItem value="kavango_east" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Kavango East
                     </SelectItem>
-                    <SelectItem value="kavango_west" className="text-slate-200">
+                    <SelectItem value="kavango_west" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Kavango West
                     </SelectItem>
-                    <SelectItem value="kunene" className="text-slate-200">
+                    <SelectItem value="kunene" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Kunene
                     </SelectItem>
-                    <SelectItem value="omaheke" className="text-slate-200">
+                    <SelectItem value="omaheke" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Omaheke
                     </SelectItem>
-                    <SelectItem value="hardap" className="text-slate-200">
+                    <SelectItem value="hardap" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Hardap
                     </SelectItem>
-                    <SelectItem value="karas" className="text-slate-200">
+                    <SelectItem value="karas" className="text-slate-200 hover:bg-slate-600 focus:bg-slate-600">
                       Karas
                     </SelectItem>
                   </SelectContent>
@@ -579,7 +585,7 @@ export default function KYCPage() {
                   value={formData.town}
                   onChange={(e) => setFormData((prev) => ({ ...prev, town: e.target.value }))}
                   placeholder="Enter your town/city"
-                  className="bg-slate-700 border-slate-600 text-slate-200"
+                  className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
 
@@ -592,7 +598,7 @@ export default function KYCPage() {
                   value={formData.street}
                   onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
                   placeholder="Enter your street address"
-                  className="bg-slate-700 border-slate-600 text-slate-200"
+                  className="bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500"
                   rows={3}
                 />
               </div>
@@ -602,7 +608,7 @@ export default function KYCPage() {
                 <Button
                   onClick={() => handleDocumentUpload("id")}
                   variant="outline"
-                  className="w-full bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
+                  className="w-full bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600 mt-2"
                   disabled
                 >
                   <Upload className="h-4 w-4 mr-2" />
@@ -630,7 +636,7 @@ export default function KYCPage() {
       </div>
 
       {/* KYC Level 3 */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-slate-800 border-slate-700 shadow-xl">
         <CardHeader>
           <CardTitle className="text-white flex items-center">
             <CreditCard className="h-5 w-5 mr-2" />
@@ -641,20 +647,32 @@ export default function KYCPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-700 p-4 rounded-lg">
-              <h4 className="font-medium text-white mb-2">Premium Benefits</h4>
-              <ul className="text-sm text-slate-300 space-y-1">
-                <li>• Mobile cashouts: N$5,000/day</li>
-                <li>• Bank EFT transfers: N$50,000/day</li>
-                <li>• Reduced fees</li>
-                <li>• Priority support</li>
+            <div className="bg-slate-700 p-6 rounded-lg">
+              <h4 className="font-medium text-white mb-3">Premium Benefits</h4>
+              <ul className="text-sm text-slate-300 space-y-2">
+                <li className="flex items-center">
+                  <CheckCircle className="h-4 w-4 text-green-400 mr-2" />
+                  Mobile cashouts: N$5,000/day
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-4 w-4 text-green-400 mr-2" />
+                  Bank EFT transfers: N$50,000/day
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-4 w-4 text-green-400 mr-2" />
+                  Reduced fees
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-4 w-4 text-green-400 mr-2" />
+                  Priority support
+                </li>
               </ul>
             </div>
 
             <div className="space-y-4">
               <div>
                 <Label className="text-slate-300">Bank Confirmation Letter</Label>
-                <p className="text-xs text-slate-400 mb-2">Upload an official bank confirmation letter or statement</p>
+                <p className="text-xs text-slate-400 mb-3">Upload an official bank confirmation letter or statement</p>
                 <Button
                   onClick={() => handleDocumentUpload("bank")}
                   variant="outline"
@@ -674,22 +692,22 @@ export default function KYCPage() {
         </CardContent>
       </Card>
 
-      {/* Requirements Summary */}
-      <Card className="bg-slate-800 border-slate-700">
+      {/* KYC Requirements Summary */}
+      <Card className="bg-slate-800 border-slate-700 shadow-xl">
         <CardHeader>
           <CardTitle className="text-white">KYC Requirements Summary</CardTitle>
-          <CardDescription>Complete overview of all verification levels</CardDescription>
+          <CardDescription>Complete overview of all verification levels and their benefits</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-3">
+            <div className="space-y-4 p-4 bg-slate-700 rounded-lg">
               <h4 className="font-medium text-white flex items-center">
-                <div className="w-6 h-6 rounded-full bg-green-500 text-white text-xs flex items-center justify-center mr-2">
+                <div className="w-8 h-8 rounded-full bg-green-500 text-white text-sm flex items-center justify-center mr-3">
                   1
                 </div>
                 Level 1 Requirements
               </h4>
-              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+              <ul className="text-sm text-slate-300 space-y-2 ml-11">
                 <li className="flex items-center">
                   {user?.email_confirmed_at ? (
                     <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
@@ -707,16 +725,19 @@ export default function KYCPage() {
                   Mobile number
                 </li>
               </ul>
+              <div className="mt-3 p-2 bg-slate-600 rounded text-xs text-slate-300">
+                <strong>Benefits:</strong> N$200/month, 5% fee
+              </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4 p-4 bg-slate-700 rounded-lg">
               <h4 className="font-medium text-white flex items-center">
-                <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center mr-2">
+                <div className="w-8 h-8 rounded-full bg-blue-500 text-white text-sm flex items-center justify-center mr-3">
                   2
                 </div>
                 Level 2 Requirements
               </h4>
-              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+              <ul className="text-sm text-slate-300 space-y-2 ml-11">
                 <li className="flex items-center">
                   {kycData?.id_number ? (
                     <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
@@ -742,16 +763,19 @@ export default function KYCPage() {
                   ID Document Upload
                 </li>
               </ul>
+              <div className="mt-3 p-2 bg-slate-600 rounded text-xs text-slate-300">
+                <strong>Benefits:</strong> N$5,000/week, 3% fee
+              </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4 p-4 bg-slate-700 rounded-lg">
               <h4 className="font-medium text-white flex items-center">
-                <div className="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center mr-2">
+                <div className="w-8 h-8 rounded-full bg-purple-500 text-white text-sm flex items-center justify-center mr-3">
                   3
                 </div>
                 Level 3 Requirements
               </h4>
-              <ul className="text-sm text-slate-300 space-y-1 ml-8">
+              <ul className="text-sm text-slate-300 space-y-2 ml-11">
                 <li className="flex items-center">
                   {kycData?.bank_confirmation_uploaded ? (
                     <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
@@ -762,6 +786,9 @@ export default function KYCPage() {
                 </li>
                 <li className="text-xs text-slate-400">+ All Level 1 & 2 requirements</li>
               </ul>
+              <div className="mt-3 p-2 bg-slate-600 rounded text-xs text-slate-300">
+                <strong>Benefits:</strong> N$50,000/day EFT, reduced fees
+              </div>
             </div>
           </div>
         </CardContent>
