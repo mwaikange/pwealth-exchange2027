@@ -77,12 +77,11 @@ export default function ExchangePage() {
       const result = await placeBuyOrder?.(amount)
       const success = result?.success ?? false
       const resultMessage = result?.message ?? (success ? "Buy order placed successfully" : "Failed to place buy order")
-      const orderRef = result?.buy_ref || result?.order_id || "Unknown"
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
       if (showNotification) {
-        showNotification(success ? "success" : "error", success ? `${resultMessage} (${orderRef})` : resultMessage)
+        showNotification(success ? "success" : "error", resultMessage)
       }
 
       if (success) {
@@ -124,12 +123,11 @@ export default function ExchangePage() {
       const success = result?.success ?? false
       const resultMessage =
         result?.message ?? (success ? "Sell order placed successfully" : "Failed to place sell order")
-      const orderRef = result?.sell_ref || result?.order_id || "Unknown"
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
       if (showNotification) {
-        showNotification(success ? "success" : "error", success ? `${resultMessage} (${orderRef})` : resultMessage)
+        showNotification(success ? "success" : "error", resultMessage)
       }
 
       if (success) {
@@ -223,7 +221,7 @@ export default function ExchangePage() {
       }
     } else {
       const sharesRemaining = Number(order.shares_remaining) || 0
-      const sharesAvailable = Number(order.shares_available) || 0
+      const sharesAvailable = Number(order.shares_available) || 0 // CORRECT column name
       const sharesSold = sharesAvailable - sharesRemaining
       progress = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
       filledText = `Sold: ${formatShares(sharesSold)} / ${formatShares(sharesAvailable)} shares`
@@ -607,7 +605,7 @@ export default function ExchangePage() {
               ) : (
                 marketSellOrders.slice(0, 10).map((order) => {
                   const sharesRemaining = Number(order.shares_remaining) || 0
-                  const sharesAvailable = Number(order.shares_available) || 0
+                  const sharesAvailable = Number(order.shares_available) || 0 // CORRECT column name
                   const sharesSold = sharesAvailable - sharesRemaining
                   const filledPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
 
@@ -704,7 +702,7 @@ export default function ExchangePage() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <span className={`font-medium ${isExpired ? "text-gray-400" : "text-slate-100"}`}>
-                            {formatShares(order.shares_available)} shares
+                            {formatShares(order.shares_available)} shares {/* CORRECT column name */}
                           </span>
                           <span className={`text-sm ml-2 ${isExpired ? "text-gray-500" : "text-slate-400"}`}>
                             @ {formatCurrency(order.price_per_share)}

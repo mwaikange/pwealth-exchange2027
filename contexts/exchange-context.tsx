@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from "uuid"
 type MarketOrder = {
   id: string
   total_amount?: number
-  quantity?: number
+  shares_available?: number // CORRECT column name
   shares_remaining?: number
   price_per_share: number
   amount_filled?: number
@@ -73,24 +73,22 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       const price = Number(data) || 99.68
-      // Additional NaN protection
       const safePrice = isNaN(price) ? 99.68 : price
       setCurrentSharePrice(safePrice)
 
       console.log("Current share price fetched:", safePrice)
     } catch (err) {
       console.error("Error fetching current price:", err)
-      setCurrentSharePrice(99.68) // Fallback price
+      setCurrentSharePrice(99.68)
     }
   }
 
-  // Fetch exchange status using correct function and column names
+  // Fetch exchange status
   const fetchExchangeStatus = async () => {
     try {
       const { data, error } = await supabase.rpc("get_exchange_status")
       if (error) throw error
 
-      // Map the response to our expected format
       const mappedStatus: ExchangeStatus = {
         is_trading_open: data.is_trading_open || false,
         status_message: data.status_message || "Exchange status unavailable",
@@ -130,50 +128,50 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch market orders - ONLY ACTIVE ORDERS (not fully filled/matched)
+  // Fetch market orders with CORRECT enum values and column names
   const fetchMarketOrders = async () => {
     try {
-      // Fetch market sell orders - ONLY open and partial (NOT matched, expired, cancelled)
+      // Fetch market sell orders - CORRECT enum values: "available" and "partial"
       const { data: sellOrders, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
-        .in("status", ["open", "partial"]) // Only active sell orders
-        .gt("shares_remaining", 0) // Ensure shares_remaining is not 0 or null
-        .not("shares_remaining", "is", null) // Exclude null shares_remaining
+        .in("status", ["available", "partial"]) // CORRECT enum values
+        .gt("shares_remaining", 0)
+        .not("shares_remaining", "is", null)
         .order("created_at", { ascending: false })
         .limit(20)
 
       if (sellError) throw sellError
 
-      // Filter out any orders with NaN or invalid data
+      // Filter valid sell orders using CORRECT column names
       const validSellOrders = (sellOrders || []).filter((order) => {
         const sharesRemaining = Number(order.shares_remaining)
-        const quantity = Number(order.quantity)
+        const sharesAvailable = Number(order.shares_available) // CORRECT column name
         const pricePerShare = Number(order.price_per_share)
 
         return (
           !isNaN(sharesRemaining) &&
-          !isNaN(quantity) &&
+          !isNaN(sharesAvailable) &&
           !isNaN(pricePerShare) &&
           sharesRemaining > 0 &&
-          quantity > 0 &&
+          sharesAvailable > 0 &&
           pricePerShare > 0
         )
       })
 
-      // Fetch market buy orders - ONLY open and partial (NOT filled, expired, cancelled)
+      // Fetch market buy orders - CORRECT enum values: "pending" and "partial"
       const { data: buyOrders, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
-        .in("status", ["open", "partial"]) // Only active buy orders
-        .gt("total_amount", 0) // Ensure total_amount is not 0 or null
-        .not("total_amount", "is", null) // Exclude null amounts
+        .in("status", ["pending", "partial"]) // CORRECT enum values
+        .gt("total_amount", 0)
+        .not("total_amount", "is", null)
         .order("created_at", { ascending: false })
         .limit(20)
 
       if (buyError) throw buyError
 
-      // Filter out any orders with NaN or invalid data
+      // Filter valid buy orders
       const validBuyOrders = (buyOrders || []).filter((order) => {
         const totalAmount = Number(order.total_amount)
         const amountFilled = Number(order.amount_filled) || 0
@@ -185,7 +183,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
           !isNaN(pricePerShare) &&
           totalAmount > 0 &&
           pricePerShare > 0 &&
-          amountFilled < totalAmount // Not fully filled
+          amountFilled < totalAmount
         )
       })
 
@@ -203,12 +201,12 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch user orders - ALL STATUSES (user sees their complete history)
+  // Fetch user orders - ALL STATUSES for user history
   const fetchUserOrders = async () => {
     if (!user) return
 
     try {
-      // Fetch user sell orders - ALL STATUSES for user history
+      // Fetch user sell orders - ALL STATUSES
       const { data: userSells, error: sellError } = await supabase
         .from("sell_orders")
         .select("*")
@@ -217,15 +215,15 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (sellError) throw sellError
 
-      // Filter out invalid data but keep all statuses
+      // Filter valid user sells using CORRECT column names
       const validUserSells = (userSells || []).filter((order) => {
-        const quantity = Number(order.quantity)
+        const sharesAvailable = Number(order.shares_available) // CORRECT column name
         const pricePerShare = Number(order.price_per_share)
 
-        return !isNaN(quantity) && !isNaN(pricePerShare) && quantity > 0 && pricePerShare > 0
+        return !isNaN(sharesAvailable) && !isNaN(pricePerShare) && sharesAvailable > 0 && pricePerShare > 0
       })
 
-      // Fetch user buy orders - ALL STATUSES for user history
+      // Fetch user buy orders - ALL STATUSES
       const { data: userBuys, error: buyError } = await supabase
         .from("buy_orders")
         .select("*")
@@ -234,7 +232,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
 
       if (buyError) throw buyError
 
-      // Filter out invalid data but keep all statuses
+      // Filter valid user buys
       const validUserBuys = (userBuys || []).filter((order) => {
         const totalAmount = Number(order.total_amount)
         const pricePerShare = Number(order.price_per_share)
@@ -256,7 +254,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Refresh all orders, price, and exchange status
+  // Refresh all data
   const refreshOrders = async () => {
     setLoading(true)
     setError(null)
@@ -271,18 +269,16 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Add separate refresh function for exchange status
   const refreshExchangeStatus = async () => {
     await fetchExchangeStatus()
   }
 
-  // Place buy order - check if exchange is open (NO expires_at)
+  // Place buy order with CORRECT function call
   const placeBuyOrder = async (amount: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
     }
 
-    // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
       const schedule = exchangeStatus?.trading_schedule
       return {
@@ -296,21 +292,21 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "Invalid amount" }
     }
 
-    // 1. Optimistic UI Update
+    // Optimistic UI update
     const tempId = uuidv4()
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
       total_amount: safeAmount,
       price_per_share: currentSharePrice,
-      status: "open",
+      status: "pending", // CORRECT enum value
       created_at: new Date().toISOString(),
       amount_filled: 0,
     }
     setUserBuyOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // 2. Call Supabase (NO expires_at parameter)
+      // Call function with CORRECT parameters
       const { data, error } = await supabase.rpc("place_buy_order", {
         p_user_uuid: user.id,
         p_total_amount: safeAmount,
@@ -319,27 +315,25 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       if (data?.success) {
-        // 3. On success, refresh to get real data
         await refreshOrders()
         return { success: true, message: data.message || "Buy order placed successfully" }
       } else {
         throw new Error(data?.message || "Failed to place buy order")
       }
     } catch (err: any) {
-      // 4. On failure, revert the optimistic update
+      // Revert optimistic update
       setUserBuyOrders((prev) => prev.filter((order) => order.id !== tempId))
       console.error("Error placing buy order:", err)
       return { success: false, message: err.message || "Failed to place buy order" }
     }
   }
 
-  // Place sell order - check if exchange is open (NO expires_at)
+  // Place sell order with CORRECT function call
   const placeSellOrder = async (shares: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
     }
 
-    // Check if exchange is open
     if (!exchangeStatus?.is_trading_open) {
       const schedule = exchangeStatus?.trading_schedule
       return {
@@ -353,21 +347,21 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "Invalid number of shares" }
     }
 
-    // 1. Optimistic UI Update
+    // Optimistic UI update
     const tempId = uuidv4()
     const optimisticOrder: UserOrder = {
       id: tempId,
       user_uuid: user.id,
-      quantity: safeShares,
+      shares_available: safeShares, // CORRECT column name
       shares_remaining: safeShares,
       price_per_share: currentSharePrice,
-      status: "open",
+      status: "available", // CORRECT enum value
       created_at: new Date().toISOString(),
     }
     setUserSellOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // 2. Call Supabase (NO expires_at parameter)
+      // Call function with CORRECT parameters
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
         p_shares: safeShares,
@@ -376,14 +370,13 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       if (data?.success) {
-        // 3. On success, refresh to get real data
         await refreshOrders()
         return { success: true, message: data.message || "Sell order placed successfully" }
       } else {
         throw new Error(data?.message || "Failed to place sell order")
       }
     } catch (err: any) {
-      // 4. On failure, revert the optimistic update
+      // Revert optimistic update
       setUserSellOrders((prev) => prev.filter((order) => order.id !== tempId))
       console.error("Error placing sell order:", err)
       return { success: false, message: err.message || "Failed to place sell order" }
