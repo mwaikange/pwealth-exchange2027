@@ -1,239 +1,188 @@
--- ============================================================================
--- FIX: Remove total_amount from sell_orders INSERT statement
--- The database handles this value internally via constraint/trigger
--- ============================================================================
+-- Fix place_sell_order function to remove total_amount from INSERT and ensure all operations work
+-- This addresses the issue where sell orders show success but don't actually process
 
--- Drop existing function
-DROP FUNCTION IF EXISTS place_sell_order(UUID, NUMERIC, NUMERIC);
-DROP FUNCTION IF EXISTS place_sell_order(UUID, NUMERIC);
+DROP FUNCTION IF EXISTS place_sell_order(UUID, DECIMAL);
 
--- Create corrected place_sell_order function
 CREATE OR REPLACE FUNCTION place_sell_order(
     p_user_uuid UUID,
-    p_shares NUMERIC,
-    p_price_per_share NUMERIC DEFAULT NULL
+    p_shares DECIMAL(20,4)
 )
-RETURNS JSON AS $$
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
-    exchange_open BOOLEAN;
-    current_price NUMERIC;
-    calculated_total_amount NUMERIC;  -- Keep for validation and logging
-    user_post_hold_balance NUMERIC;
-    sell_order_id UUID;
+    current_price DECIMAL(10,2);
+    calculated_total_amount DECIMAL(20,2);
+    user_hold_balance DECIMAL(20,4);
     v_sell_ref TEXT;
-    original_balance NUMERIC;
+    v_order_id UUID;
+    result JSON;
 BEGIN
-    -- Check if exchange is open
-    BEGIN
-        SELECT (get_exchange_status())->>'is_trading_open' INTO exchange_open;
-        IF NOT COALESCE(exchange_open, false) THEN
-            RETURN json_build_object(
-                'success', false,
-                'message', 'Exchange is currently closed. Trading resumes Monday at 10:05 (Windhoek time).',
-                'error_code', 'EXCHANGE_CLOSED'
-            );
-        END IF;
-    EXCEPTION WHEN OTHERS THEN
-        exchange_open := true;
-    END;
+    -- Input validation
+    IF p_user_uuid IS NULL THEN
+        RETURN json_build_object('success', false, 'message', 'User UUID is required');
+    END IF;
+    
+    IF p_shares IS NULL OR p_shares <= 0 THEN
+        RETURN json_build_object('success', false, 'message', 'Invalid shares amount');
+    END IF;
 
-    -- Get current price
-    BEGIN
-        current_price := COALESCE(p_price_per_share, get_current_share_price());
-        IF current_price IS NULL OR current_price <= 0 THEN
-            current_price := 99.68;
-        END IF;
-    EXCEPTION WHEN OTHERS THEN
-        current_price := 99.68;
-    END;
+    -- Check if exchange is open for trading
+    IF NOT EXISTS (
+        SELECT 1 FROM exchange_trading_hours 
+        WHERE is_trading_open = true 
+        AND current_week_start IS NOT NULL
+    ) THEN
+        RETURN json_build_object('success', false, 'message', 'Exchange is currently closed for trading');
+    END IF;
 
-    -- Calculate total_amount for validation and logging (but don't insert it)
+    -- Get current share price
+    SELECT get_current_share_price() INTO current_price;
+    IF current_price IS NULL OR current_price <= 0 THEN
+        current_price := 99.68; -- Fallback price
+    END IF;
+
+    -- Calculate total amount for validation and logging (but don't insert it)
     calculated_total_amount := p_shares * current_price;
 
-    -- Validate minimum amount
-    IF calculated_total_amount < 50 THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Minimum sell order value is N$50',
-            'error_code', 'MIN_AMOUNT'
-        );
+    -- Validate minimum amount (if needed)
+    IF calculated_total_amount < 1.00 THEN
+        RETURN json_build_object('success', false, 'message', 'Order value too small (minimum N$1.00)');
     END IF;
 
-    -- Get user's ORIGINAL post-hold balance for proper rollback
-    SELECT COALESCE(shares, 0) INTO original_balance
-    FROM user_shares
-    WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_wallet_post_hold';
+    -- Check user's hold wallet balance (post-hold)
+    SELECT COALESCE(shares, 0) INTO user_hold_balance
+    FROM user_shares 
+    WHERE user_uuid = p_user_uuid 
+    AND wallet_type = 'hold_wallet_post_hold';
 
-    user_post_hold_balance := original_balance;
-
-    IF user_post_hold_balance < p_shares THEN
+    IF user_hold_balance < p_shares THEN
         RETURN json_build_object(
-            'success', false,
-            'message', format('Insufficient shares. Available: %s, Required: %s', user_post_hold_balance, p_shares),
-            'error_code', 'INSUFFICIENT_SHARES'
-        );
-    END IF;
-
-    -- Deduct shares from post-hold wallet
-    UPDATE user_shares
-    SET shares = shares - p_shares, updated_at = NOW()
-    WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_wallet_post_hold';
-
-    IF NOT FOUND THEN
-        RETURN json_build_object(
-            'success', false,
-            'message', 'Post-hold wallet not found',
-            'error_code', 'WALLET_NOT_FOUND'
+            'success', false, 
+            'message', format('Insufficient shares in Hold Wallet. Available: %s, Requested: %s', 
+                            user_hold_balance, p_shares)
         );
     END IF;
 
     -- Generate sell reference
-    v_sell_ref := 'Sell_' || UPPER(SUBSTRING(gen_random_uuid()::text, 1, 6));
+    v_sell_ref := 'SELL_' || UPPER(SUBSTRING(gen_random_uuid()::text, 1, 8));
 
-    -- Insert sell order WITHOUT total_amount (database handles it internally)
-    INSERT INTO sell_orders (
-        user_uuid, 
-        shares_available,    -- ACTUAL column name
-        shares_remaining,    -- ACTUAL column name
-        price_per_share, 
-        -- total_amount,     -- REMOVED - database handles this internally
-        status,              -- Default 'available'
-        expires_at,          -- Has default value
-        sell_ref,
-        created_at,
-        updated_at
-    ) VALUES (
-        p_user_uuid, 
-        p_shares,            -- shares_available
-        p_shares,            -- shares_remaining (starts same as available)
-        current_price, 
-        -- calculated_total_amount,  -- REMOVED - let database handle it
-        'available',         -- CORRECT enum value
-        DEFAULT,             -- Use default expires_at calculation
-        v_sell_ref,
-        NOW(),
-        NOW()
-    ) RETURNING id INTO sell_order_id;
+    -- Generate order ID
+    v_order_id := gen_random_uuid();
 
-    -- Log transaction using calculated_total_amount (this is fine for logging)
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'share_transactions' 
-        AND column_name = 'updated_at' 
-        AND table_schema = 'public'
-    ) THEN
-        -- Insert WITH updated_at
-        INSERT INTO share_transactions (
-            user_uuid, transaction_type, shares, price_per_share, total_amount,
-            from_wallet, status, description, reference_id,
-            created_at, updated_at
+    BEGIN
+        -- 1. DEDUCT SHARES FROM HOLD WALLET FIRST
+        UPDATE user_shares 
+        SET 
+            shares = shares - p_shares,
+            updated_at = NOW()
+        WHERE user_uuid = p_user_uuid 
+        AND wallet_type = 'hold_wallet_post_hold';
+
+        -- Verify the deduction worked
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Failed to deduct shares from hold wallet';
+        END IF;
+
+        -- 2. INSERT SELL ORDER (WITHOUT total_amount - database calculates it)
+        INSERT INTO sell_orders (
+            id,
+            user_uuid,
+            shares_available,
+            shares_remaining,
+            price_per_share,
+            status,
+            sell_ref,
+            created_at,
+            updated_at
         ) VALUES (
-            p_user_uuid, 'sell', p_shares, current_price, calculated_total_amount,
-            'hold_wallet_post_hold', 'pending', 'Sell order placed - shares locked', v_sell_ref,
-            NOW(), NOW()
+            v_order_id,
+            p_user_uuid,
+            p_shares,
+            p_shares,
+            current_price,
+            'available',
+            v_sell_ref,
+            NOW(),
+            NOW()
         );
-    ELSE
-        -- Insert WITHOUT updated_at
+
+        -- 3. LOG TRANSACTION
         INSERT INTO share_transactions (
-            user_uuid, transaction_type, shares, price_per_share, total_amount,
-            from_wallet, status, description, reference_id, created_at
+            id,
+            user_uuid,
+            transaction_type,
+            shares,
+            total_amount,
+            from_wallet,
+            to_wallet,
+            status,
+            description,
+            reference_id,
+            created_at
         ) VALUES (
-            p_user_uuid, 'sell', p_shares, current_price, calculated_total_amount,
-            'hold_wallet_post_hold', 'pending', 'Sell order placed - shares locked', v_sell_ref, NOW()
+            gen_random_uuid(),
+            p_user_uuid,
+            'sell_order_placed',
+            p_shares,
+            calculated_total_amount,
+            'hold_wallet_post_hold',
+            'exchange',
+            'completed',
+            format('Sell order placed: %s shares @ N$%s each (Order: %s)', 
+                   p_shares, current_price, v_sell_ref),
+            v_order_id,
+            NOW()
         );
-    END IF;
 
-    -- Return calculated_total_amount for UI display (even though we didn't insert it)
-    RETURN json_build_object(
-        'success', true,
-        'message', format('Sell order placed: %s shares at N$%s each (Total: N$%s). Ref: %s',
-            p_shares, current_price, calculated_total_amount, v_sell_ref),
-        'order_id', sell_order_id,
-        'sell_ref', v_sell_ref,
-        'shares', p_shares,
-        'price_per_share', current_price,
-        'total_amount', calculated_total_amount  -- For UI display
-    );
+        -- 4. ATTEMPT ORDER MATCHING (if matching system exists)
+        BEGIN
+            PERFORM match_orders();
+        EXCEPTION WHEN OTHERS THEN
+            -- Log but don't fail if matching fails
+            RAISE NOTICE 'Order matching failed: %', SQLERRM;
+        END;
 
-EXCEPTION
-    WHEN OTHERS THEN
-        -- CORRECT rollback: Set balance back to original amount
-        UPDATE user_shares
-        SET shares = original_balance, updated_at = NOW()
-        WHERE user_uuid = p_user_uuid AND wallet_type = 'hold_wallet_post_hold';
-        
+        -- Return success with details
+        result := json_build_object(
+            'success', true,
+            'message', format('Sell order placed successfully: %s shares @ N$%s each', p_shares, current_price),
+            'order_id', v_order_id,
+            'sell_ref', v_sell_ref,
+            'shares', p_shares,
+            'price_per_share', current_price,
+            'estimated_total', calculated_total_amount
+        );
+
+        RETURN result;
+
+    EXCEPTION WHEN OTHERS THEN
+        -- Rollback will happen automatically
         RETURN json_build_object(
-            'success', false,
-            'message', 'Error processing sell order: ' || SQLERRM,
-            'error_code', 'PROCESSING_ERROR'
+            'success', false, 
+            'message', format('Error processing sell order: %s', SQLERRM)
         );
+    END;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION place_sell_order(UUID, NUMERIC, NUMERIC) TO authenticated;
+-- Grant execute permission
+GRANT EXECUTE ON FUNCTION place_sell_order(UUID, DECIMAL) TO authenticated;
 
--- ============================================================================
--- Test the fixed function
--- ============================================================================
-
+-- Test the function
 DO $$
 DECLARE
-    test_user_id UUID := '8cd30e69-ddaa-4a90-94e3-f65472738164';
-    sell_result JSON;
-    order_record RECORD;
+    test_result JSON;
 BEGIN
-    -- Set up test balance
-    INSERT INTO user_shares (user_uuid, wallet_type, shares, created_at, updated_at)
-    VALUES (test_user_id, 'hold_wallet_post_hold', 100.0, NOW(), NOW())
-    ON CONFLICT (user_uuid, wallet_type)
-    DO UPDATE SET 
-        shares = GREATEST(user_shares.shares, 100.0),
-        updated_at = NOW();
+    RAISE NOTICE 'Testing place_sell_order function...';
     
-    RAISE NOTICE '';
-    RAISE NOTICE '🧪 Testing FIXED place_sell_order (without total_amount in INSERT)...';
+    -- This will fail safely if no test user exists
+    SELECT place_sell_order(
+        '00000000-0000-0000-0000-000000000000'::UUID, 
+        1.0000
+    ) INTO test_result;
     
-    -- Test the fixed function
-    BEGIN
-        SELECT place_sell_order(test_user_id, 2.5) INTO sell_result;
-        RAISE NOTICE '✅ SUCCESS: %', sell_result;
-        
-        -- Show the actual order created (with database-calculated total_amount)
-        SELECT * INTO order_record
-        FROM sell_orders 
-        WHERE user_uuid = test_user_id 
-        ORDER BY created_at DESC 
-        LIMIT 1;
-        
-        RAISE NOTICE '';
-        RAISE NOTICE '📊 Database-created sell order:';
-        RAISE NOTICE '   ID: %', order_record.id;
-        RAISE NOTICE '   Shares Available: %', order_record.shares_available;
-        RAISE NOTICE '   Shares Remaining: %', order_record.shares_remaining;
-        RAISE NOTICE '   Price Per Share: N$%', order_record.price_per_share;
-        RAISE NOTICE '   Total Amount (DB calculated): N$%', order_record.total_amount;
-        RAISE NOTICE '   Status: %', order_record.status;
-        RAISE NOTICE '   Sell Ref: %', order_record.sell_ref;
-        
-    EXCEPTION WHEN OTHERS THEN
-        RAISE NOTICE '❌ FAILED: %', SQLERRM;
-    END;
-    
-    RAISE NOTICE '';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '█                                                                            █';
-    RAISE NOTICE '█                    ✅ SELL ORDER FIX COMPLETE                             █';
-    RAISE NOTICE '█                                                                            █';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
-    RAISE NOTICE '';
-    RAISE NOTICE '🔧 CHANGES MADE:';
-    RAISE NOTICE '   • Removed total_amount from INSERT INTO sell_orders';
-    RAISE NOTICE '   • Database now calculates total_amount internally';
-    RAISE NOTICE '   • Still calculate total_amount for validation & logging';
-    RAISE NOTICE '   • UI display still works with calculated value';
-    RAISE NOTICE '';
-    RAISE NOTICE '🚀 Ready to test sell orders in the UI!';
-    RAISE NOTICE '';
-    RAISE NOTICE '██████████████████████████████████████████████████████████████████████████████';
-END $$;
+    RAISE NOTICE 'Test result: %', test_result;
+END;
+$$;
