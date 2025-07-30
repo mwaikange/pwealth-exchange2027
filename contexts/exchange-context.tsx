@@ -347,7 +347,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Place sell order with CORRECT function call - FIXED for total_amount constraint
+  // Place sell order - FIXED: Database handles total_amount internally
   const placeSellOrder = async (shares: number): Promise<{ success: boolean; message: string }> => {
     if (!user) {
       return { success: false, message: "User not authenticated" }
@@ -366,7 +366,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: "Invalid number of shares" }
     }
 
-    // Optimistic UI update with ACTUAL schema fields
+    // Optimistic UI update - calculate estimated total for display
     const tempId = uuidv4()
     const estimatedTotal = safeShares * currentSharePrice
     const optimisticOrder: UserOrder = {
@@ -374,7 +374,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       user_uuid: user.id,
       shares_available: safeShares, // CORRECT column name
       shares_remaining: safeShares,
-      total_amount: estimatedTotal, // May be calculated by database
+      total_amount: estimatedTotal, // Estimated for UI (database will calculate actual)
       price_per_share: currentSharePrice,
       status: "available", // CORRECT enum value
       created_at: new Date().toISOString(),
@@ -383,7 +383,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
     setUserSellOrders((prev) => [optimisticOrder, ...prev])
 
     try {
-      // Call function with CORRECT parameters - function now handles total_amount constraint
+      // Call function - database now handles total_amount internally
       const { data, error } = await supabase.rpc("place_sell_order", {
         p_user_uuid: user.id,
         p_shares: safeShares,
@@ -392,7 +392,7 @@ export function ExchangeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
 
       if (data?.success) {
-        await refreshOrders()
+        await refreshOrders() // This will fetch the actual database-calculated total_amount
         return { success: true, message: data.message || "Sell order placed successfully" }
       } else {
         throw new Error(data?.message || "Failed to place sell order")
