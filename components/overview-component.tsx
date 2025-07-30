@@ -11,14 +11,35 @@ import { useRouter } from "next/navigation"
 import { TrendingUp, DollarSign, PieChart, ArrowDownRight, Wallet, Gift, Target, Clock } from "lucide-react"
 import { OverviewSkeleton } from "@/components/skeletons/overview-skeleton"
 
-// Helper functions
+// Helper functions - FIXED: Always 4 decimal places for shares
 const formatCurrency = (value: number): string => {
   return `N$${Number(value).toFixed(2)}`
 }
 
 const formatShares = (value: number): string => {
-  return Number(value).toFixed(4)
+  return Number(value).toFixed(4) // Always 4 decimal places
 }
+
+// Wave SVG Component for card backgrounds
+const WaveBackground = ({ className = "" }: { className?: string }) => (
+  <svg
+    className={`absolute inset-0 w-full h-full object-cover ${className}`}
+    viewBox="0 0 200 120"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M0 40C20 20, 40 60, 60 40C80 20, 100 60, 120 40C140 20, 160 60, 180 40C190 35, 200 45, 200 40V120H0V40Z"
+      fill="currentColor"
+      opacity="0.1"
+    />
+    <path
+      d="M0 60C25 45, 50 75, 75 60C100 45, 125 75, 150 60C175 45, 200 75, 200 60V120H0V60Z"
+      fill="currentColor"
+      opacity="0.05"
+    />
+  </svg>
+)
 
 export function OverviewComponent() {
   const router = useRouter()
@@ -71,31 +92,33 @@ export function OverviewComponent() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Top 4 Cards with Colors */}
+      {/* Top 4 Cards with Enhanced Styling - MATCHING EXISTING CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Cash Balance - Green - FIXED CALCULATION */}
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
-          <CardHeader className="pb-2">
+        {/* Total Cash Balance - Green with Wave Background */}
+        <Card className="bg-gradient-to-tl from-green-600 to-green-400 text-white border-0 relative overflow-hidden rounded-xl shadow-lg">
+          <WaveBackground className="text-white" />
+          <CardHeader className="pb-2 relative z-10">
             <CardTitle className="text-sm font-medium flex items-center">
               <DollarSign className="h-4 w-4 mr-2" />
               Total Cash Balance
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative z-10">
             <div className="text-2xl font-bold">{formatCurrency(totalCashBalance)}</div>
             <p className="text-xs opacity-80 mt-1">Buy + Cashout Wallets</p>
           </CardContent>
         </Card>
 
-        {/* Share Value - Blue */}
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
-          <CardHeader className="pb-2">
+        {/* Share Value - Blue with Wave Background */}
+        <Card className="bg-gradient-to-tl from-blue-600 to-blue-400 text-white border-0 relative overflow-hidden rounded-xl shadow-lg">
+          <WaveBackground className="text-white" />
+          <CardHeader className="pb-2 relative z-10">
             <CardTitle className="text-sm font-medium flex items-center">
               <TrendingUp className="h-4 w-4 mr-2" />
               Share Value
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative z-10">
             <div className="text-2xl font-bold">{formatCurrency(totalShareValue)}</div>
             <p className="text-xs opacity-80 mt-1">
               {formatShares(totalShares)} shares @ {formatCurrency(currentSharePrice)}
@@ -103,29 +126,31 @@ export function OverviewComponent() {
           </CardContent>
         </Card>
 
-        {/* Share Price - Yellow */}
-        <Card className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white border-0">
-          <CardHeader className="pb-2">
+        {/* Share Price - Yellow/Orange with Wave Background */}
+        <Card className="bg-gradient-to-tl from-orange-500 to-yellow-400 text-white border-0 relative overflow-hidden rounded-xl shadow-lg">
+          <WaveBackground className="text-white" />
+          <CardHeader className="pb-2 relative z-10">
             <CardTitle className="text-sm font-medium flex items-center">
               <PieChart className="h-4 w-4 mr-2" />
               Share Price
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative z-10">
             <div className="text-2xl font-bold">{formatCurrency(currentSharePrice)}</div>
             <p className="text-xs opacity-80 mt-1">per share</p>
           </CardContent>
         </Card>
 
-        {/* Total Portfolio - Purple */}
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0">
-          <CardHeader className="pb-2">
+        {/* Total Portfolio - Purple with Wave Background */}
+        <Card className="bg-gradient-to-tl from-purple-700 to-purple-500 text-white border-0 relative overflow-hidden rounded-xl shadow-lg">
+          <WaveBackground className="text-white" />
+          <CardHeader className="pb-2 relative z-10">
             <CardTitle className="text-sm font-medium flex items-center">
               <Wallet className="h-4 w-4 mr-2" />
               Total Portfolio
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative z-10">
             <div className="text-2xl font-bold">{formatCurrency(totalPortfolioValue)}</div>
             <p className="text-xs opacity-80 mt-1">Cash + Share Value</p>
           </CardContent>
