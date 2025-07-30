@@ -50,7 +50,7 @@ export default function ExchangePage() {
     userBuyOrders = [],
     placeBuyOrder,
     placeSellOrder,
-    currentSharePrice = 108.2,
+    currentSharePrice = 99.68,
     exchangeStatus,
     loading: exchangeLoading,
     error: exchangeError,
@@ -67,6 +67,7 @@ export default function ExchangePage() {
     const amount = Number.parseFloat(buyAmount)
     if (isNaN(amount) || amount <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive amount" })
+      showNotification?.("error", "Please enter a valid positive amount")
       return
     }
 
@@ -76,11 +77,12 @@ export default function ExchangePage() {
       const result = await placeBuyOrder?.(amount)
       const success = result?.success ?? false
       const resultMessage = result?.message ?? (success ? "Buy order placed successfully" : "Failed to place buy order")
+      const orderRef = result?.buy_ref || result?.order_id || "Unknown"
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
       if (showNotification) {
-        showNotification(success ? "success" : "error", resultMessage)
+        showNotification(success ? "success" : "error", success ? `${resultMessage} (${orderRef})` : resultMessage)
       }
 
       if (success) {
@@ -105,11 +107,13 @@ export default function ExchangePage() {
     const shares = Number.parseFloat(sellShares)
     if (isNaN(shares) || shares <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive number of shares" })
+      showNotification?.("error", "Please enter a valid positive number of shares")
       return
     }
 
     if (shares > holdWalletPostHold) {
       setMessage({ type: "error", text: "Insufficient shares in Hold Wallet (Post-Hold)" })
+      showNotification?.("error", "Insufficient shares in Hold Wallet (Post-Hold)")
       return
     }
 
@@ -120,11 +124,12 @@ export default function ExchangePage() {
       const success = result?.success ?? false
       const resultMessage =
         result?.message ?? (success ? "Sell order placed successfully" : "Failed to place sell order")
+      const orderRef = result?.sell_ref || result?.order_id || "Unknown"
 
       setMessage({ type: success ? "success" : "error", text: resultMessage })
 
       if (showNotification) {
-        showNotification(success ? "success" : "error", resultMessage)
+        showNotification(success ? "success" : "error", success ? `${resultMessage} (${orderRef})` : resultMessage)
       }
 
       if (success) {
