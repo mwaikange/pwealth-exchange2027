@@ -10,6 +10,18 @@ export function WalletBalances() {
     useWallet()
   const [isAftModalOpen, setIsAftModalOpen] = useState(false)
 
+  // Helper function to format shares to 4 decimal places
+  const formatShares = (value: number): string => {
+    return Number(value)
+      .toFixed(4)
+      .replace(/\.?0+$/, "")
+  }
+
+  // Helper function to format currency
+  const formatCurrency = (value: number): string => {
+    return `N$${Number(value).toFixed(2)}`
+  }
+
   if (loading) {
     return (
       <div className="flex items-center space-x-2">
@@ -50,7 +62,7 @@ export function WalletBalances() {
           </svg>
           Buy Wallet
         </div>
-        <div className="text-xl font-bold">N${buyWalletBalance.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatCurrency(buyWalletBalance)}</div>
       </div>
 
       {/* Hold Pre-Hold Box */}
@@ -67,7 +79,7 @@ export function WalletBalances() {
           </svg>
           Hold Pre
         </div>
-        <div className="text-xl font-bold">{holdWalletPreHold.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatShares(holdWalletPreHold)}</div>
         <div className="text-[8px] text-gray-400">shares</div>
       </div>
 
@@ -85,7 +97,7 @@ export function WalletBalances() {
           </svg>
           Hold Post
         </div>
-        <div className="text-xl font-bold">{holdWalletPostHold.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatShares(holdWalletPostHold)}</div>
         <div className="text-[8px] text-gray-400">shares</div>
       </div>
 
@@ -103,7 +115,7 @@ export function WalletBalances() {
           </svg>
           Cashout
         </div>
-        <div className="text-xl font-bold">N${cashoutWalletBalance.toFixed(0)}</div>
+        <div className="text-xl font-bold">{formatCurrency(cashoutWalletBalance)}</div>
       </div>
 
       {/* Activation Token Box (if still used) */}
@@ -121,9 +133,7 @@ export function WalletBalances() {
             </svg>
             Activation Token
           </div>
-          <div className="text-xl font-bold flex items-center">
-            {aftBalance.toFixed(0)} <span className="text-[10px] ml-1">USD</span>
-          </div>
+          <div className="text-xl font-bold flex items-center">{formatCurrency(aftBalance)}</div>
           <button
             onClick={() => setIsAftModalOpen(true)}
             className="mt-1 text-[10px] bg-yellow-500 text-black px-2 py-0.5 rounded-sm hover:bg-yellow-600"

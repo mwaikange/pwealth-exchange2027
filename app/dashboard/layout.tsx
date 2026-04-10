@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { WalletProvider } from "@/contexts/wallet-context"
 import { TransactionProvider } from "@/contexts/transaction-context"
 import { VestingProvider } from "@/contexts/vesting-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase-singleton"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { RealtimeWrapper } from "@/components/realtime-wrapper"
@@ -27,7 +27,6 @@ export default function DashboardLayout({
       try {
         console.log("[DashboardLayout] Checking session...")
 
-        // Get the current session
         const {
           data: { session },
         } = await supabase.auth.getSession()
@@ -51,16 +50,13 @@ export default function DashboardLayout({
       }
     }
 
-    // Run the check
     check()
 
-    // Set up auth listener
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, newSession) => {
       console.log("[DashboardLayout] Auth state changed:", event)
 
-      // Only redirect on explicit sign out, not during initial session check
       if (event === "SIGNED_OUT" && !newSession) {
         console.warn("[DashboardLayout] User signed out")
         router.replace("/login")
@@ -68,7 +64,6 @@ export default function DashboardLayout({
       }
     })
 
-    // Cleanup function
     return () => {
       isMounted = false
       if (subscription) {
@@ -77,7 +72,6 @@ export default function DashboardLayout({
     }
   }, [router])
 
-  // Show loading state while checking session
   if (!sessionChecked) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#1c1e26] text-white">
@@ -89,7 +83,6 @@ export default function DashboardLayout({
     )
   }
 
-  // Only render children if we have a session
   if (!hasSession) {
     return null
   }
@@ -103,7 +96,10 @@ export default function DashboardLayout({
               <DashboardHeader />
               <div className="flex flex-1 overflow-hidden">
                 <DashboardSidebar />
-                <main className="flex-1 overflow-auto p-4">{children}</main>
+                {/* This makes the right side scroll without affecting the full page */}
+                <main className="flex-1 overflow-y-auto overflow-x-hidden p-4">
+                  {children}
+                </main>
               </div>
             </div>
           </RealtimeWrapper>

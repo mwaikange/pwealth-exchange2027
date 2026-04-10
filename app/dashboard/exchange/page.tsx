@@ -6,72 +6,163 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { useWallet, formatCurrency } from "@/contexts/wallet-context"
+import { useWallet } from "@/contexts/wallet-context"
 import { useExchange } from "@/contexts/exchange-context"
-import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2, Clock, Ban } from "lucide-react"
+import { useNotification } from "@/hooks/use-notification"
+import { AlertCircle, TrendingUp, TrendingDown, Wallet, Loader2, Clock } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ExchangePageSkeleton } from "@/components/skeletons/exchange-page-skeleton"
+import { SlidingNotification } from "@/components/sliding-notification"
+
+// Helper functions for formatting
+const formatCurrency = (value: number): string => {
+  return `N$${Number(value).toFixed(2)}`
+}
+
+const formatShares = (value: number): string => {
+  return Number(value).toFixed(4) // FIXED: Always 4 decimal places
+}
 
 export default function ExchangePage() {
   const [buyAmount, setBuyAmount] = useState("")
   const [sellShares, setSellShares] = useState("")
   const [cashoutAmount, setCashoutAmount] = useState("")
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [isProcessing, setIsProcessing] = useState({
+    buy: false,
+    sell: false,
+    cashout: false,
+  })
 
   const {
-    buyWalletBalance,
-    holdWalletPostHold,
-    cashoutWalletBalance,
+    buyWalletBalance = 0,
+    holdWalletPostHold = 0,
+    cashoutWalletBalance = 0,
     loading: walletLoading,
     error: walletError,
-  } = useWallet()
+    refreshWalletBalances,
+  } = useWallet() || {}
 
   const {
-    marketSellOrders,
-    marketBuyOrders,
-    userSellOrders,
-    userBuyOrders,
+    marketSellOrders = [],
+    marketBuyOrders = [],
+    userSellOrders = [],
+    userBuyOrders = [],
     placeBuyOrder,
     placeSellOrder,
-    currentSharePrice,
-    tradingStatus,
+    currentSharePrice = 99.68,
+    exchangeStatus,
     loading: exchangeLoading,
     error: exchangeError,
-  } = useExchange()
+    refreshOrders,
+  } = useExchange() || {}
+
+  const { notifications = [], showNotification, hideNotification } = useNotification() || {}
 
   const loading = walletLoading || exchangeLoading
-  const tradingAllowed = tradingStatus?.trading_allowed ?? false
 
   const handleBuyOrder = async () => {
+    if (isProcessing.buy) return
+
     const amount = Number.parseFloat(buyAmount)
     if (isNaN(amount) || amount <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive amount" })
+      showNotification?.("error", "Please enter a valid positive amount")
       return
     }
 
-    const result = await placeBuyOrder(amount)
-    setMessage({ type: result.success ? "success" : "error", text: result.message })
+    setIsProcessing((prev) => ({ ...prev, buy: true }))
 
-    if (result.success) {
-      setBuyAmount("")
+    try {
+      const result = await placeBuyOrder?.(amount)
+      const success = result?.success ?? false
+
+      // FIXED: Format notification message with 4 decimal places
+      let resultMessage = result?.message ?? (success ? "Buy order placed successfully" : "Failed to place buy order")
+
+      if (success) {
+        const estimatedShares = amount / currentSharePrice
+        const buyRef = `Buy_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+        resultMessage = `Buy order placed: ${formatCurrency(amount)} for ${formatShares(estimatedShares)} shares at ${formatCurrency(currentSharePrice)} each. Ref: ${buyRef}`
+      }
+
+      setMessage({ type: success ? "success" : "error", text: resultMessage })
+
+      if (showNotification) {
+        showNotification(success ? "success" : "error", resultMessage)
+      }
+
+      if (success) {
+        setBuyAmount("")
+        if (refreshOrders) await refreshOrders()
+        if (refreshWalletBalances) await refreshWalletBalances()
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message ?? "Failed to place buy order"
+      setMessage({ type: "error", text: errorMessage })
+      if (showNotification) {
+        showNotification("error", errorMessage)
+      }
+    } finally {
+      setIsProcessing((prev) => ({ ...prev, buy: false }))
     }
   }
 
   const handleSellOrder = async () => {
+    if (isProcessing.sell) return
+
     const shares = Number.parseFloat(sellShares)
     if (isNaN(shares) || shares <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive number of shares" })
+      showNotification?.("error", "Please enter a valid positive number of shares")
       return
     }
 
-    const result = await placeSellOrder(shares)
-    setMessage({ type: result.success ? "success" : "error", text: result.message })
+    if (shares > holdWalletPostHold) {
+      setMessage({ type: "error", text: "Insufficient shares in Hold Wallet (Post-Hold)" })
+      showNotification?.("error", "Insufficient shares in Hold Wallet (Post-Hold)")
+      return
+    }
 
-    if (result.success) {
-      setSellShares("")
+    setIsProcessing((prev) => ({ ...prev, sell: true }))
+
+    try {
+      const result = await placeSellOrder?.(shares)
+      const success = result?.success ?? false
+
+      // FIXED: Format notification message with 4 decimal places
+      let resultMessage = result?.message ?? (success ? "Sell order placed successfully" : "Failed to place sell order")
+
+      if (success) {
+        const sellRef = `Sell_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+        resultMessage = `Sell order placed: ${formatShares(shares)} shares at ${formatCurrency(currentSharePrice)} each. Ref: ${sellRef}`
+      }
+
+      setMessage({ type: success ? "success" : "error", text: resultMessage })
+
+      if (showNotification) {
+        showNotification(success ? "success" : "error", resultMessage)
+      }
+
+      if (success) {
+        setSellShares("")
+        if (refreshOrders) await refreshOrders()
+        if (refreshWalletBalances) await refreshWalletBalances()
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message ?? "Failed to place sell order"
+      setMessage({ type: "error", text: errorMessage })
+      if (showNotification) {
+        showNotification("error", errorMessage)
+      }
+    } finally {
+      setIsProcessing((prev) => ({ ...prev, sell: false }))
     }
   }
 
   const handleCashout = async () => {
+    if (isProcessing.cashout) return
+
     const amount = Number.parseFloat(cashoutAmount)
     if (isNaN(amount) || amount <= 0) {
       setMessage({ type: "error", text: "Please enter a valid positive cashout amount" })
@@ -83,75 +174,108 @@ export default function ExchangePage() {
       return
     }
 
-    setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
-    setCashoutAmount("")
+    setIsProcessing((prev) => ({ ...prev, cashout: true }))
+
+    try {
+      setMessage({ type: "success", text: `Cashout request for ${formatCurrency(amount)} submitted successfully` })
+      setCashoutAmount("")
+      if (refreshWalletBalances) await refreshWalletBalances()
+    } finally {
+      setIsProcessing((prev) => ({ ...prev, cashout: false }))
+    }
   }
 
-  // Helper function to determine correct status based on fill percentage
-  const getCorrectStatus = (order: any, isUserOrder = false) => {
-    let fillPercentage = 0
+  const getActualStatus = (order: any) => {
+    return order?.status || "unknown"
+  }
 
-    if ("total_amount" in order) {
-      // Buy order
-      fillPercentage = (order.filled_amount / order.total_amount) * 100
+  const getStatusBadge = (order: any) => {
+    const actualStatus = getActualStatus(order)
+
+    // Apply specific colors for each status
+    const getStatusBadgeClass = (status: string): string => {
+      switch (status.toLowerCase()) {
+        case "expired":
+        case "cancelled":
+          return "bg-gray-700 text-white hover:bg-gray-700" // Black/Grey
+        case "available":
+          return "bg-green-500 text-white hover:bg-green-600" // Green
+        case "partial":
+          return "bg-orange-500 text-white hover:bg-orange-600" // Orange
+        case "matched":
+          return "bg-yellow-600 text-white hover:bg-yellow-700" // Olive/Yellow
+        case "completed":
+          return "bg-blue-500 text-white hover:bg-blue-600" // Blue
+        case "filled":
+          return "bg-purple-500 text-white hover:bg-purple-600" // Purple
+        case "pending":
+          return "bg-yellow-500 text-white hover:bg-yellow-600" // Yellow
+        default:
+          return "bg-gray-500 text-white hover:bg-gray-600" // Fallback
+      }
+    }
+
+    return <Badge className={getStatusBadgeClass(actualStatus)}>{actualStatus.replace("_", " ").toUpperCase()}</Badge>
+  }
+
+  const getProgressBar = (order: any, orderType: "buy" | "sell") => {
+    if (!order) return null
+
+    const actualStatus = getActualStatus(order)
+    const isExpired = actualStatus === "expired"
+    const isCancelled = actualStatus === "cancelled"
+
+    let progress = 0
+    let filledText = ""
+    let refundText = ""
+
+    if (orderType === "buy") {
+      const amountFilled = Number(order.amount_filled) || 0
+      const totalAmount = Number(order.total_amount) || 0
+      const sharesRequested = Number(order.shares_requested) || 0
+      const sharesFilled = Number(order.shares_filled) || 0
+
+      progress = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
+      filledText = `Filled: ${formatCurrency(amountFilled)} / ${formatCurrency(totalAmount)} (${formatShares(sharesFilled)} / ${formatShares(sharesRequested)} shares)`
+
+      if (isExpired && order.refunded_amount) {
+        refundText = ` - Refunded ${formatCurrency(order.refunded_amount)}`
+      }
     } else {
-      // Sell order
-      fillPercentage = (order.filled_shares / order.shares) * 100
+      const sharesRemaining = Number(order.shares_remaining) || 0
+      const sharesAvailable = Number(order.shares_available) || 0
+      const sharesSold = sharesAvailable - sharesRemaining
+      progress = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
+      filledText = `Sold: ${formatShares(sharesSold)} / ${formatShares(sharesAvailable)} shares`
+
+      if (isExpired && order.refunded_shares) {
+        refundText = ` - Refunded ${formatShares(order.refunded_shares)}`
+      }
     }
 
-    if (fillPercentage === 0) {
-      return "total_amount" in order ? "pending" : "available"
-    } else if (fillPercentage > 0 && fillPercentage < 100) {
-      return "partial"
-    } else if (fillPercentage >= 100) {
-      return isUserOrder ? "completed" : "filled"
+    // Progress bar colors
+    let progressBarClass = ""
+    if (isExpired || isCancelled) {
+      progressBarClass = "opacity-50 [&>div]:bg-gray-500" // Grey for expired/cancelled
+    } else if (orderType === "buy") {
+      progressBarClass = "[&>div]:bg-green-500" // GREEN for buy orders
+    } else {
+      progressBarClass = "[&>div]:bg-yellow-500" // YELLOW for sell orders
     }
-
-    return order.status // fallback to original status
-  }
-
-  const getStatusBadge = (order: any, isUserOrder = false) => {
-    const actualStatus = getCorrectStatus(order, isUserOrder)
-
-    const variants = {
-      pending: "secondary",
-      partial: "outline",
-      completed: "default",
-      filled: "default",
-      available: "default",
-      expired: "destructive",
-      cancelled: "destructive",
-    } as const
-
-    const colors = {
-      pending: "bg-yellow-500",
-      partial: "bg-orange-500",
-      completed: "bg-green-500",
-      filled: "bg-blue-500",
-      available: "bg-green-500",
-      expired: "bg-red-500",
-      cancelled: "bg-gray-500",
-    } as const
 
     return (
-      <Badge
-        variant={variants[actualStatus as keyof typeof variants] || "secondary"}
-        className={colors[actualStatus as keyof typeof colors] || "bg-gray-500"}
-      >
-        {actualStatus.replace("_", " ").toUpperCase()}
-      </Badge>
+      <div className="space-y-1">
+        <Progress value={progress} className={`h-2 ${progressBarClass}`} />
+        <div className={`text-xs ${isExpired || isCancelled ? "text-gray-500" : "text-slate-400"}`}>
+          {filledText}
+          {refundText && <span className="text-yellow-400">{refundText}</span>}
+        </div>
+      </div>
     )
   }
 
   if (loading) {
-    return (
-      <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-white" />
-          <span className="ml-2 text-white">Loading exchange data...</span>
-        </div>
-      </div>
-    )
+    return <ExchangePageSkeleton />
   }
 
   if (walletError || exchangeError) {
@@ -167,31 +291,88 @@ export default function ExchangePage() {
 
   return (
     <div className="p-6 space-y-6 bg-gray-900 min-h-screen">
-      {/* Trading Status Banner */}
-      {!tradingAllowed ? (
-        <Alert className="bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100">
-          <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
-          <AlertDescription className="text-red-800 dark:text-red-100">
-            <strong>Trading Closed:</strong> {tradingStatus?.reason}
-            {tradingStatus?.next_trading_window && (
-              <span className="block mt-1">
-                Next trading window: {new Date(tradingStatus.next_trading_window).toLocaleString()}
-              </span>
-            )}
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <Alert className="bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100">
-          <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <AlertDescription className="text-green-800 dark:text-green-100">
-            <strong>Trading Open:</strong> Current price: <strong>{formatCurrency(currentSharePrice)}</strong> per share
-            {tradingStatus?.current_time && (
-              <span className="block mt-1 text-sm">
-                Market time: {new Date(tradingStatus.current_time).toLocaleString()}
-              </span>
-            )}
-          </AlertDescription>
-        </Alert>
+      {/* Sliding Notifications */}
+      {notifications.map((notification) => (
+        <SlidingNotification
+          key={notification.id}
+          type={notification.type}
+          message={notification.message}
+          isVisible={notification.isVisible}
+          onClose={() => hideNotification?.(notification.id)}
+        />
+      ))}
+
+      {/* Exchange Status Banner */}
+      {exchangeStatus && (
+        <div className="space-y-2">
+          <Alert
+            className={`${
+              exchangeStatus.is_trading_open
+                ? "bg-green-100 border-green-500 text-green-800 dark:bg-green-900 dark:border-green-600 dark:text-green-100"
+                : "bg-red-100 border-red-500 text-red-800 dark:bg-red-900 dark:border-red-600 dark:text-red-100"
+            }`}
+          >
+            <AlertCircle
+              className={`h-4 w-4 ${
+                exchangeStatus.is_trading_open ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+              }`}
+            />
+            <AlertDescription
+              className={
+                exchangeStatus.is_trading_open ? "text-green-800 dark:text-green-100" : "text-red-800 dark:text-red-100"
+              }
+            >
+              <div className="flex items-center justify-between">
+                <span>{exchangeStatus.status_message}</span>
+                {exchangeStatus.windhoek_time && (
+                  <span className="text-sm opacity-75 flex items-center">
+                    <Clock className="h-3 w-3 mr-1" />
+                    Windhoek:{" "}
+                    {new Date(exchangeStatus.windhoek_time).toLocaleTimeString("en-US", {
+                      hour12: false,
+                      timeZone: "Africa/Windhoek",
+                    })}
+                  </span>
+                )}
+              </div>
+            </AlertDescription>
+          </Alert>
+
+          {!exchangeStatus.is_trading_open && exchangeStatus.trading_schedule && (
+            <Card className="bg-slate-800 border-slate-700 text-slate-100">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-slate-300 flex items-center">
+                  <Clock className="h-4 w-4 mr-2" />
+                  Weekly Trading Schedule ({exchangeStatus.trading_schedule.timezone})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-slate-400">Exchange Closes:</span>
+                    <br />
+                    <span className="text-slate-200">{exchangeStatus.trading_schedule.weekly_close}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">History Clear:</span>
+                    <br />
+                    <span className="text-slate-200">{exchangeStatus.trading_schedule.history_clear}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Price Update:</span>
+                    <br />
+                    <span className="text-slate-200">{exchangeStatus.trading_schedule.price_calculation}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Exchange Opens:</span>
+                    <br />
+                    <span className="text-green-400 font-semibold">{exchangeStatus.trading_schedule.weekly_open}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {message && (
@@ -205,12 +386,16 @@ export default function ExchangePage() {
         <div className="col-span-1">
           <Card className="bg-slate-800 border-slate-700 text-slate-100">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-slate-300">Weekly Share Price</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-300">Current Share Price</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-400">{formatCurrency(currentSharePrice)}</div>
               <p className="text-xs text-slate-400 mt-1">per share</p>
-              {!tradingAllowed && <div className="mt-2 text-xs text-red-400">Trading closed</div>}
+              {exchangeStatus?.last_price_update && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Updated: {new Date(exchangeStatus.last_price_update).toLocaleDateString()}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -232,18 +417,41 @@ export default function ExchangePage() {
                   type="number"
                   placeholder="Amount (N$)"
                   value={buyAmount}
-                  onChange={(e) => setBuyAmount(e.target.value)}
-                  disabled={loading || !tradingAllowed}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value === "" || Number(value) >= 0) {
+                      setBuyAmount(value)
+                    }
+                  }}
+                  disabled={loading || isProcessing.buy}
                   min="0"
                   step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleBuyOrder}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600"
-                  disabled={loading || !tradingAllowed || !buyAmount || Number.parseFloat(buyAmount) <= 0}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={
+                    loading ||
+                    isProcessing.buy ||
+                    !buyAmount ||
+                    Number.parseFloat(buyAmount) <= 0 ||
+                    !exchangeStatus?.is_trading_open
+                  }
                 >
-                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Buy Shares"}
+                  {isProcessing.buy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : !exchangeStatus?.is_trading_open ? (
+                    <>
+                      <Clock className="h-4 w-4 mr-2" />
+                      Exchange Closed
+                    </>
+                  ) : (
+                    "Buy Shares"
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -258,24 +466,48 @@ export default function ExchangePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="text-lg font-semibold text-slate-100">{holdWalletPostHold.toFixed(4)} shares</div>
+              <div className="text-lg font-semibold text-slate-100">{formatShares(holdWalletPostHold)} shares</div>
               <div className="space-y-2">
                 <Input
                   type="number"
                   placeholder="Shares to sell"
                   value={sellShares}
-                  onChange={(e) => setSellShares(e.target.value)}
-                  disabled={loading || !tradingAllowed}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value === "" || Number(value) >= 0) {
+                      setSellShares(value)
+                    }
+                  }}
+                  disabled={loading || isProcessing.sell}
                   min="0"
                   step="0.0001"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
                 />
                 <Button
                   onClick={handleSellOrder}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600"
-                  disabled={loading || !tradingAllowed || !sellShares || Number.parseFloat(sellShares) <= 0}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  disabled={
+                    loading ||
+                    isProcessing.sell ||
+                    !sellShares ||
+                    Number.parseFloat(sellShares) <= 0 ||
+                    Number.parseFloat(sellShares) > holdWalletPostHold ||
+                    !exchangeStatus?.is_trading_open
+                  }
                 >
-                  {loading ? "Processing..." : !tradingAllowed ? "Trading Closed" : "Sell Shares"}
+                  {isProcessing.sell ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : !exchangeStatus?.is_trading_open ? (
+                    <>
+                      <Clock className="h-4 w-4 mr-2" />
+                      Exchange Closed
+                    </>
+                  ) : (
+                    "Sell Shares"
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -296,8 +528,13 @@ export default function ExchangePage() {
                   type="number"
                   placeholder="Amount to cashout (N$)"
                   value={cashoutAmount}
-                  onChange={(e) => setCashoutAmount(e.target.value)}
-                  disabled={loading}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value === "" || Number(value) >= 0) {
+                      setCashoutAmount(value)
+                    }
+                  }}
+                  disabled={loading || isProcessing.cashout}
                   min="0"
                   step="0.01"
                   className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
@@ -305,9 +542,16 @@ export default function ExchangePage() {
                 <Button
                   onClick={handleCashout}
                   className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                  disabled={loading || !cashoutAmount || Number.parseFloat(cashoutAmount) <= 0}
+                  disabled={loading || isProcessing.cashout || !cashoutAmount || Number.parseFloat(cashoutAmount) <= 0}
                 >
-                  {loading ? "Processing..." : "Cashout"}
+                  {isProcessing.cashout ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Cashout"
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -318,68 +562,100 @@ export default function ExchangePage() {
       {/* Order Books */}
       <div className="grid grid-cols-2 gap-6">
         {/* Market Buy Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+        <Card className="bg-slate-800 border-slate-700 text-slate-100 relative">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Buy Orders ({(marketBuyOrders ?? []).length})
+              Market Buy Orders ({marketBuyOrders.length}) - Active Only
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {(marketBuyOrders ?? []).length === 0 ? (
+            {!exchangeStatus?.is_trading_open && (
+              <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
+                <div className="text-center text-slate-300">
+                  <Clock className="h-8 w-8 mx-auto mb-2" />
+                  <div className="text-lg font-semibold">Exchange Closed</div>
+                  <div className="text-sm">Trading resumes Monday 10:05</div>
+                  <div className="text-xs text-slate-400 mt-1">Windhoek Time</div>
+                </div>
+              </div>
+            )}
+            <div className={`space-y-2 ${!exchangeStatus?.is_trading_open ? "opacity-50" : ""}`}>
+              {marketBuyOrders.length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active buy orders</p>
               ) : (
-                marketBuyOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                      <span className="text-xs text-slate-400">({order.shares_requested.toFixed(4)} shares)</span>
+                marketBuyOrders.slice(0, 10).map((order) => {
+                  const sharesRequested = Number(order.shares_requested) || 0
+                  const amountFilled = Number(order.amount_filled) || 0
+                  const totalAmount = Number(order.total_amount) || 0
+                  const filledPercentage = totalAmount > 0 ? (amountFilled / totalAmount) * 100 : 0
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-slate-100">{formatCurrency(totalAmount)}</span>
+                        <span className="text-xs text-slate-400">({formatShares(sharesRequested)} shares)</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {getStatusBadge(order)}
+                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% filled</span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {Math.round((order.shares_filled / order.shares_requested) * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
         </Card>
 
         {/* Market Sell Orders */}
-        <Card className="bg-slate-800 border-slate-700 text-slate-100">
+        <Card className="bg-slate-800 border-slate-700 text-slate-100 relative">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Market Sell Orders ({(marketSellOrders ?? []).length})
+              Market Sell Orders ({marketSellOrders.length}) - Active Only
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {(marketSellOrders ?? []).length === 0 ? (
+            {!exchangeStatus?.is_trading_open && (
+              <div className="absolute inset-0 bg-slate-800/80 flex items-center justify-center z-10 rounded">
+                <div className="text-center text-slate-300">
+                  <Clock className="h-8 w-8 mx-auto mb-2" />
+                  <div className="text-lg font-semibold">Exchange Closed</div>
+                  <div className="text-sm">Trading resumes Monday 10:05</div>
+                  <div className="text-xs text-slate-400 mt-1">Windhoek Time</div>
+                </div>
+              </div>
+            )}
+            <div className={`space-y-2 ${!exchangeStatus?.is_trading_open ? "opacity-50" : ""}`}>
+              {marketSellOrders.length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No active sell orders</p>
               ) : (
-                marketSellOrders.slice(0, 10).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
-                      <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                marketSellOrders.slice(0, 10).map((order) => {
+                  const sharesRemaining = Number(order.shares_remaining) || 0
+                  const sharesAvailable = Number(order.shares_available) || 0
+                  const sharesSold = sharesAvailable - sharesRemaining
+                  const filledPercentage = sharesAvailable > 0 ? (sharesSold / sharesAvailable) * 100 : 0
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-2 bg-slate-700 border border-slate-600 rounded"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-slate-100">
+                          {formatShares(sharesRemaining)} shares
+                        </span>
+                        <span className="text-xs text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {getStatusBadge(order)}
+                        <span className="text-xs text-slate-400">{filledPercentage.toFixed(1)}% sold</span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusBadge(order, false)}
-                      <span className="text-xs text-slate-400">
-                        {order.filled_shares.toFixed(4)}/{order.shares.toFixed(4)}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
@@ -392,34 +668,33 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Buy Orders ({(userBuyOrders ?? []).length})
+              Your Buy Orders ({userBuyOrders.length}) - All History
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {(userBuyOrders ?? []).length === 0 ? (
+              {userBuyOrders.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No buy orders yet</p>
               ) : (
-                userBuyOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
-                        <span className="text-sm text-slate-400 ml-2">
-                          ({order.shares_requested.toFixed(4)} shares)
-                        </span>
+                userBuyOrders.map((order) => {
+                  const sharesRequested = Number(order.shares_requested) || 0
+
+                  return (
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="font-medium text-slate-100">{formatCurrency(order.total_amount)}</span>
+                          <span className="text-sm ml-2 text-slate-400">({formatShares(sharesRequested)} shares)</span>
+                          <div className="text-xs mt-1 text-slate-500">
+                            {order.buy_ref || `Buy_${order.id.slice(-6)}`}
+                          </div>
+                        </div>
+                        {getStatusBadge(order)}
                       </div>
-                      {getStatusBadge(order, true)}
+                      {getProgressBar(order, "buy")}
                     </div>
-                    <Progress
-                      value={(order.shares_filled / order.shares_requested) * 100}
-                      className="h-2 [&>div]:bg-yellow-500"
-                    />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.shares_filled.toFixed(4)} / {order.shares_requested.toFixed(4)} shares
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
@@ -429,29 +704,33 @@ export default function ExchangePage() {
         <Card className="bg-slate-800 border-slate-700 text-slate-100">
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-slate-200">
-              Your Sell Orders ({(userSellOrders ?? []).length})
+              Your Sell Orders ({userSellOrders.length}) - All History
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {(userSellOrders ?? []).length === 0 ? (
+              {userSellOrders.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-4">No sell orders yet</p>
               ) : (
-                userSellOrders.map((order) => (
-                  <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-slate-100">{order.shares.toFixed(4)} shares</span>
-                        <span className="text-sm text-slate-400 ml-2">@ {formatCurrency(order.price_per_share)}</span>
+                userSellOrders.map((order) => {
+                  return (
+                    <div key={order.id} className="p-3 border border-slate-600 rounded-lg bg-slate-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="font-medium text-slate-100">
+                            {formatShares(order.shares_available)} shares
+                          </span>
+                          <span className="text-sm ml-2 text-slate-400">@ {formatCurrency(order.price_per_share)}</span>
+                          <div className="text-xs mt-1 text-slate-500">
+                            {order.sell_ref || `Sell_${order.id.slice(-6)}`}
+                          </div>
+                        </div>
+                        {getStatusBadge(order)}
                       </div>
-                      {getStatusBadge(order, true)}
+                      {getProgressBar(order, "sell")}
                     </div>
-                    <Progress value={(order.filled_shares / order.shares) * 100} className="h-2 [&>div]:bg-green-500" />
-                    <div className="text-xs text-slate-400 mt-1">
-                      Filled: {order.filled_shares.toFixed(4)} / {order.shares.toFixed(4)} shares
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </CardContent>
