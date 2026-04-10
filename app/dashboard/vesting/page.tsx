@@ -154,7 +154,7 @@ export default function Vesting() {
           transaction_type: "vesting",
           shares: amount,
           total_amount: amount * 108.2, // Current share price
-          from_wallet: "hold_pre",
+          from_wallet: "hold_wallet_pre_hold",
           to_wallet: "vesting_locked",
           status: "completed",
           description: `Vested ${safeToFixed(amount)} shares in ${levelName} Slot ${selectedSlotIndex + 1} (${holdDays} days)`,
