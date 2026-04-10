@@ -1,175 +1,95 @@
-// actions/auth.ts
-
 "use server"
 
-import { z } from "zod"
-import { AuthError } from "next-auth/providers/credentials"
-
-import { signIn } from "@/auth"
-import { sql } from "@vercel/postgres"
-import { revalidatePath } from "next/cache"
+import { createServerSupabaseClient } from "@/lib/supabase"
 import { redirect } from "next/navigation"
+import { revalidatePath } from "next/cache"
 
-const FormSchema = z.object({
-  id: z.string(),
-  customerId: z.string({
-    invalid_type_error: "Please select a customer.",
-  }),
-  amount: z.coerce.number().gt(0, { message: "Please enter an amount greater than $0." }),
-  status: z.enum(["pending", "paid"], {
-    invalid_type_error: "Please select an invoice status.",
-  }),
-  date: z.string(),
-})
+export async function login(formData: FormData) {
+  const supabase = createServerSupabaseClient()
 
-const CreateInvoice = FormSchema.omit({ id: true, date: true })
-const UpdateInvoice = FormSchema.omit({ id: true, date: true })
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
 
-export type State = {
-  errors?: {
-    customerId?: string[]
-    amount?: string[]
-    status?: string[]
+  if (!email || !password) {
+    throw new Error("Email and password are required")
   }
-  message?: string | null
-}
-
-export async function createInvoice(prevState: State, formData: FormData) {
-  const validatedFields = CreateInvoice.safeParse({
-    customerId: formData.get("customerId"),
-    amount: formData.get("amount"),
-    status: formData.get("status"),
-  })
-
-  if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Missing Fields. Failed to Create Invoice.",
-    }
-  }
-
-  const { customerId, amount, status } = validatedFields.data
-  const amountInCents = amount * 100
-  const date = new Date().toISOString().split("T")[0]
 
   try {
-    await sql`
-      INSERT INTO invoices (customer_id, amount, status, date)
-      VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
-    `
-  } catch (error) {
-    return {
-      message: "Database Error: Failed to Create Invoice.",
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      console.error("Login error:", error)
+      throw error
     }
-  }
 
-  revalidatePath("/dashboard/invoices")
-  redirect("/dashboard/invoices")
-}
-
-export async function updateInvoice(id: string, prevState: State, formData: FormData) {
-  const validatedFields = UpdateInvoice.safeParse({
-    customerId: formData.get("customerId"),
-    amount: formData.get("amount"),
-    status: formData.get("status"),
-  })
-
-  if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Missing Fields. Failed to Update Invoice.",
-    }
-  }
-
-  const { customerId, amount, status } = validatedFields.data
-  const amountInCents = amount * 100
-
-  try {
-    await sql`
-      UPDATE invoices
-      SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
-      WHERE id = ${id}
-    `
+    revalidatePath("/", "layout")
+    redirect("/dashboard")
   } catch (error) {
-    return { message: "Database Error: Failed to Update Invoice." }
-  }
-
-  revalidatePath("/dashboard/invoices")
-  redirect("/dashboard/invoices")
-}
-
-export async function deleteInvoice(id: string) {
-  try {
-    await sql`DELETE FROM invoices WHERE id = ${id}`
-    revalidatePath("/dashboard/invoices")
-    return { message: "Deleted Invoice." }
-  } catch (error) {
-    return { message: "Database Error: Failed to Delete Invoice." }
-  }
-}
-
-export async function authenticate(prevState: string | undefined, formData: FormData) {
-  try {
-    await signIn("credentials", Object.fromEntries(formData))
-  } catch (error) {
-    if (error instanceof AuthError) {
-      switch (error.type) {
-        case "CredentialsSignin":
-          return "Invalid credentials."
-        default:
-          return "Something went wrong."
-      }
-    }
+    console.error("Login failed:", error)
     throw error
   }
 }
 
-// New code for register action
+export async function signup(formData: FormData) {
+  const supabase = createServerSupabaseClient()
 
-const RegisterSchema = z.object({
-  name: z.string().min(3, { message: "Name must be at least 3 characters." }),
-  email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
-})
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
+  const fullName = formData.get("full_name") as string
 
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-export async function register(prevState: any, formData: FormData) {
-  const validatedFields = RegisterSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
-    password: formData.get("password"),
-  })
-
-  if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Missing Fields. Failed to Register.",
-    }
-  }
-
-  const { name, email, password } = validatedFields.data
-
-  const referrerEmail = formData.get("referrerEmail") as string
-  // Only validate if referrerEmail is provided
-  if (referrerEmail && !isValidEmail(referrerEmail)) {
-    return {
-      error: "Invalid referrer email format",
-    }
+  if (!email || !password || !fullName) {
+    throw new Error("All fields are required")
   }
 
   try {
-    // Simulate user creation and referrer handling
-    console.log("Creating user:", { name, email, password })
-    if (referrerEmail) {
-      console.log("Referrer:", referrerEmail)
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
+    })
+
+    if (error) {
+      console.error("Signup error:", error)
+      throw error
     }
-    return { success: true, message: "Registration successful!" }
+
+    revalidatePath("/", "layout")
+    redirect("/verify-email")
   } catch (error) {
-    console.error("Registration failed:", error)
-    return { error: "Registration failed" }
+    console.error("Signup failed:", error)
+    throw error
+  }
+}
+
+export async function resetPassword(formData: FormData) {
+  const supabase = createServerSupabaseClient()
+
+  const email = formData.get("email") as string
+
+  if (!email) {
+    throw new Error("Email is required")
+  }
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password`,
+    })
+
+    if (error) {
+      console.error("Reset password error:", error)
+      throw error
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Reset password failed:", error)
+    throw error
   }
 }

@@ -1,48 +1,33 @@
 "use client"
 
-import type React from "react"
-import { Box, Flex, Heading, Spacer, useColorMode, IconButton } from "@chakra-ui/react"
-import { FaSun, FaMoon, FaGithub, FaLinkedin } from "react-icons/fa"
+import { Bell, ChevronLeft } from "lucide-react"
 
-const Header: React.FC = () => {
-  const { colorMode, toggleColorMode } = useColorMode()
-  const isDark = colorMode === "dark"
-
-  return (
-    <Flex
-      as="nav"
-      align="center"
-      justify="space-between"
-      wrap="wrap"
-      padding="1.5rem"
-      bg={isDark ? "gray.800" : "gray.100"}
-      color={isDark ? "gray.100" : "gray.800"}
-    >
-      <Flex align="center" mr={5}>
-        <Heading as="h1" size="lg" letterSpacing={"-.1rem"}>
-          Peer Wealth Platforms
-        </Heading>
-      </Flex>
-
-      <Spacer />
-
-      <Box>
-        <IconButton ml={2} icon={isDark ? <FaSun /> : <FaMoon />} isRound="true" onClick={toggleColorMode}></IconButton>
-        <IconButton
-          ml={2}
-          icon={<FaGithub />}
-          isRound="true"
-          onClick={() => window.open("https://github.com/")}
-        ></IconButton>
-        <IconButton
-          ml={2}
-          icon={<FaLinkedin />}
-          isRound="true"
-          onClick={() => window.open("https://linkedin.com/")}
-        ></IconButton>
-      </Box>
-    </Flex>
-  )
+interface TopBarProps {
+  sidebarOpen: boolean
+  setSidebarOpen: (open: boolean) => void
 }
 
-export default Header
+export function TopBar({ sidebarOpen, setSidebarOpen }: TopBarProps) {
+  return (
+    <header className="h-[64px] bg-[#2a2d3a] border-b border-gray-700 flex items-center px-4">
+      <div className="flex items-center">
+        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="mr-4 text-white hover:text-gray-300">
+          <ChevronLeft className={`h-6 w-6 transition-transform ${sidebarOpen ? "" : "rotate-180"}`} />
+        </button>
+
+        <h1 className="text-2xl font-bold">OVERVIEW</h1>
+      </div>
+
+      <div className="ml-auto flex items-center space-x-4">
+        <div className="relative">
+          <button className="relative p-2 rounded-full bg-[#2a2d3a] border border-gray-700">
+            <Bell className="h-6 w-6" />
+            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 flex items-center justify-center text-xs">
+              3
+            </span>
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}

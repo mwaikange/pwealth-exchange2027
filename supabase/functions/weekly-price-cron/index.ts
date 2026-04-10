@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { Deno } from "https://deno.land/std@0.168.0/io/mod.ts" // Declare Deno variable
+import { Deno } from "https://deno.land/std@0.168.0/node/global.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,74 +20,50 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     )
 
-    const { action, pegPrice } = await req.json()
+    console.log("Starting weekly price calculation...")
 
-    if (action === "daily_hodl_snapshot") {
-      // Run daily HODL snapshot calculation
-      const { error } = await supabaseClient.rpc("calculate_daily_hodl_snapshot")
+    // Call the simplified price calculation function
+    const { data, error } = await supabaseClient.rpc("calculate_weekly_share_price_simplified")
 
-      if (error) {
-        throw error
-      }
-
+    if (error) {
+      console.error("Error calculating weekly price:", error)
       return new Response(
         JSON.stringify({
-          success: true,
-          message: "Daily HODL snapshot calculated successfully",
+          success: false,
+          error: error.message,
           timestamp: new Date().toISOString(),
         }),
         {
+          status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
         },
       )
     }
 
-    if (action === "weekly_price_calculation") {
-      // Run weekly price calculation
-      const { error } = await supabaseClient.rpc("calculate_weekly_share_price", {
-        peg_price_input: pegPrice || 100.0,
-      })
+    console.log("Price calculation result:", data)
 
-      if (error) {
-        throw error
-      }
-
-      // Get the calculated price
-      const { data: weeklyPrice } = await supabaseClient
-        .from("weekly_share_prices")
-        .select("*")
-        .order("week_start", { ascending: false })
-        .limit(1)
-        .single()
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Weekly share price calculated successfully",
-          data: weeklyPrice,
-          timestamp: new Date().toISOString(),
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        },
-      )
-    }
-
-    return new Response(JSON.stringify({ error: "Invalid action specified" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
-    })
-  } catch (error) {
+    // Return the result
     return new Response(
       JSON.stringify({
-        error: error.message,
+        success: true,
+        data: data,
         timestamp: new Date().toISOString(),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    )
+  } catch (error) {
+    console.error("Unexpected error:", error)
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      }),
+      {
         status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     )
   }
