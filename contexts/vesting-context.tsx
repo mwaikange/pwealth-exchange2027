@@ -401,8 +401,11 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
     console.log("🔔 Setting up vesting real-time subscription")
 
-    const subscription = supabase
-      .channel("vesting_changes")
+    // Use a unique channel name per user so a re-run (or React dev double-mount)
+    // never tries to attach `.on()` to an already-subscribed channel.
+    const channel = supabase.channel(`vesting_changes:${user.id}`)
+
+    channel
       .on(
         "postgres_changes",
         {
@@ -420,7 +423,7 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       console.log("🔕 Cleaning up vesting subscription")
-      subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
   }, [user, refreshVestingData])
 
