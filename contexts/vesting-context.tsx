@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase-singleton"
 import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
@@ -395,14 +395,31 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, refreshVestingData])
 
+  // Keep the latest refresh callback in a ref so the realtime effect below
+  // does not re-run (and re-subscribe) every time refreshVestingData changes.
+  const refreshVestingDataRef = useRef(refreshVestingData)
+  useEffect(() => {
+    refreshVestingDataRef.current = refreshVestingData
+  }, [refreshVestingData])
+
   // Set up real-time subscription
   useEffect(() => {
     if (!user) return
 
+    const channelName = `vesting_changes:${user.id}`
     console.log("🔔 Setting up vesting real-time subscription")
 
-    const subscription = supabase
-      .channel("vesting_changes")
+    // Remove any stale channel with the same name first. Without this, a
+    // re-run (or React dev double-mount) returns the existing, already
+    // subscribed channel and `.on()` throws.
+    const existing = supabase.getChannels().find((c) => c.topic === `realtime:${channelName}`)
+    if (existing) {
+      supabase.removeChannel(existing)
+    }
+
+    const channel = supabase.channel(channelName)
+
+    channel
       .on(
         "postgres_changes",
         {
@@ -413,16 +430,16 @@ export function VestingProvider({ children }: { children: React.ReactNode }) {
         },
         (payload) => {
           console.log("📡 Vesting change detected:", payload)
-          refreshVestingData()
+          refreshVestingDataRef.current()
         },
       )
       .subscribe()
 
     return () => {
       console.log("🔕 Cleaning up vesting subscription")
-      subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
-  }, [user, refreshVestingData])
+  }, [user?.id])
 
   const value = {
     // Actions

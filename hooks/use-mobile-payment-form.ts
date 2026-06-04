@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useCallback, type FormEvent } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { getSupabaseClient } from "@/lib/supabase/client"
 import {
   getCountries,
   getBanksForCountry,
@@ -47,7 +47,7 @@ export function useMobilePaymentForm({ aftTokenAmount, onSuccess, onError }: Use
   const [isRefreshingSession, setIsRefreshingSession] = useState(false)
 
   // Create a Supabase client for client-side operations
-  const supabase = createClientComponentClient()
+  const supabase = getSupabaseClient()
 
   // Update amount when aftTokenAmount changes
   useEffect(() => {

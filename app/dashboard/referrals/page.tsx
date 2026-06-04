@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { useWallet } from "@/contexts/wallet-context"
 import { useTransactions } from "@/contexts/transaction-context"
 import { format } from "date-fns"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { getSupabaseClient } from "@/lib/supabase/client"
 import type { Database } from "@/types/supabase"
 
 // Define the type for referral data
@@ -68,7 +68,7 @@ export default function Referrals() {
     try {
       console.log(`Fetching referrals for user: ${user.id} (Attempt ${retry + 1})`)
 
-      const supabase = createClientComponentClient<Database>()
+      const supabase = getSupabaseClient()
 
       // Log the current user ID for debugging
       console.log("Current user ID:", user.id)
@@ -224,7 +224,7 @@ export default function Referrals() {
     if (!user) return false
 
     try {
-      const supabase = createClientComponentClient<Database>()
+      const supabase = getSupabaseClient()
 
       // Query the referral_claims table
       const { data, error } = await supabase
@@ -255,7 +255,7 @@ export default function Referrals() {
       console.log(`Recording claim for referral: ${referredUuid}, level: ${level}`)
 
       // Use direct Supabase insert as a fallback if the API approach fails
-      const supabase = createClientComponentClient<Database>()
+      const supabase = getSupabaseClient()
 
       const { error } = await supabase.from("referral_claims").insert({
         referred_uuid: referredUuid,
