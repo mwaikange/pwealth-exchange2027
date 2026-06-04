@@ -11,7 +11,7 @@ import { SlidingNotification } from "./sliding-notification"
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Add the import for the Supabase client and useRouter
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { getSupabaseClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 
 export function DashboardHeader() {
@@ -30,7 +30,7 @@ export function DashboardHeader() {
 
   // Add the router and handleSecretLogout function inside the DashboardHeader component, right after the state declarations
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const supabase = getSupabaseClient()
 
   // Logout function
   const handleLogout = async (e: React.MouseEvent) => {
